@@ -256,8 +256,12 @@ pub enum Keyword {
     Untyped,
     Weak,
 
+    // SV 12
     Implements,
     Interconnect,
     Nettype,
     Soft,
+
+    // SV 17
+    // No new keywords
 }

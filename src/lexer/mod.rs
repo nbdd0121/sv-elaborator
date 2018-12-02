@@ -3,7 +3,7 @@ mod kw_map;
 mod token;
 
 pub use self::kw::Keyword;
-pub use self::token::{Token, Operator};
+pub use self::token::{Token, TokenAndSpan, Operator};
 
 use self::kw_map::HASHMAP;
 use super::source::{Source, DiagMsg, Severity, Pos, Span, FixItHint};
@@ -22,7 +22,7 @@ pub struct Tokenizer {
     // Start of current token
     pub start: usize,
     // 1, 2, 3, 4 -> Verilog 95, 01, 01-noconfig, 05
-    // 5, 6, 7 -> SystemVerilog 05, 09, 12
+    // 5, 6, 7, 8 -> SystemVerilog 05, 09, 12, 17
     pub keyword: u8,
     pub keyword_stack: Vec<u8>,
     pub attr: bool,
@@ -35,7 +35,7 @@ impl Tokenizer {
             src: src,
             pos: 0,
             start: 0,
-            keyword: 7,
+            keyword: 8,
             keyword_stack: Vec::new(),
             attr: false,
         }
@@ -1055,6 +1055,23 @@ impl Tokenizer {
                 self.report_pos(Severity::Error, "unknown character in source file", self.start);
                 Token::Unknown
             }
+        }
+    }
+
+    pub fn next_span(&mut self) -> TokenAndSpan {
+        loop {
+            let tok = self.next();
+            match tok {
+                Token::Whitespace |
+                Token::NewLine |
+                Token::LineComment |
+                Token::BlockComment => continue,
+                _ => ()
+            }
+            return TokenAndSpan {
+                tok: tok,
+                sp: Span::new(self.src.clone(), self.start, self.pos)
+            };
         }
     }
 }

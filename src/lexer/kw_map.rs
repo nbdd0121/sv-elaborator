@@ -267,6 +267,9 @@ pub static ref HASHMAP: HashMap<&'static str, (Keyword, u8)> = {
     m.insert("nettype", (Keyword::Nettype, 7));
     m.insert("soft", (Keyword::Soft, 7));
 
+    // SV 17
+    // No new keywords
+
     m
 };
 }

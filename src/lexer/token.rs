@@ -1,6 +1,7 @@
 use num::BigUint;
 use super::super::number::{LogicValue, LogicNumber};
 use super::kw::Keyword;
+use super::super::source::Span;
 
 #[derive(Debug)]
 pub enum Operator {
@@ -178,6 +179,10 @@ pub enum Token {
     RealLiteral(f64),
     DecimalLiteral(BigUint),
     LogicNumberLiteral(LogicNumber),
-    UnbasedLiteral(LogicValue)
-    
+    UnbasedLiteral(LogicValue)   
+}
+
+pub struct TokenAndSpan {
+    pub tok: Token,
+    pub sp: Span
 }
