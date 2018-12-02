@@ -352,47 +352,6 @@ impl Tokenizer {
         str
     }
 
-    // Skip through digits. Returns true if X or Zs are seen while skipping through numbers.
-    fn skip_digits(&mut self, radix: u32, maxch: char) -> (bool, String, String) {
-        let mut str = String::new();
-        let mut xz = String::new();
-        let mut xz_seen = false;
-        loop {
-            let next = match self.nextch() {
-                None => break,
-                Some(v) => v,
-            };
-            match next {
-                '_' => (),
-                '0' ... '9' => {
-                    if !next.is_digit(radix) {
-                        // XXX: Error
-                        str.push('0');
-                        xz.push('0');
-                    } else {
-                        str.push(next);
-                        xz.push('0');
-                    }
-                },
-                'x' | 'X' => {
-                    str.push(maxch);
-                    xz.push(maxch);
-                    xz_seen = true;
-                }
-                'z' | 'Z' => {
-                    str.push('0');
-                    xz.push(maxch);
-                    xz_seen = true;
-                }
-                _ => {
-                    self.pushback(next);
-                    break
-                }
-            }
-        }
-        (xz_seen, str, xz)
-    }
-
     // Parse based number (assume ' is already consumed).
     fn parse_based_number(&mut self) -> LogicNumber {
         // Parse sign
@@ -436,7 +395,7 @@ impl Tokenizer {
         let num_after_ws = match self.peekch() {
             None => false,
             Some(v) => match v {
-                '0' ... '9' | 'x' | 'X' | 'z' | 'Z' => true,
+                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' | 'x' | 'X' | 'z' | 'Z' => true,
                 // TODO: If + or - is specified here, probably give a better suggestion
                 _ => false
             }
@@ -511,9 +470,13 @@ impl Tokenizer {
             };
             match next {
                 '_' => (),
-                '0' ... '9' => {
+                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' => {
                     if !next.is_digit(radix) {
-                        // XXX: Error
+                        self.report_pos(
+                            Severity::Error,
+                            format!("digit '{}' is too large for radix {}", next, radix),
+                            self.pos - 1,
+                        );
                         str.push('0');
                         xz.push('0');
                     } else {
@@ -763,9 +726,10 @@ impl Tokenizer {
             '\\' => {
                 self.parse_esc_id()
             }
-            // '`' => {
-            //     Token::Whitespace
-            // }
+            '`' => {
+                self.report_pos(Severity::Warning, "compiler directive not yet supported", self.start);
+                Token::Whitespace
+            }
             // Literals
             '0' ... '9' => {
                 self.pushback(ch);
