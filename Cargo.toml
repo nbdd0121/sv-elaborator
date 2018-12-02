@@ -1,0 +1,10 @@
+[package]
+name = "systemverilog"
+version = "0.1.0"
+authors = ["Gary Guo <gary@garyguo.net>"]
+
+[dependencies]
+num = "0.2"
+lazycell = "1.2"
+colored = "1.6"
+lazy_static = "1.2.0"
