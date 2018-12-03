@@ -14,6 +14,14 @@ impl Pos {
             pos: pos
         }
     }
+
+    pub fn as_span(&self) -> Span {
+        Span {
+            source: self.source.clone(),
+            start: self.pos,
+            end: self.pos,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -29,6 +37,13 @@ impl Span {
             source: src,
             start: start,
             end: end,
+        }
+    }
+
+    pub fn start_pos(&self) -> Pos {
+        Pos {
+            source: self.source.clone(),
+            pos: self.start,
         }
     }
 }

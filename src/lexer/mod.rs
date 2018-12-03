@@ -683,7 +683,7 @@ impl Tokenizer {
         Token::DecimalLiteral(str.parse().unwrap())
     }
 
-    pub fn next(&mut self) -> Token {
+    pub fn next_tk(&mut self) -> Token {
         self.start = self.pos;
 
         // Early return if result is EOF
@@ -1060,7 +1060,7 @@ impl Tokenizer {
 
     pub fn next_span(&mut self) -> TokenAndSpan {
         loop {
-            let tok = self.next();
+            let tok = self.next_tk();
             match tok {
                 Token::Whitespace |
                 Token::NewLine |

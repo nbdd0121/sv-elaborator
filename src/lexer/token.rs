@@ -3,7 +3,7 @@ use super::super::number::{LogicValue, LogicNumber};
 use super::kw::Keyword;
 use super::super::source::Span;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
     // Delimiters
     OpenParen,
@@ -159,7 +159,7 @@ pub enum Operator {
      */
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Eof,
     Unknown,
@@ -182,6 +182,7 @@ pub enum Token {
     UnbasedLiteral(LogicValue)   
 }
 
+#[derive(Clone)]
 pub struct TokenAndSpan {
     pub tok: Token,
     pub sp: Span

@@ -2,7 +2,7 @@ use num::{BigUint, One, Zero, ToPrimitive};
 use std::fmt;
 
 /// Represntation of Verilog's 4-value logic
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LogicValue {
     Zero,
     One,
@@ -11,6 +11,7 @@ pub enum LogicValue {
 }
 
 /// Represntation of Verilog's 4-value logic array
+#[derive(Clone)]
 pub struct LogicNumber {
     pub width: usize,
     pub sized: bool,
