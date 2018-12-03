@@ -3,10 +3,10 @@ mod kw_map;
 mod token;
 
 pub use self::kw::Keyword;
-pub use self::token::{Token, TokenAndSpan, Operator};
+pub use self::token::{Token, Operator};
 
 use self::kw_map::HASHMAP;
-use super::source::{Source, DiagMsg, Severity, Pos, Span, FixItHint};
+use super::source::{Source, DiagMsg, Severity, Pos, Span, Spanned, FixItHint};
 use super::number::{LogicValue, LogicNumber};
 
 use std::rc::Rc;
@@ -673,14 +673,21 @@ impl Tokenizer {
                 let mut num = self.parse_based_number();
                 num.x_extend(size);
                 num.sized = true;
-                return Token::LogicNumberLiteral(num);
+                return Token::IntegerLiteral(num);
             }
 
             // This is only a number, restore position
             self.pos = size_pos;
         }
 
-        Token::DecimalLiteral(str.parse().unwrap())
+        let num: BigUint = str.parse().unwrap();
+        Token::IntegerLiteral(LogicNumber {
+            width: cmp::min(num.bits(), 32),
+            sized: false,
+            signed: true,
+            value: num,
+            xz: BigUint::zero()
+        })
     }
 
     pub fn next_tk(&mut self) -> Token {
@@ -738,7 +745,7 @@ impl Tokenizer {
             '\'' => {
                 match self.peekch().unwrap_or(' ') {
                     's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
-                        Token::LogicNumberLiteral(self.parse_based_number())
+                        Token::IntegerLiteral(self.parse_based_number())
                     }
                     '{' => {
                         self.nextch();
@@ -1058,7 +1065,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn next_span(&mut self) -> TokenAndSpan {
+    pub fn next_span(&mut self) -> Spanned<Token> {
         loop {
             let tok = self.next_tk();
             match tok {
@@ -1068,10 +1075,7 @@ impl Tokenizer {
                 Token::BlockComment => continue,
                 _ => ()
             }
-            return TokenAndSpan {
-                tok: tok,
-                sp: Span::new(self.src.clone(), self.start, self.pos)
-            };
+            return Spanned::new(tok, Span::new(self.src.clone(), self.start, self.pos));
         }
     }
 }

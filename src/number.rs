@@ -36,6 +36,13 @@ impl LogicNumber {
         ((&self.xz >> index).to_u32().unwrap() & 1) != 0
     }
 
+    /// Zero-extend to `width` if current width is smaller, otherwise no-op
+    pub fn extend(&mut self, width: usize) {
+        if width > self.width {
+            self.width = width;
+        }
+    }
+
     /// Perform x/z-extension or truncation
     pub fn x_extend(&mut self, width: usize) {
         if width == self.width { return; }
@@ -67,6 +74,10 @@ impl LogicNumber {
 
 impl fmt::Display for LogicNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        // In this case we can simply print out a decimal
+        if self.xz.is_zero() && !self.sized && self.signed {
+            return write!(f, "{}", self.value)
+        }
         if self.sized {
             write!(f, "{}", self.width)?;
         }
