@@ -6,7 +6,7 @@ pub use self::kw::Keyword;
 pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup, TokenStream};
 
 use self::kw_map::HASHMAP;
-use super::source::{Source, DiagMsg, Severity, Pos, Span, Spanned, FixItHint};
+use super::source::{Source, SrcMgr, DiagMsg, Severity, Pos, Span, Spanned, FixItHint};
 use super::number::{LogicValue, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};
@@ -16,7 +16,8 @@ use std::cmp;
 use std::collections::VecDeque;
 
 pub struct Tokenizer {
-    pub src: Rc<Source>,
+    pub mgr: Rc<SrcMgr>,
+    pub src_offset: Pos,
     // Current index pointer
     pub pos: usize,
     // The source code to tokenize
@@ -33,10 +34,11 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub fn new(src: Rc<Source>) -> Tokenizer {
+    pub fn new(mgr: Rc<SrcMgr>, src: &Rc<Source>) -> Tokenizer {
         Tokenizer {
+            src_offset: mgr.find_src(src).unwrap().0,
             src_text: src.content().clone(),
-            src: src,
+            mgr: mgr,
             pos: 0,
             start: 0,
             keyword: 8,
@@ -79,27 +81,32 @@ impl Tokenizer {
 
     // Error reporting
     fn report_pos<M: Into<String>>(&self, severity: Severity, msg: M, pos: usize) {
+        self.report_span(severity, msg, pos, pos + 1)
+    }
+
+    fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, start: usize, end: usize) {
         self.report_diag(DiagMsg {
             severity: severity,
             message: msg.into(),
-            pos: Some(Pos::new(self.src.clone(), pos)),
-            span: Vec::new(),
+            span: vec![Span(Pos(self.src_offset.0 + start), Pos(self.src_offset.0 + end))],
             hint: Vec::new()
         })
     }
 
-    fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, pos: usize, rstart: usize, rend: usize) {
+    fn report_span_with_hint<M: Into<String>>(
+        &self, severity: Severity, msg: M, hint: String, start: usize, end: usize
+    ) {
+        let span = Span(Pos(self.src_offset.0 + start), Pos(self.src_offset.0 + end));
         self.report_diag(DiagMsg {
             severity: severity,
             message: msg.into(),
-            pos: Some(Pos::new(self.src.clone(), pos)),
-            span: vec![Span::new(self.src.clone(), rstart, rend)],
-            hint: Vec::new()
+            span: vec![span],
+            hint: vec![FixItHint::new(span, hint)]
         })
     }
 
     fn report_diag(&self, msg: DiagMsg) {
-        msg.print(true, 4)
+        msg.print(&self.mgr, true, 4)
     }
 
     // Skip CRLF (the CR is already consumed)
@@ -279,9 +286,8 @@ impl Tokenizer {
                             self.report_span(
                                 Severity::Error,
                                 "\\x should be followed by two hex digits",
-                                self.pos,
                                 start - 2,
-                                self.pos
+                                self.pos + 1
                             );
                             return None
                         }
@@ -294,14 +300,13 @@ impl Tokenizer {
                 Some(codepoint as char)
             }
             _ => {
-                let span = Span::new(self.src.clone(), self.pos - 2, self.pos);
-                self.report_diag(DiagMsg {
-                    severity: Severity::Error,
-                    message: format!("unknown escape sequence '{0}'; do you want to literally represent '\\{0}'?", next),
-                    pos: Some(Pos::new(self.src.clone(), self.pos - 1)),
-                    span: vec![span.clone()],
-                    hint: vec![FixItHint::new(span, format!("\\\\{}", next))],
-                });
+                self.report_span_with_hint(
+                    Severity::Error,
+                    format!("unknown escape sequence '{0}'; do you want to literally represent '\\{0}'?", next),
+                    format!("\\\\{}", next),
+                    self.pos - 2,
+                    self.pos,
+                );
                 None
             }
         }
@@ -563,14 +568,13 @@ impl Tokenizer {
             };
 
             if !num_after_dot {
-                let span = Span::new(self.src.clone(), start, self.pos);
-                self.report_diag(DiagMsg {
-                    severity: Severity::Error,
-                    message: "no digit after dot in real number literal; do you want to mean '.0'?".to_owned(),
-                    pos: Some(Pos::new(self.src.clone(), self.pos)),
-                    span: vec![span.clone()],
-                    hint: vec![FixItHint::new(span, format!("{}0", &self.src_text[start..self.pos]))],
-                });
+                self.report_span_with_hint(
+                    Severity::Error,
+                    "no digit after dot in real number literal; do you want to mean '.0'?",
+                    format!("{}0", &self.src_text[start..self.pos]),
+                    start, 
+                    self.pos,
+                );
                 return TokenKind::RealLiteral(str.parse::<f64>().unwrap())
             }
 
@@ -601,7 +605,7 @@ impl Tokenizer {
                     self.report_span(
                         Severity::Error,
                         "expected exponent in real number literal",
-                        self.pos, start, self.pos,
+                        start, self.pos + 1,
                     );
 
                     // Error recovery: assume exponent part is actually 0
@@ -618,14 +622,13 @@ impl Tokenizer {
             match self.try_parse_time_unit() {
                 Some(v) => {
                     if has_exp {
-                        let span = Span::new(self.src.clone(), start, index_before_time);
-                        self.report_diag(DiagMsg {
-                            severity: Severity::Error,
-                            message: "time unit can only be applied to fixed point literal".to_owned(),
-                            pos: Some(Pos::new(self.src.clone(), self.pos - 1)),
-                            span: vec![span.clone()],
-                            hint: vec![FixItHint::new(span, format!("{}", parsed))],
-                        });
+                        self.report_span_with_hint(
+                            Severity::Error,
+                            "time unit can only be applied to fixed point literal",
+                            format!("{}", parsed),
+                            start,
+                            index_before_time,
+                        );
                     }
                     return TokenKind::TimeLiteral(parsed * v)
                 }
@@ -664,21 +667,20 @@ impl Tokenizer {
                         self.report_span(
                             Severity::Error,
                             "size specifier cannot be zero",
-                            start, start, size_pos
+                            start, size_pos
                         );
 
                         // Error recovery
                         size = 1;
                     } else {
                         // This is a separate diagnostics since we have a clue about how to fix.
-                        let span = Span::new(self.src.clone(), start, size_pos);
-                        self.report_diag(DiagMsg {
-                            severity: Severity::Error,
-                            message: "size specifier cannot begin with zero".to_owned(),
-                            pos: Some(Pos::new(self.src.clone(), start)),
-                            span: vec![span.clone()],
-                            hint: vec![FixItHint::new(span, format!("{}", size))],
-                        });
+                        self.report_span_with_hint(
+                            Severity::Error,
+                            "size specifier cannot begin with zero",
+                            format!("{}", size),
+                            start,
+                            size_pos,
+                        );
                     }
                 }
 
@@ -775,7 +777,7 @@ impl Tokenizer {
             '(' => {
                 if self.nextch_if('*') {
                     if self.attr {
-                        self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.start, self.pos);
+                        self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.pos);
                     }
                     self.attr = true;
                     TokenKind::OpenDelim(Delim::Attr)
@@ -848,7 +850,7 @@ impl Tokenizer {
                     Some(')') => {
                         self.nextch();
                         if !self.attr {
-                            self.report_span(Severity::Error, "attribute *) without corresponding (*", self.start, self.start, self.pos);
+                            self.report_span(Severity::Error, "attribute *) without corresponding (*", self.start, self.pos);
                         }
                         self.attr = false;
                         TokenKind::CloseDelim(Delim::Attr)
@@ -1087,13 +1089,13 @@ impl Tokenizer {
                 TokenKind::BlockComment => continue,
                 _ => ()
             }
-            return Box::new(Spanned::new(tok, Span::new(self.src.clone(), self.start, self.pos)));
+            return Spanned::new(tok, Span(Pos(self.src_offset.0 + self.start), Pos(self.src_offset.0 + self.pos)));
         }
     }
 
     pub fn next_tree(&mut self) -> Token {
         let tok = self.next_span();
-        let delim = match **tok {
+        let delim = match *tok {
             // Continue processing if this is an open delimiter
             TokenKind::OpenDelim(delim) => delim,
             // Otherwise return as-is.
@@ -1108,7 +1110,7 @@ impl Tokenizer {
         // Keep reading token until we see a closing delimiter.
         let (close_tok, close_delim) = loop {
             let nxt = self.next_tree();
-            match **nxt {
+            match *nxt {
                 TokenKind::CloseDelim(delim) => break (nxt, Some(delim)),
                 TokenKind::Eof => break (nxt, None),
                 _ => vec.push_back(nxt)
@@ -1119,9 +1121,8 @@ impl Tokenizer {
                 self.report_span(
                     Severity::Error,
                     "open delimiter that is never closed",
-                    tok.span().start,
-                    tok.span().start,
-                    tok.span().end,
+                    tok.span.0 .0,
+                    tok.span.1 .0,
                 );
             }
             Some(v) if v != exp_close => {
@@ -1129,22 +1130,21 @@ impl Tokenizer {
                 self.report_span(
                     Severity::Error,
                     format!("unexpected closing delimiter, expecting {:#?}", exp_close),
-                    close_tok.span().start,
-                    close_tok.span().start,
-                    close_tok.span().end,
+                    close_tok.span.0 .0,
+                    close_tok.span.1 .0,
                 );
             }
             _ => (),
         }
-        let overall_span = tok.span().join(close_tok.span());
-        Box::new(Spanned::new(
-            TokenKind::DelimGroup(delim, DelimGroup {
+        let overall_span = tok.span.join(close_tok.span);
+        Spanned::new(
+            TokenKind::DelimGroup(delim, Box::new(DelimGroup {
                 open: tok,
                 close: close_tok,
                 tokens: vec
-            }),
+            })),
             overall_span
-        ))
+        )
     }
 }
 

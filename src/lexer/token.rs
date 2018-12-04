@@ -187,7 +187,7 @@ pub enum TokenKind {
 
     /// Represent a delimited group of token
     /// We borrowed Rust libsyntax's token tree concept, but we tweaked it for simplicity
-    DelimGroup(Delim, DelimGroup),
+    DelimGroup(Delim, Box<DelimGroup>),
 
     // These tokens are normally ignored, but we keep them here so that the lexer is also useful
     // potentially for code formatting purposes.
@@ -199,7 +199,7 @@ pub enum TokenKind {
 }
 
 /// A token with span information
-pub type Token = Box<Spanned<TokenKind>>;
+pub type Token = Spanned<TokenKind>;
 
 /// A delimited group of token
 #[derive(Debug)]
@@ -211,13 +211,30 @@ pub struct DelimGroup {
 
 pub trait TokenStream {
     fn next(&mut self) -> Token;
+    // fn peek(&mut self) -> &Token;
+    // fn peek_n(&mut self, n: usize) -> &Token;
+    // fn pushback(&mut self, tok: Token);
 }
 
 impl TokenStream for VecDeque<Token> {
     fn next(&mut self) -> Token {
         match self.pop_front() {
             Some(v) => v,
-            None => Box::new(Spanned::new_unspanned(TokenKind::Eof))
+            None => Spanned::new_unspanned(TokenKind::Eof)
         }
     }
+
+    // fn peek(&mut self) -> Token {
+    //     match self.first() {
+    //         Some(v) => v,
+    //         None => Spanned::new_unspanned(TokenKind::Eof)
+    //     }
+    // }
+
+    // fn peek_n(&mut self, n: usize) -> Token {
+    //     match self.first() {
+    //         Some(v) => v,
+    //         None => Spanned::new_unspanned(TokenKind::Eof)
+    //     }
+    // }
 }
