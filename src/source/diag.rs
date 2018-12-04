@@ -1,7 +1,7 @@
 use std::fmt;
 use std::cmp;
 use std::rc::Rc;
-use super::{Pos, Span};
+use super::{Span, SrcMgr};
 
 use colored::{Color, Colorize};
 
@@ -55,7 +55,6 @@ impl FixItHint {
 pub struct DiagMsg {
     pub severity: Severity,
     pub message: String,
-    pub pos: Option<Pos>,
     pub span: Vec<Span>,
     pub hint: Vec<FixItHint>
 }
@@ -97,7 +96,7 @@ impl VisualString {
         }
 
         // Reserve a column for end-of-line character
-        columns.push(vlen);
+        columns.push(vlen + 1);
 
         VisualString {
             str: vstr,
@@ -119,15 +118,18 @@ impl VisualString {
 }
 
 impl DiagMsg {
-    pub fn print(&self, color: bool, tab: usize) {
+    pub fn print(&self, mgr: &SrcMgr, color: bool, tab: usize) {
         // Stringify and color severity
         let mut severity = format!("{}: ", self.severity);
         if color {
             severity = severity.color(self.severity.color()).to_string();
         }
 
+        // Convert all spans to fat spans
+        let spans: Vec<_> = self.span.iter().flat_map(|x| mgr.find_span(*x)).collect();
+
         // If the message has no associated file, just print it
-        if self.pos.is_none() {
+        if spans.is_empty() {
             if color {
                 println!("{}{}", severity, self.message.bold());
             } else {
@@ -137,22 +139,21 @@ impl DiagMsg {
         }
 
         // Obtain line map
-        let pos = &self.pos.as_ref().unwrap();
-        let src = &pos.source;
+        let first_span = spans.first().unwrap();
+        let src = &first_span.source;
         let linemap = src.linemap();
 
         // Get line number (starting from 0)
-        let line = linemap.line_number(pos.pos);
+        let line = linemap.line_number(first_span.start);
         // Get position within the line
         let line_start = linemap.line_start_pos(line);
-        let line_offset = pos.pos - line_start;
         // Get source code line for handling
         let line_text = linemap.line(src, line);
         let vstr = VisualString::new(line_text, tab);
 
         // Get colored severity string
         // Generate the error message line
-        let mut msg = format!("{}:{}:{}: {}{}", src.filename(), line + 1, line_offset + 1, severity, self.message);
+        let mut msg = format!("{}:{}: {}{}", src.filename(), line + 1, severity, self.message);
         if color {
             msg = msg.bold().to_string();
         }
@@ -160,10 +161,12 @@ impl DiagMsg {
         // Allocate a char vector to hold indicators
         // Make this 1 longer for possibility to point to the line break character.
         let mut indicators = vec![' '; vstr.visual_length() + 1];
-        // Fill in ~ characters
-        for span in &self.span {
+        let mut character = '^';
+
+        // Fill in ^ and ~ characters for all spans
+        for span in &spans {
             // Unlikely event, we cannot display this
-            if !Rc::ptr_eq(&span.source, &pos.source) {
+            if !Rc::ptr_eq(&span.source, &first_span.source) {
                 continue
             }
 
@@ -174,7 +177,7 @@ impl DiagMsg {
             );
             let end = cmp::min(
                 cmp::max(span.end as isize - line_start as isize, 0) as usize,
-                line_text.len()
+                line_text.len() + 1
             );
 
             // Nothing to display
@@ -183,17 +186,12 @@ impl DiagMsg {
             }
 
             for i in vstr.visual_column(start)..vstr.visual_column(end) {
-                indicators[i] = '~';
+                indicators[i] = character;
             }
+
+            character = '~';
         }
 
-        // In case the pos is something wider then 1, fill with ~
-        let vcolumn = vstr.visual_column(line_offset);
-        for i in (vcolumn + 1)..vstr.visual_column(line_offset + 1) {
-            indicators[i] = '~';
-        }
-        // Insert ^ character
-        indicators[vcolumn] = '^';
         let mut indicator_line: String = indicators.into_iter().collect();
         if color {
             indicator_line = indicator_line.green().bold().to_string();
@@ -204,12 +202,18 @@ impl DiagMsg {
             let mut hints = vec![' '; vstr.visual_length()];
 
             for hint in &self.hint {
+                let span = match mgr.find_span(hint.span) {
+                    None => continue,
+                    Some(v) => v,
+                };
+
                 // Unlikely event, we cannot display this
-                if !Rc::ptr_eq(&hint.span.source, &pos.source) {
+                if !Rc::ptr_eq(&span.source, &first_span.source) {
                     continue
                 }
-                let start = hint.span.start as isize - line_start as isize;
-                let end = hint.span.end as isize - line_start as isize;
+
+                let start = span.start as isize - line_start as isize;
+                let end = span.end as isize - line_start as isize;
                 // We can only display it if it partially covers this line
                 if end < 0 || start > line_text.len() as isize {
                     continue;

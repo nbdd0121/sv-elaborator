@@ -3,64 +3,35 @@ use super::Source;
 use std::rc::Rc;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+use std::usize;
 
-pub struct Pos {
-    pub source: Rc<Source>,
-    pub pos: usize,
-}
+/// Represent a unique position within all source managed files.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Pos(pub usize);
 
-impl Pos {
-    pub fn new(src: Rc<Source>, pos: usize) -> Pos {
-        Pos {
-            source: src,
-            pos: pos
-        }
-    }
-
-    pub fn as_span(&self) -> Span {
-        Span {
-            source: self.source.clone(),
-            start: self.pos,
-            end: self.pos,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Span {
-    pub source: Rc<Source>,
-    pub start: usize,
-    pub end: usize,
-}
+/// Represent a span within all source managed files.
+#[derive(Clone, Copy)]
+pub struct Span(pub Pos, pub Pos);
 
 impl Span {
-    pub fn new(src: Rc<Source>, start: usize, end: usize) -> Span {
-        Span {
-            source: src,
-            start: start,
-            end: end,
-        }
+    /// Create a dummy span.
+    pub fn none() -> Span {
+        Span(Pos(usize::MAX), Pos(usize::MAX))
     }
 
-    pub fn start_pos(&self) -> Pos {
-        Pos {
-            source: self.source.clone(),
-            pos: self.start,
-        }
+    /// Check if this span is meaningful.
+    pub fn is_none(&self) -> bool {
+        let Span(Pos(a), _) = self;
+        *a == usize::MAX
     }
 
-    pub fn join(&self, r: &Span) -> Span {
-        if !Rc::ptr_eq(&self.source, &r.source) {
-            return self.clone();
-        }
-        Span {
-            source: self.source.clone(),
-            start: self.start,
-            end: r.end,
-        }
+    /// Join with another span
+    pub fn join(&self, span: Span) -> Span {
+        Span(self.0, span.1)
     }
 }
 
+/// Represent an object with span information
 #[derive(Clone)]
 pub struct Spanned<T> {
     pub node: T,
@@ -76,15 +47,10 @@ impl<T> Spanned<T> {
     }
 
     pub fn new_unspanned(node: T) -> Spanned<T> {
-        let dummy = Span::new(Source::dummy(), 0, 0);
         Spanned {
             node: node,
-            span: dummy,
+            span: Span::none(),
         }
-    }
-
-    pub fn span(&self) -> &Span {
-        &self.span
     }
 }
 
@@ -105,5 +71,44 @@ impl<T> DerefMut for Spanned<T> {
 impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.node.fmt(f)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.node.fmt(f)
+    }
+}
+
+/// Represent a position within a single source file.
+pub struct FatPos {
+    pub source: Rc<Source>,
+    pub pos: usize,
+}
+
+impl FatPos {
+    pub fn new(src: Rc<Source>, pos: usize) -> FatPos {
+        FatPos {
+            source: src,
+            pos: pos
+        }
+    }
+}
+
+/// Represent a span within a single source file.
+#[derive(Clone)]
+pub struct FatSpan {
+    pub source: Rc<Source>,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl FatSpan {
+    pub fn new(src: Rc<Source>, start: usize, end: usize) -> FatSpan {
+        FatSpan {
+            source: src,
+            start: start,
+            end: end,
+        }
     }
 }
