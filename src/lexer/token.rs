@@ -5,12 +5,16 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delim {
+    // Symbol delimiter
     Paren,
     Bracket,
     Brace,
     Attr,
     /// Open-only delimiter "'{". The corresponding close delimiter should be "'}".
     TickBrace,
+
+    // Keyword delimiters
+    Module,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,7 +164,7 @@ pub enum Operator {
      */
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenKind {
     /// This is an expression operator or structure symbols
     Operator(Operator),
@@ -202,7 +206,7 @@ pub enum TokenKind {
 pub type Token = Spanned<TokenKind>;
 
 /// A delimited group of token
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DelimGroup {
     pub open: Token,
     pub close: Token,
@@ -211,9 +215,15 @@ pub struct DelimGroup {
 
 pub trait TokenStream {
     fn next(&mut self) -> Token;
-    // fn peek(&mut self) -> &Token;
-    // fn peek_n(&mut self, n: usize) -> &Token;
-    // fn pushback(&mut self, tok: Token);
+    fn peek(&mut self) -> &Token;
+    fn peek_n(&mut self, n: usize) -> &Token;
+    fn pushback(&mut self, tok: Token);
+}
+
+lazy_static!{
+pub static ref EOF: Token = {
+    Spanned::new_unspanned(TokenKind::Eof)
+};
 }
 
 impl TokenStream for VecDeque<Token> {
@@ -224,17 +234,22 @@ impl TokenStream for VecDeque<Token> {
         }
     }
 
-    // fn peek(&mut self) -> Token {
-    //     match self.first() {
-    //         Some(v) => v,
-    //         None => Spanned::new_unspanned(TokenKind::Eof)
-    //     }
-    // }
+    fn peek(&mut self) -> &Token {
+        match self.front() {
+            Some(v) => v,
+            None => &EOF,
+        }
+    }
 
-    // fn peek_n(&mut self, n: usize) -> Token {
-    //     match self.first() {
-    //         Some(v) => v,
-    //         None => Spanned::new_unspanned(TokenKind::Eof)
-    //     }
-    // }
+    fn peek_n(&mut self, n: usize) -> &Token {
+        if self.len() > n {
+            &self[n]
+        } else {
+            &EOF
+        }
+    }
+
+    fn pushback(&mut self, tok: Token) {
+        self.push_front(tok);
+    }
 }

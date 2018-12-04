@@ -206,7 +206,7 @@ impl Tokenizer {
             // We only recognise keywords outside attributes
             if !self.attr {
                 match HASHMAP.get::<str>(&name) {
-                    Some(&(kw, v)) => if v <= self.keyword { return TokenKind::Keyword(kw) },
+                    Some(&(ref kw, v)) => if v <= self.keyword { return kw.clone() },
                     _ => (),
                 }
             }
@@ -1093,7 +1093,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn next_tree(&mut self) -> Token {
+    fn next_tree_recurse(&mut self) -> Token {
         let tok = self.next_span();
         let delim = match *tok {
             // Continue processing if this is an open delimiter
@@ -1109,7 +1109,7 @@ impl Tokenizer {
         let mut vec = VecDeque::new();
         // Keep reading token until we see a closing delimiter.
         let (close_tok, close_delim) = loop {
-            let nxt = self.next_tree();
+            let nxt = self.next_tree_recurse();
             match *nxt {
                 TokenKind::CloseDelim(delim) => break (nxt, Some(delim)),
                 TokenKind::Eof => break (nxt, None),
@@ -1146,10 +1146,52 @@ impl Tokenizer {
             overall_span
         )
     }
+
+    pub fn next_tree(&mut self) -> Token {
+        loop {
+            let tok = self.next_tree_recurse();
+            match *tok {
+                TokenKind::CloseDelim(_) => {
+                    self.report_span(
+                        Severity::Error,
+                        "extra closing delimiter",
+                        tok.span.0 .0,
+                        tok.span.1 .0,
+                    );
+                }
+                _ => return tok,
+            }
+        }
+    }
 }
 
 impl TokenStream for Tokenizer {
     fn next(&mut self) -> Token {
-        self.next_tree()
+        let ret = if self.peek.is_empty() {
+            self.next_tree()
+        } else {
+            self.peek.pop_front().unwrap()
+        };
+        ret
+    }
+
+    fn peek(&mut self) -> &Token {
+        if self.peek.is_empty() {
+            let next = self.next_tree();
+            self.peek.push_back(next);
+        }
+        self.peek.front().unwrap()
+    }
+
+    fn peek_n(&mut self, n: usize) -> &Token {
+        while self.peek.len() <= n {
+            let next = self.next_tree();
+            self.peek.push_back(next);
+        }
+        &self.peek[n]
+    }
+
+    fn pushback(&mut self, tok: Token) {
+        self.peek.push_front(tok);
     }
 }
