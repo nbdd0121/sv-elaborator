@@ -3,15 +3,17 @@ mod kw_map;
 mod token;
 
 pub use self::kw::Keyword;
-pub use self::token::{Token, Operator};
+pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup, TokenStream};
 
 use self::kw_map::HASHMAP;
 use super::source::{Source, DiagMsg, Severity, Pos, Span, Spanned, FixItHint};
 use super::number::{LogicValue, LogicNumber};
 
+use num::{BigUint, Zero, One, Num};
+
 use std::rc::Rc;
 use std::cmp;
-use num::{BigUint, Zero, One, Num};
+use std::collections::VecDeque;
 
 pub struct Tokenizer {
     pub src: Rc<Source>,
@@ -25,7 +27,9 @@ pub struct Tokenizer {
     // 5, 6, 7, 8 -> SystemVerilog 05, 09, 12, 17
     pub keyword: u8,
     pub keyword_stack: Vec<u8>,
-    pub attr: bool,
+    attr: bool,
+    // For implementing TokenStream
+    peek: VecDeque<Token>,
 }
 
 impl Tokenizer {
@@ -38,6 +42,7 @@ impl Tokenizer {
             keyword: 8,
             keyword_stack: Vec::new(),
             attr: false,
+            peek: VecDeque::new(),
         }
     }
 
@@ -166,7 +171,7 @@ impl Tokenizer {
     }
 
     // Parse all simple identifiers, keywords and system tasks
-    fn parse_identifier(&mut self, ch: char) -> Token {
+    fn parse_identifier(&mut self, ch: char) -> TokenKind {
         let mut name = String::new();
         name.push(ch);
         loop {
@@ -185,18 +190,25 @@ impl Tokenizer {
             }
         }
         if ch == '$' {
-            Token::SystemTask(name)
-        } else {
-            match HASHMAP.get::<str>(&name) {
-                Some(&(kw, v)) => if v <= self.keyword { return Token::Keyword(kw) },
-                _ => (),
+            if name.len() == 1 {
+                TokenKind::Operator(Operator::Dollar)
+            } else {
+                TokenKind::SystemTask(name)
             }
-            Token::Id(name)
+        } else {
+            // We only recognise keywords outside attributes
+            if !self.attr {
+                match HASHMAP.get::<str>(&name) {
+                    Some(&(kw, v)) => if v <= self.keyword { return TokenKind::Keyword(kw) },
+                    _ => (),
+                }
+            }
+            TokenKind::Id(name)
         }
     }
 
     // Parse escaped identifiers (\ is already consumed)
-    fn parse_esc_id(&mut self) -> Token {
+    fn parse_esc_id(&mut self) -> TokenKind {
         let mut name = String::new();
         loop {
             let next = match self.nextch() {
@@ -210,7 +222,7 @@ impl Tokenizer {
                 break
             }
         }
-        Token::Id(name)
+        TokenKind::Id(name)
     }
 
     // Parse escape sequence (\ is already consumed)
@@ -296,7 +308,7 @@ impl Tokenizer {
     }
 
     // Parse string (" is already consumed)
-    fn parse_string(&mut self) -> Token {
+    fn parse_string(&mut self) -> TokenKind {
         let mut content = String::new();
         loop {
             let next = match self.nextch() {
@@ -319,7 +331,7 @@ impl Tokenizer {
                 _ => content.push(next)
             }
         }
-        Token::StringLiteral(content)
+        TokenKind::StringLiteral(content)
     }
 
     // Parse decimals. Report error when X and Zs are encountered, and discard all _ characters.
@@ -535,7 +547,7 @@ impl Tokenizer {
 
     // Parse when we encountered a digit. This can either be an integer without base specifier or
     // a real number.
-    fn parse_number(&mut self) -> Token {
+    fn parse_number(&mut self) -> TokenKind {
         let start = self.pos;
         let mut str = self.parse_decimal();
 
@@ -559,7 +571,7 @@ impl Tokenizer {
                     span: vec![span.clone()],
                     hint: vec![FixItHint::new(span, format!("{}0", &self.src_text[start..self.pos]))],
                 });
-                return Token::RealLiteral(str.parse::<f64>().unwrap())
+                return TokenKind::RealLiteral(str.parse::<f64>().unwrap())
             }
 
             str.push('.');
@@ -594,7 +606,7 @@ impl Tokenizer {
 
                     // Error recovery: assume exponent part is actually 0
                     str.push('0');
-                    return Token::RealLiteral(str.parse::<f64>().unwrap())
+                    return TokenKind::RealLiteral(str.parse::<f64>().unwrap())
                 }
 
                 str.push_str(&self.parse_decimal());
@@ -615,18 +627,18 @@ impl Tokenizer {
                             hint: vec![FixItHint::new(span, format!("{}", parsed))],
                         });
                     }
-                    return Token::TimeLiteral(parsed * v)
+                    return TokenKind::TimeLiteral(parsed * v)
                 }
                 None => (),
             }
 
-            return Token::RealLiteral(parsed)
+            return TokenKind::RealLiteral(parsed)
         }
 
         // Parsing time unit
         match self.try_parse_time_unit() {
             Some(v) => {
-                return Token::TimeLiteral(str.parse::<f64>().unwrap() * v)
+                return TokenKind::TimeLiteral(str.parse::<f64>().unwrap() * v)
             }
             None => (),
         }
@@ -673,7 +685,7 @@ impl Tokenizer {
                 let mut num = self.parse_based_number();
                 num.x_extend(size);
                 num.sized = true;
-                return Token::IntegerLiteral(num);
+                return TokenKind::IntegerLiteral(num);
             }
 
             // This is only a number, restore position
@@ -681,7 +693,7 @@ impl Tokenizer {
         }
 
         let num: BigUint = str.parse().unwrap();
-        Token::IntegerLiteral(LogicNumber {
+        TokenKind::IntegerLiteral(LogicNumber {
             width: cmp::min(num.bits(), 32),
             sized: false,
             signed: true,
@@ -690,40 +702,40 @@ impl Tokenizer {
         })
     }
 
-    pub fn next_tk(&mut self) -> Token {
+    pub fn next_tk(&mut self) -> TokenKind {
         self.start = self.pos;
 
         // Early return if result is EOF
         let ch = match self.nextch() {
-            None => return Token::Eof,
+            None => return TokenKind::Eof,
             Some(v) => v
         };
 
         match ch {
             // Whitespaces
-            ' ' | '\t' => Token::Whitespace,
+            ' ' | '\t' => TokenKind::Whitespace,
             // Line terminators
             '\r' => {
                 self.skip_crlf();
-                Token::NewLine
+                TokenKind::NewLine
             }
-            '\n' => Token::NewLine,
+            '\n' => TokenKind::NewLine,
             // Comments
             '/' => {
                 match self.peekch() {
                     Some('/') => {
                         self.skip_line_comment();
-                        Token::LineComment
+                        TokenKind::LineComment
                     }
                     Some('*') =>{
                         self.skip_block_comment();
-                        Token::BlockComment
+                        TokenKind::BlockComment
                     }
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::DivEq)
+                        TokenKind::Operator(Operator::DivEq)
                     }
-                    _ => Token::Operator(Operator::Div)
+                    _ => TokenKind::Operator(Operator::Div)
                 }
             }
             // Identifiers
@@ -735,7 +747,7 @@ impl Tokenizer {
             }
             '`' => {
                 self.report_pos(Severity::Warning, "compiler directive not yet supported", self.start);
-                Token::Whitespace
+                TokenKind::Whitespace
             }
             // Literals
             '0' ... '9' => {
@@ -745,17 +757,17 @@ impl Tokenizer {
             '\'' => {
                 match self.peekch().unwrap_or(' ') {
                     's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
-                        Token::IntegerLiteral(self.parse_based_number())
+                        TokenKind::IntegerLiteral(self.parse_based_number())
                     }
                     '{' => {
                         self.nextch();
-                        Token::Operator(Operator::TickBrace)
+                        TokenKind::OpenDelim(Delim::TickBrace)
                     }
-                    '0' => Token::UnbasedLiteral(LogicValue::Zero),
-                    '1' => Token::UnbasedLiteral(LogicValue::One),
-                    'z' | 'Z' => Token::UnbasedLiteral(LogicValue::Z),
-                    'x' | 'X' => Token::UnbasedLiteral(LogicValue::X),
-                    _ => Token::Operator(Operator::Tick)
+                    '0' => TokenKind::UnbasedLiteral(LogicValue::Zero),
+                    '1' => TokenKind::UnbasedLiteral(LogicValue::One),
+                    'z' | 'Z' => TokenKind::UnbasedLiteral(LogicValue::Z),
+                    'x' | 'X' => TokenKind::UnbasedLiteral(LogicValue::X),
+                    _ => TokenKind::Operator(Operator::Tick)
                 }
             }
             '"' => self.parse_string(),
@@ -766,72 +778,72 @@ impl Tokenizer {
                         self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.start, self.pos);
                     }
                     self.attr = true;
-                    Token::Operator(Operator::OpenAttr)
+                    TokenKind::OpenDelim(Delim::Attr)
                 } else {
-                    Token::Operator(Operator::OpenParen)
+                    TokenKind::OpenDelim(Delim::Paren)
                 }
             }
-            ')' => Token::Operator(Operator::CloseParen),
-            '[' => Token::Operator(Operator::OpenBracket),
-            ']' => Token::Operator(Operator::CloseBracket),
-            '{' => Token::Operator(Operator::OpenBrace),
-            '}' => Token::Operator(Operator::CloseBrace),
+            ')' => TokenKind::CloseDelim(Delim::Paren),
+            '[' => TokenKind::OpenDelim(Delim::Bracket),
+            ']' => TokenKind::CloseDelim(Delim::Bracket),
+            '{' => TokenKind::OpenDelim(Delim::Brace),
+            '}' => TokenKind::CloseDelim(Delim::Brace),
             // Operators
             '+' => {
                 match self.peekch() {
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::AddEq)
+                        TokenKind::Operator(Operator::AddEq)
                     }
                     Some('+') => {
                         self.nextch();
-                        Token::Operator(Operator::Inc)
+                        TokenKind::Operator(Operator::Inc)
                     }
                     Some(':') => {
                         self.nextch();
-                        Token::Operator(Operator::PlusColon)
+                        TokenKind::Operator(Operator::PlusColon)
                     }
-                    _ => Token::Operator(Operator::Add)
+                    _ => TokenKind::Operator(Operator::Add)
                 }
             }
             '-' => {
                 match self.peekch() {
                     Some(':') => {
                         self.nextch();
-                        Token::Operator(Operator::MinusColon)
+                        TokenKind::Operator(Operator::MinusColon)
                     }
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::SubEq)
+                        TokenKind::Operator(Operator::SubEq)
                     }
                     Some('-') => {
                         self.nextch();
-                        Token::Operator(Operator::Dec)
+                        TokenKind::Operator(Operator::Dec)
                     }
                     Some('>') => {
                         self.nextch();
                         if self.nextch_if('>') {
-                            Token::Operator(Operator::NonblockTrigger)
+                            TokenKind::Operator(Operator::NonblockTrigger)
                         } else {
-                            Token::Operator(Operator::Implies)
+                            TokenKind::Operator(Operator::Implies)
                         }
                     }
-                    _ => Token::Operator(Operator::Sub)
+                    _ => TokenKind::Operator(Operator::Sub)
                 }
             }
             '*' => {
                 match self.peekch() {
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::MulEq)
+                        TokenKind::Operator(Operator::MulEq)
                     }
                     Some('*') => {
                         self.nextch();
-                        Token::Operator(Operator::Power)
+                        TokenKind::Operator(Operator::Power)
                     }
                     Some('>') => {
                         self.nextch();
-                        Token::Operator(Operator::FullConnect)
+                        TokenKind::Operator(Operator::FullConnect)
                     }
                     Some(')') => {
                         self.nextch();
@@ -839,40 +851,40 @@ impl Tokenizer {
                             self.report_span(Severity::Error, "attribute *) without corresponding (*", self.start, self.start, self.pos);
                         }
                         self.attr = false;
-                        Token::Operator(Operator::CloseAttr)
+                        TokenKind::CloseDelim(Delim::Attr)
                     }
-                    _ => Token::Operator(Operator::Mul)
+                    _ => TokenKind::Operator(Operator::Mul)
                 }
             }
             '%' => {
                 if self.nextch_if('=') {
-                    Token::Operator(Operator::ModEq)
+                    TokenKind::Operator(Operator::ModEq)
                 } else {
-                    Token::Operator(Operator::Mod)
+                    TokenKind::Operator(Operator::Mod)
                 }
             }
             '&' => {
                 match self.peekch() {
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::AndEq)
+                        TokenKind::Operator(Operator::AndEq)
                     }
                     Some('&') => {
                         self.nextch();
                         if self.nextch_if('&') {
-                            Token::Operator(Operator::TripleAnd)
+                            TokenKind::Operator(Operator::TripleAnd)
                         } else {
-                            Token::Operator(Operator::LAnd)
+                            TokenKind::Operator(Operator::LAnd)
                         }
                     }
-                    _ => Token::Operator(Operator::And)
+                    _ => TokenKind::Operator(Operator::And)
                 }
             }
             '^' => {
                 if self.nextch_if('|') {
-                    Token::Operator(Operator::Xnor)
+                    TokenKind::Operator(Operator::Xnor)
                 } else {
-                    Token::Operator(Operator::Xor)
+                    TokenKind::Operator(Operator::Xor)
                 }
             }
             '|' => {
@@ -880,25 +892,25 @@ impl Tokenizer {
                     Some('=') => {
                         self.nextch();
                         if self.nextch_if('>') {
-                            Token::Operator(Operator::NonOverlapImply)
+                            TokenKind::Operator(Operator::NonOverlapImply)
                         } else {
-                            Token::Operator(Operator::OrEq)
+                            TokenKind::Operator(Operator::OrEq)
                         }
                     }
                     Some('|') => {
                         self.nextch();
-                        Token::Operator(Operator::LOr)
+                        TokenKind::Operator(Operator::LOr)
                     }
                     Some('-') => {
                         self.nextch();
                         if self.nextch_if('>') {
-                            Token::Operator(Operator::OverlapImply)
+                            TokenKind::Operator(Operator::OverlapImply)
                         } else {
                             self.pushback('-');
-                            Token::Operator(Operator::Or)
+                            TokenKind::Operator(Operator::Or)
                         }
                     }
-                    _ => Token::Operator(Operator::Or)
+                    _ => TokenKind::Operator(Operator::Or)
                 }
             }
             '=' => {
@@ -908,20 +920,20 @@ impl Tokenizer {
                         match self.peekch() {
                             Some('=') => {
                                 self.nextch();
-                                Token::Operator(Operator::CaseEq)
+                                TokenKind::Operator(Operator::CaseEq)
                             }
                             Some('?') => {
                                 self.nextch();
-                                Token::Operator(Operator::WildEq)
+                                TokenKind::Operator(Operator::WildEq)
                             }
-                            _ => Token::Operator(Operator::Eq)
+                            _ => TokenKind::Operator(Operator::Eq)
                         }
                     }
                     Some('>') => {
                         self.nextch();
-                        Token::Operator(Operator::ParConnect)
+                        TokenKind::Operator(Operator::ParConnect)
                     }
-                    _ => Token::Operator(Operator::Assign)
+                    _ => TokenKind::Operator(Operator::Assign)
                 }
             }
             '!' => {
@@ -931,73 +943,73 @@ impl Tokenizer {
                         match self.peekch() {
                             Some('=') => {
                                 self.nextch();
-                                Token::Operator(Operator::CaseNeq)
+                                TokenKind::Operator(Operator::CaseNeq)
                             }
                             Some('?') => {
                                 self.nextch();
-                                Token::Operator(Operator::WildNeq)
+                                TokenKind::Operator(Operator::WildNeq)
                             }
-                            _ => Token::Operator(Operator::Neq)
+                            _ => TokenKind::Operator(Operator::Neq)
                         }
                     }
-                    _ => Token::Operator(Operator::LNot)
+                    _ => TokenKind::Operator(Operator::LNot)
                 }
             }
             '~' => {
                 match self.peekch() {
                     Some('&') => {
                         self.nextch();
-                        Token::Operator(Operator::Nand)
+                        TokenKind::Operator(Operator::Nand)
                     }
                     Some('|') => {
                         self.nextch();
-                        Token::Operator(Operator::Nor)
+                        TokenKind::Operator(Operator::Nor)
                     }
                     Some('^') => {
                         self.nextch();
-                        Token::Operator(Operator::Xnor)
+                        TokenKind::Operator(Operator::Xnor)
                     }
-                    _ => Token::Operator(Operator::Not)
+                    _ => TokenKind::Operator(Operator::Not)
                 }
             }
             '#' => {
                 if self.nextch_if('#') {
-                    Token::Operator(Operator::CycleDelay)
+                    TokenKind::Operator(Operator::CycleDelay)
                 } else {
-                    Token::Operator(Operator::Hash)
+                    TokenKind::Operator(Operator::Hash)
                 }
             }
-            ',' => Token::Operator(Operator::Comma),
+            ',' => TokenKind::Operator(Operator::Comma),
             '.' => {
                 if self.nextch_if('*') {
-                    Token::Operator(Operator::WildPattern)
+                    TokenKind::Operator(Operator::WildPattern)
                 } else {
-                    Token::Operator(Operator::Dot)
+                    TokenKind::Operator(Operator::Dot)
                 }
             }
             ':' => {
                 match self.peekch() {
                     Some(':') => {
                         self.nextch();
-                        Token::Operator(Operator::ScopeSep)
+                        TokenKind::Operator(Operator::ScopeSep)
                     }
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::DistEq)
+                        TokenKind::Operator(Operator::DistEq)
                     }
                     Some('/') => {
                         self.nextch();
-                        Token::Operator(Operator::DistDiv)
+                        TokenKind::Operator(Operator::DistDiv)
                     }
-                    _ => Token::Operator(Operator::Colon)
+                    _ => TokenKind::Operator(Operator::Colon)
                 }
             }
-            ';' => Token::Operator(Operator::Semicolon),
+            ';' => TokenKind::Operator(Operator::Semicolon),
             '<' => {
                 match self.peekch() {
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::Leq)
+                        TokenKind::Operator(Operator::Leq)
                     }
                     Some('<') => {
                         self.nextch();
@@ -1005,35 +1017,35 @@ impl Tokenizer {
                             Some('<') => {
                                 self.nextch();
                                 if self.nextch_if('=') {
-                                    Token::Operator(Operator::AShlEq)
+                                    TokenKind::Operator(Operator::AShlEq)
                                 } else {
-                                    Token::Operator(Operator::AShl)
+                                    TokenKind::Operator(Operator::AShl)
                                 }
                             }
                             Some('=') => {
                                 self.nextch();
-                                Token::Operator(Operator::LShlEq)
+                                TokenKind::Operator(Operator::LShlEq)
                             }
-                            _ => Token::Operator(Operator::LShl)
+                            _ => TokenKind::Operator(Operator::LShl)
                         }
                     }
                     Some('-') => {
                         self.nextch();
                         if self.nextch_if('>') {
-                            Token::Operator(Operator::Equiv)
+                            TokenKind::Operator(Operator::Equiv)
                         } else {
                             self.pushback('-');
-                            Token::Operator(Operator::Lt)
+                            TokenKind::Operator(Operator::Lt)
                         }
                     }
-                    _ => Token::Operator(Operator::Lt)
+                    _ => TokenKind::Operator(Operator::Lt)
                 }
             }
             '>' => {
                 match self.peekch() {
                     Some('=') => {
                         self.nextch();
-                        Token::Operator(Operator::Geq)
+                        TokenKind::Operator(Operator::Geq)
                     }
                     Some('>') => {
                         self.nextch();
@@ -1041,41 +1053,103 @@ impl Tokenizer {
                             Some('>') => {
                                 self.nextch();
                                 if self.nextch_if('=') {
-                                    Token::Operator(Operator::AShrEq)
+                                    TokenKind::Operator(Operator::AShrEq)
                                 } else {
-                                    Token::Operator(Operator::AShr)
+                                    TokenKind::Operator(Operator::AShr)
                                 }
                             }
                             Some('=') => {
                                 self.nextch();
-                                Token::Operator(Operator::LShrEq)
+                                TokenKind::Operator(Operator::LShrEq)
                             }
-                            _ => Token::Operator(Operator::LShr)
+                            _ => TokenKind::Operator(Operator::LShr)
                         }
                     }
-                    _ => Token::Operator(Operator::Gt)
+                    _ => TokenKind::Operator(Operator::Gt)
                 }
             }
-            '?' => Token::Operator(Operator::Question),
-            '@' => Token::Operator(Operator::At),
+            '?' => TokenKind::Operator(Operator::Question),
+            '@' => TokenKind::Operator(Operator::At),
             _ => {
                 self.report_pos(Severity::Error, "unknown character in source file", self.start);
-                Token::Unknown
+                TokenKind::Unknown
             }
         }
     }
 
-    pub fn next_span(&mut self) -> Spanned<Token> {
+    pub fn next_span(&mut self) -> Token {
         loop {
             let tok = self.next_tk();
             match tok {
-                Token::Whitespace |
-                Token::NewLine |
-                Token::LineComment |
-                Token::BlockComment => continue,
+                TokenKind::Whitespace |
+                TokenKind::NewLine |
+                TokenKind::LineComment |
+                TokenKind::BlockComment => continue,
                 _ => ()
             }
-            return Spanned::new(tok, Span::new(self.src.clone(), self.start, self.pos));
+            return Box::new(Spanned::new(tok, Span::new(self.src.clone(), self.start, self.pos)));
         }
+    }
+
+    pub fn next_tree(&mut self) -> Token {
+        let tok = self.next_span();
+        let delim = match **tok {
+            // Continue processing if this is an open delimiter
+            TokenKind::OpenDelim(delim) => delim,
+            // Otherwise return as-is.
+            _ => return tok,
+        };
+        let exp_close = match delim {
+            // "'{" correspond to "}"
+            Delim::TickBrace => Delim::Brace,
+            _ => delim,
+        };
+        let mut vec = VecDeque::new();
+        // Keep reading token until we see a closing delimiter.
+        let (close_tok, close_delim) = loop {
+            let nxt = self.next_tree();
+            match **nxt {
+                TokenKind::CloseDelim(delim) => break (nxt, Some(delim)),
+                TokenKind::Eof => break (nxt, None),
+                _ => vec.push_back(nxt)
+            }
+        };
+        match close_delim {
+            None => {
+                self.report_span(
+                    Severity::Error,
+                    "open delimiter that is never closed",
+                    tok.span().start,
+                    tok.span().start,
+                    tok.span().end,
+                );
+            }
+            Some(v) if v != exp_close => {
+                // If symbol doesn't match, raise an error
+                self.report_span(
+                    Severity::Error,
+                    format!("unexpected closing delimiter, expecting {:#?}", exp_close),
+                    close_tok.span().start,
+                    close_tok.span().start,
+                    close_tok.span().end,
+                );
+            }
+            _ => (),
+        }
+        let overall_span = tok.span().join(close_tok.span());
+        Box::new(Spanned::new(
+            TokenKind::DelimGroup(delim, DelimGroup {
+                open: tok,
+                close: close_tok,
+                tokens: vec
+            }),
+            overall_span
+        ))
+    }
+}
+
+impl TokenStream for Tokenizer {
+    fn next(&mut self) -> Token {
+        self.next_tree()
     }
 }

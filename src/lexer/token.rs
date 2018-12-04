@@ -1,19 +1,20 @@
 use super::super::number::{LogicValue, LogicNumber};
 use super::kw::Keyword;
+use super::super::source::Spanned;
+use std::collections::VecDeque;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delim {
+    Paren,
+    Bracket,
+    Brace,
+    Attr,
+    /// Open-only delimiter "'{". The corresponding close delimiter should be "'}".
+    TickBrace,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operator {
-    // Delimiters
-    OpenParen,
-    CloseParen,
-    OpenBracket,
-    CloseBracket,
-    OpenBrace,
-    CloseBrace,
-
-    OpenAttr,
-    CloseAttr,
-
     // Binary Ops
     Add,
     Sub,
@@ -69,6 +70,8 @@ pub enum Operator {
     At,
     // "'"
     Tick,
+    // "$"
+    Dollar,
 
     // Multi-character operator
     // "&&"
@@ -157,24 +160,64 @@ pub enum Operator {
      */
 }
 
-#[derive(Debug, Clone)]
-pub enum Token {
-    Eof,
-    Unknown,
-    Whitespace,
-    NewLine,
-    LineComment,
-    BlockComment,
-
+#[derive(Debug)]
+pub enum TokenKind {
+    /// This is an expression operator or structure symbols
     Operator(Operator),
-
-    Id(String),
+    /// This is a keyword
     Keyword(Keyword),
+    /// An opening delimiter
+    OpenDelim(Delim),
+    CloseDelim(Delim),
+
+    /// Identifier
+    Id(String),
+    /// A system-task identifier
     SystemTask(String),
 
+    // Literals
     StringLiteral(String),
     TimeLiteral(f64),
     RealLiteral(f64),
     IntegerLiteral(LogicNumber),
-    UnbasedLiteral(LogicValue)
+    UnbasedLiteral(LogicValue),
+
+    /// An unknown token. For error recovery purposes
+    Unknown,
+
+    /// Represent a delimited group of token
+    /// We borrowed Rust libsyntax's token tree concept, but we tweaked it for simplicity
+    DelimGroup(Delim, DelimGroup),
+
+    // These tokens are normally ignored, but we keep them here so that the lexer is also useful
+    // potentially for code formatting purposes.
+    Eof,
+    Whitespace,
+    NewLine,
+    LineComment,
+    BlockComment,
+}
+
+/// A token with span information
+pub type Token = Box<Spanned<TokenKind>>;
+
+/// A delimited group of token
+#[derive(Debug)]
+pub struct DelimGroup {
+    pub open: Token,
+    pub close: Token,
+    pub tokens: VecDeque<Token>,
+}
+
+pub trait TokenStream {
+    fn next(&mut self) -> Token;
+}
+
+impl TokenStream for VecDeque<Token> {
+    fn next(&mut self) -> Token {
+        match self.pop_front() {
+            Some(v) => v,
+            None => Box::new(Spanned::new_unspanned(TokenKind::Eof))
+        }
+    }
 }

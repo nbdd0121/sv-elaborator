@@ -50,6 +50,9 @@ impl Span {
     }
 
     pub fn join(&self, r: &Span) -> Span {
+        if !Rc::ptr_eq(&self.source, &r.source) {
+            return self.clone();
+        }
         Span {
             source: self.source.clone(),
             start: self.start,
@@ -70,6 +73,18 @@ impl<T> Spanned<T> {
             node: node,
             span: span,
         }
+    }
+
+    pub fn new_unspanned(node: T) -> Spanned<T> {
+        let dummy = Span::new(Source::dummy(), 0, 0);
+        Spanned {
+            node: node,
+            span: dummy,
+        }
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
