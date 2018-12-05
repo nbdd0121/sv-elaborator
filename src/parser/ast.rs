@@ -1,5 +1,5 @@
 use super::super::source::{Span, Spanned};
-use super::super::lexer::{Token, Keyword};
+use super::super::lexer::{Token, Keyword, Operator};
 
 //
 // General purpose helpers
@@ -220,6 +220,8 @@ pub enum ExprKind {
     ConstCast(Box<Expr>),
     SignCast(Signing, Box<Expr>),
     TypeCast(Box<Expr>, Box<Expr>),
+
+    Binary(Box<Expr>, Operator, Box<Expr>),
 }
 
 pub type Expr = Spanned<ExprKind>;

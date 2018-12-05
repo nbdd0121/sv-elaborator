@@ -1285,6 +1285,7 @@ impl Parser {
         // IMP: Parse drive_strength
         // IMP: Parse delay control
         self.parse_comma_list(|this| Ok(Some(this.parse_var_assign()?)), false, false)?;
+        self.expect_op(Operator::Semicolon);
         Ok(Item::ModuleDecl)
     }
 
@@ -1304,6 +1305,8 @@ impl Parser {
     //
 
     /// Parse an expression (or data_type)
+    ///
+    /// According to the spec:
     /// ```bnf
     /// expression ::=
     ///   primary
@@ -1315,6 +1318,22 @@ impl Parser {
     /// | inside_expression
     /// | tagged_union_expression
     /// ```
+    ///
+    /// Our rearrangement:
+    /// ```bnf
+    /// expression ::=
+    ///   binary_expression
+    /// | conditional_expression
+    /// | inside_expression
+    /// | tagged_union_expression
+    /// binary_expression ::=
+    ///   unary_expression
+    /// | binary_expression binary_operator { attribute_instance } expression
+    /// unary_expression ::=
+    ///   primary
+    /// | unary_operator { attribute_instance } primary
+    /// | inc_or_dec_expression
+    /// ```
     fn parse_expr(&mut self) -> Result<Option<Expr>> {
         match **self.peek() {
             // tagged_union_expression
@@ -1323,6 +1342,49 @@ impl Parser {
                 self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span)?;
                 unreachable!();
             }
+            _ => {
+                self.parse_bin_expr(0)
+            }
+        }
+    }
+
+    /// Parse binary expression using precedence climing method which saves stack space.
+    /// TODO: Handle <= properly
+    fn parse_bin_expr(&mut self, prec: i32) -> Result<Option<Expr>> {
+        let mut expr = match self.parse_unary_expr()? {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+
+        loop {
+            let (op, new_prec) = match **self.peek() {
+                TokenKind::Operator(op) => {
+                    match Self::get_bin_op_prec(op) {
+                        // Can only proceed if precedence is higher
+                        Some(v) if v > prec => (op, v),
+                        _ => break,
+                    }
+                }
+                _ => break,
+            };
+
+            self.consume();
+
+            if self.consume_if_delim(Delim::Attr).is_some() {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "attributes not yet supported", span)?;
+            }
+
+            let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec))?;
+            let span = expr.span.join(rhs.span);
+            expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, Box::new(rhs)), span);
+        }
+
+        Ok(Some(expr))
+    }
+
+    fn parse_unary_expr(&mut self) -> Result<Option<Expr>> {
+        match **self.peek() {
             // inc_or_dec_operator { attribute_instance } variable_lvalue
             // unary_operator { attribute_instance } primary
             TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
@@ -1332,9 +1394,6 @@ impl Parser {
             }
             _ => {
                 self.parse_primary()
-                // let span = self.peek().span.clone();
-                // self.report_span(Severity::Fatal, "expression support is not finished yet", span)?;
-                // unreachable!();
             }
         }
     }
@@ -1605,6 +1664,39 @@ impl Parser {
             Operator::Inc |
             Operator::Dec => true,
             _ => false,
+        }
+    }
+
+    /// Get precedence of binary operator. Exclude -> and ->>
+    fn get_bin_op_prec(op: Operator) -> Option<i32> {
+        match op {
+            Operator::Power => Some(11),
+            Operator::Mul |
+            Operator::Div |
+            Operator::Mod => Some(10),
+            Operator::Add |
+            Operator::Sub => Some(9),
+            Operator::LShl |
+            Operator::LShr |
+            Operator::AShl |
+            Operator::AShr => Some(8),
+            Operator::Lt |
+            Operator::Leq |
+            Operator::Gt |
+            Operator::Geq => Some(7),
+            Operator::Eq |
+            Operator::Neq |
+            Operator::CaseEq |
+            Operator::CaseNeq |
+            Operator::WildEq |
+            Operator::WildNeq => Some(6),
+            Operator::And => Some(5),
+            Operator::Xor |
+            Operator::Xnor => Some(4),
+            Operator::Or => Some(3),
+            Operator::LAnd => Some(2),
+            Operator::LOr => Some(1),
+            _ => None,
         }
     }
 
