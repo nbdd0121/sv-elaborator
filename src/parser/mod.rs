@@ -1,7 +1,7 @@
 pub mod ast;
 
 use self::ast::*;
-use super::lexer::{Tokenizer, Token, TokenKind, Keyword, Operator, TokenStream, Delim, DelimGroup};
+use super::lexer::{Token, TokenKind, Keyword, Operator, TokenStream, Delim, DelimGroup};
 use super::source::{SrcMgr, DiagMsg, Severity, Span, Spanned};
 
 use std::result;
@@ -12,6 +12,20 @@ use std::collections::VecDeque;
 pub struct Parser {
     mgr: Rc<SrcMgr>,
     lexer: Box<TokenStream>,
+}
+
+//
+// Macros for coding more handily
+//
+
+macro_rules! scope {
+    ($t:expr) => {
+        macro_rules! parse {
+            (expr) => {
+                $t.parse_unwrap(Self::parse_expr)?
+            }
+        }
+    }
 }
 
 type Result<T> = result::Result<T, ()>;
@@ -219,6 +233,42 @@ impl Parser {
     // Utility functions
     //
 
+    /// Unwrap `Option` with sensible error message
+    fn unwrap<T: AstNode>(&mut self, t: Option<T>) -> Result<T> {
+        match t {
+            None => {
+                let span = self.peek().span;
+                match T::recovery(span) {
+                    None => {
+                        self.report_span(
+                            Severity::Fatal,
+                            format!("{} support is not completed yet", T::name()),
+                            span
+                        )?;
+                        Err(())
+                    }
+                    Some(v) => {
+                        self.report_span(
+                            Severity::Error,
+                            format!("expected {}", T::name()),
+                            span
+                        )?;
+                        Ok(v)
+                    }
+                }
+            }
+            Some(v) => Ok(v),
+        }
+    }
+
+    /// Unwrap `Option` with sensible error message
+    fn parse_unwrap<T: AstNode, F: FnMut(&mut Self) -> Result<Option<T>>>(
+        &mut self, mut f: F
+    ) -> Result<T> {
+        let result = f(self)?;
+        self.unwrap(result)
+    }
+
     /// Expect the next token tree to be a delimited group, parse it with given function.
     fn parse_delim<T, F: FnMut(&mut Self) -> Result<T>>(
         &mut self, delim: Delim, f: F
@@ -356,6 +406,42 @@ impl Parser {
         Ok(())
     }
 
+    /// Parse a seperated list, but do not attempt to build a vector.
+    fn parse_sep_list_unit<F: FnMut(&mut Self) -> Result<bool>>(
+        &mut self, sep: Operator, empty: bool, trail: bool, mut f: F
+    ) -> Result<()> {
+        // Parse first element
+        if !f(self)? {
+            // If we failed and this is the first element, then we get an empty list
+            if !empty {
+                let span = self.peek().span;
+                self.report_span(Severity::Error, "empty list not allowed", span)?;
+            }
+            return Ok(())
+        }
+
+        loop {
+            // Consume comma if there is some, break otherwise
+            let comma = match self.consume_if_op(sep) {
+                None => break,
+                Some(v) => v,
+            };
+            if !f(self)? {
+                if !trail {
+                    // TODO: We could place a FixItHint here.
+                    self.report_span(
+                        Severity::Error,
+                        format!("trailing {:#?} is not allowed; consider removing it", sep),
+                        comma.span
+                    )?;
+                }
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check if the list contains invalid elements, and remove them.
     fn check_list<T, F: FnMut(&mut Self, &T) -> Result<bool>>(
         &mut self, mut f: F, list: &mut Vec<T>
@@ -387,14 +473,57 @@ impl Parser {
     /// ```bnf
     /// item ::= { attribute_instance } item_noattr
     /// item_noattr ::=
-    ///   module_declaration
+    /// # from 'description' (expanded)
+    ///   *net_declaration*
+    ///   *data_declaration*
+    /// | timeunits_declaration
+    /// | module_declaration
     /// | udp_declaration
     /// | interface_declaration
     /// | program_declaration
     /// | package_declaration
-    /// | package_item
     /// | bind_directive
     /// | config_declaration
+    /// | anonymous_program
+    /// | package_export_declaration
+    /// | task_declaration
+    /// | function_declaration
+    /// | checker_declaration
+    /// | dpi_import_export
+    /// | extern_constraint_declaration
+    /// | class_declaration
+    /// | class_constructor_declaration
+    /// | local_parameter_declaration ;
+    /// | parameter_declaration ;
+    /// | covergroup_declaration
+    /// | assertion_item_declaration
+    /// # from 'module_item'
+    /// | *udp_instantiation*
+    /// | *interface_instantiation*
+    /// | *program_instantiation*
+    /// | *module_instantiation*
+    /// | port_declaration
+    /// | generate_region
+    /// | specify_block
+    /// | specparam_declaration
+    /// | parameter_override
+    /// | gate_instantiation
+    /// | genvar_declaration
+    /// | clocking_declaration
+    /// | default clocking clocking_identifier ;
+    /// | default disable iff expression_or_dist ;
+    /// | assertion_item
+    /// | continuous_assign
+    /// | net_alias
+    /// | initial_construct
+    /// | final_construct
+    /// | always_construct
+    /// | loop_generate_construct
+    /// | conditional_generate_construct
+    /// | elaboration_system_task
+    /// # from 'interface item'
+    /// | modport_declaration
+    /// | extern_tf_declaration 
     /// ```
     ///
     /// SystemVerilog supports following extern definitions:
@@ -409,7 +538,10 @@ impl Parser {
     fn parse_item(&mut self) -> Result<Option<Item>> {
         match self.peek().node {
             TokenKind::Eof => Ok(None),
+            // module_declaration
             TokenKind::DelimGroup(Delim::Module, _) => Ok(Some(self.parse_module()?)),
+            // continuous_assign
+            TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
                 let clone = self.peek().span.clone();
@@ -658,7 +790,9 @@ impl Parser {
                 // Explicit port declaration
                 if let Some(_) = this.consume_if_op(Operator::Dot) {
                     let name = Box::new(this.expect_id()?);
-                    let expr = this.parse_delim(Delim::Paren, Self::parse_expr)?;
+                    let expr = Box::new(this.parse_unwrap(|this| {
+                        this.parse_delim(Delim::Paren, Self::parse_expr)
+                    })?);
 
                     // If not specified, default to inout
                     let dir = dir.unwrap_or_else(|| {
@@ -999,7 +1133,7 @@ impl Parser {
         self.check_list(Self::check_unpacked_dim, &mut dim)?;
         let init = match self.consume_if_op(Operator::Assign) {
             None => None,
-            Some(_) => Some(self.parse_expr()?),
+            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr)?)),
         };
         Ok(DeclAssign {
             name: ident,
@@ -1027,6 +1161,7 @@ impl Parser {
     /// ```
     fn parse_dim(&mut self) -> Result<Option<Dim>> {
         self.parse_if_delim_spanned(Delim::Bracket, |this| {
+            scope!(this);
             Ok(match this.peek().node {
                 TokenKind::Eof => {
                     DimKind::Unsized
@@ -1036,7 +1171,7 @@ impl Parser {
                     let limit = match this.consume_if_op(Operator::Colon) {
                         None => None,
                         Some(_) => {
-                            Some(this.parse_expr()?)
+                            Some(Box::new(parse!(expr)))
                         }
                     };
                     DimKind::Queue(limit)
@@ -1049,7 +1184,7 @@ impl Parser {
                     match this.parse_expr_or_type()? {
                         ExprOrType::Expr(expr) => {
                             if this.consume_if_op(Operator::Colon).is_some() {
-                                let end = this.parse_expr()?;
+                                let end = Box::new(parse!(expr));
                                 DimKind::Range(expr, end)
                             } else {
                                 DimKind::Value(expr)
@@ -1105,30 +1240,397 @@ impl Parser {
     }
 
     //
-    // Unknown A
+    // A.6.1 Continuous assignment and net alias statements
+    //
+    fn parse_continuous_assign(&mut self) -> Result<Item> {
+        self.consume();
+        // IMP: Parse drive_strength
+        // IMP: Parse delay control
+        self.parse_comma_list(|this| Ok(Some(this.parse_var_assign()?)), false, false)?;
+        Ok(Item::ModuleDecl)
+    }
+
+    //
+    // A.6.2 Procedural blocks and assignments
+    //
+    fn parse_var_assign(&mut self) -> Result<()> {
+        self.parse_lvalue()?;
+        self.expect_op(Operator::Assign)?;
+        self.parse_unwrap(Self::parse_expr)?;
+        // TODO Return value
+        Ok(())
+    }
+
+    //
+    // A.8.3 Expressions
     //
 
-    fn parse_expr_unbox(&mut self) -> Result<Expr> {
-        match self.peek().node {
-            TokenKind::Id(_) | TokenKind::IntegerLiteral(_) | TokenKind::UnbasedLiteral(_) => {
-                let tok = self.consume();
-                let sp = tok.span.clone();
-                Ok(Spanned::new(ExprKind::Literal(tok), sp))
+    /// Parse an expression (or data_type)
+    /// ```bnf
+    /// expression ::=
+    ///   primary
+    /// | unary_operator { attribute_instance } primary
+    /// | inc_or_dec_expression
+    /// | ( operator_assignment )
+    /// | expression binary_operator { attribute_instance } expression
+    /// | conditional_expression
+    /// | inside_expression
+    /// | tagged_union_expression
+    /// ```
+    fn parse_expr(&mut self) -> Result<Option<Expr>> {
+        match **self.peek() {
+            // tagged_union_expression
+            TokenKind::Keyword(Keyword::Tagged) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span)?;
+                unreachable!();
+            }
+            // inc_or_dec_operator { attribute_instance } variable_lvalue
+            // unary_operator { attribute_instance } primary
+            TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "prefix_expression not yet supported", span)?;
+                unreachable!();
             }
             _ => {
-                let span = self.peek().span.clone();
-                self.report_span(Severity::Fatal, "expression support is not finished yet", span)?;
-                unreachable!();
+                self.parse_primary_nocast()
+                // let span = self.peek().span.clone();
+                // self.report_span(Severity::Fatal, "expression support is not finished yet", span)?;
+                // unreachable!();
             }
         }
     }
 
-    fn parse_expr(&mut self) -> Result<Box<Expr>> {
-        Ok(Box::new(self.parse_expr_unbox()?))
+    /// Combined parser of bit_select (single) and part_select_range.
+    ///
+    /// According to spec
+    /// ```bnf
+    /// bit_select ::=
+    ///   { [ expression ] } <- we parse [ expression ] here instead.
+    /// part_select_range ::=
+    ///   constant_range | indexed_range
+    /// indexed_range ::=
+    ///   expression +: constant_expression | expression -: constant_expression
+    /// ```
+    fn parse_single_select(&mut self) -> Result<Select> {
+        self.parse_delim(Delim::Bracket, |this| {
+            scope!(this);
+            let expr = parse!(expr);
+            match **this.peek() {
+                TokenKind::Operator(Operator::Colon) => {
+                    this.consume();
+                    Ok(Select::Range(Box::new(expr), Box::new(parse!(expr))))
+                }
+                TokenKind::Operator(Operator::PlusColon) => {
+                    this.consume();
+                    Ok(Select::PlusRange(Box::new(expr), Box::new(parse!(expr))))
+                }
+                TokenKind::Operator(Operator::MinusColon) => {
+                    this.consume();
+                    Ok(Select::MinusRange(Box::new(expr), Box::new(parse!(expr))))
+                }
+                _ => Ok(Select::Value(Box::new(expr))),
+            }
+        })
+    }
+
+    //
+    // A.8.4 Primaries (or data_type)
+    //
+
+    /// Parse primary expression, except for cast. Cast is special as it can take form
+    /// `primary '(expr)` which introduces left recursion.
+    ///
+    /// According to spec
+    /// ```bnf
+    /// primary ::=
+    ///   primary_literal
+    /// | [ class_qualifier | package_scope ] hierarchical_identifier select
+    /// | empty_queue
+    /// | concatenation [ [ range_expression ] ]
+    /// | multiple_concatenation [ [ range_expression ] ]
+    /// | function_subroutine_call
+    /// | let_expression
+    /// | ( mintypmax_expression )
+    /// | cast
+    /// | assignment_pattern_expression
+    /// | streaming_concatenation
+    /// | sequence_method_call
+    /// | this
+    /// | $
+    /// | null
+    /// ```
+    fn parse_primary_nocast(&mut self) -> Result<Option<Expr>> {
+        match **self.peek() {
+            // Case where this isn't an expression
+            TokenKind::Eof => Ok(None),
+            // primary_literal
+            // $
+            // null
+            TokenKind::RealLiteral(_) |
+            TokenKind::IntegerLiteral(_) |
+            TokenKind::TimeLiteral(_) |
+            TokenKind::UnbasedLiteral(_) |
+            TokenKind::StringLiteral(_) | 
+            TokenKind::Operator(Operator::Dollar) |
+            TokenKind::Keyword(Keyword::Null) => {
+                let tok = self.consume();
+                let sp = tok.span.clone();
+                Ok(Some(Spanned::new(ExprKind::Literal(tok), sp)))
+            }
+            // empty_queue
+            // concatenation [ [ range_expression ] ]
+            // multiple_concatenation [ [ range_expression ] ]
+            // streaming_concatenation
+            TokenKind::DelimGroup(Delim::Brace, _) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "concat is not finished yet", span)?;
+                unreachable!();
+            }
+            // assignment_pattern_expression
+            TokenKind::DelimGroup(Delim::TickBrace, _) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "assign pattern is not finished yet", span)?;
+                unreachable!();
+            }
+            // ( mintypmax_expression )
+            TokenKind::DelimGroup(Delim::Paren, _) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "paren is not finished yet", span)?;
+                unreachable!();
+            }
+            // The left-over possibilities are:
+            // [ class_qualifier | package_scope ] hierarchical_identifier select
+            // function_subroutine_call
+            // let_expression
+            // cast
+            // sequence_method_call
+            // this
+            // We cannot really distinguish between them directly. But we noted they all begin
+            // with a hierachical name (or keyword typename). So we parse it first, and then try
+            // to parse the rest as postfix operation.
+            _ => {
+                let begin_span = self.peek().span;
+                let scope = self.parse_scope()?;
+                let mut id = self.parse_hier_id()?;
+
+                // Not a primary expressison
+                if scope.is_none() && id.is_none() {
+                    Ok(None)
+                } else {
+                    // If we've seen the scopes then we must need to see the id
+                    if scope.is_some() && id.is_none() {
+                        let span = self.peek().span;
+                        self.report_span(Severity::Error, "expected identifiers after scope", span)?;
+                        // Error recovery
+                        id = Some(HierId::Name(None, Box::new(Spanned::new_unspanned("".to_owned()))))
+                    }
+                    // TODO: This is a hack. Could do better
+                    let end_span = self.peek().span;
+                    let end_span = Span(end_span.0, end_span.0);
+                    let expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), begin_span.join(end_span));
+                    
+                    match **self.peek() {
+                        // If next is '{, then this is actually an assignment pattern
+                        TokenKind::DelimGroup(Delim::TickBrace, _) => {
+                            let span = self.peek().span;
+                            self.report_span(Severity::Fatal, "assign pattern is not finished yet", span)?;
+                            unreachable!();
+                        }
+                        // This can be either function call or inc/dec expression
+                        TokenKind::DelimGroup(Delim::Attr, _) => {
+                            let span = self.peek().span;
+                            self.report_span(Severity::Fatal, "inc/dec or function call not finished yet", span)?;
+                            unreachable!();
+                        }
+                        // Function call
+                        TokenKind::DelimGroup(Delim::Paren, _) => {
+                            let span = self.peek().span;
+                            self.report_span(Severity::Fatal, "function call not finished yet", span)?;
+                            unreachable!();
+                        }
+                        // Inc/Dec
+                        TokenKind::Operator(Operator::Inc) |
+                        TokenKind::Operator(Operator::Dec) => {
+                            let span = self.peek().span;
+                            self.report_span(Severity::Fatal, "inc/dec not finished yet", span)?;
+                            unreachable!();
+                        }
+                        // Bit select
+                        TokenKind::DelimGroup(Delim::Bracket, _) => Ok(Some(self.parse_select(expr)?)),
+                        _ => Ok(Some(expr))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse select expression
+    /// select ::=
+    ///   [ { . member_identifier bit_select } . member_identifier ] bit_select
+    /// | [ [ part_select_range ] ]
+    fn parse_select(&mut self, mut expr: Expr) -> Result<Expr> {
+        loop {
+            match **self.peek() {
+                // Bit select
+                TokenKind::DelimGroup(Delim::Bracket, _) => {
+                    let sel = self.parse_single_select()?;
+                    // TODO better end span
+                    let end_span = self.peek().span;
+                    let end_span = Span(end_span.0, end_span.0);
+                    let span = expr.span.join(end_span);
+                    expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);
+                }
+                TokenKind::Operator(Operator::Dot) => {
+                    self.consume();
+                    let id = self.expect_id()?;
+                    let span = expr.span.join(id.span);
+                    expr = Spanned::new(ExprKind::Member(Box::new(expr), id), span);
+                }
+                _ => return Ok(expr)
+            }
+        }
+    }
+
+    //
+    // A.8.5 Expression left-side values
+    //
+    fn parse_lvalue(&mut self) -> Result<()> {
+        // TODO
+        self.expect_id()?;
+        Ok(())
+    }
+
+    //
+    // A.8.6 Operators
+    //
+
+    fn is_prefix_operator(op: Operator) -> bool {
+        match op {
+            Operator::Add |
+            Operator::Sub |
+            Operator::LNot |
+            Operator::Not |
+            Operator::And |
+            Operator::Nand |
+            Operator::Or |
+            Operator::Nor |
+            Operator::Xor |
+            Operator::Xnor => true,
+            Operator::Inc |
+            Operator::Dec => true,
+            _ => false,
+        }
+    }
+
+    //
+    // A.9.3 Identifiers
+    //
+
+    /// Parse scope. This is more generous than any scoped names in SystemVerilog spec.
+    /// ```bnf
+    /// [ local :: | $unit :: ] [ identifier [ parameter_value_assignment ] :: ]
+    /// ``` 
+    fn parse_scope(&mut self) -> Result<Option<Scope>> {
+        let mut scope = None;
+        loop {
+            match **self.peek() {
+                TokenKind::Keyword(Keyword::Local) => {
+                    let tok = self.consume();
+                    if let Some(_) = scope {
+                        self.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span)?;
+                    } else {
+                        scope = Some(Scope::Local)
+                    }
+                    self.expect_op(Operator::ScopeSep)?;
+                }
+                TokenKind::Keyword(Keyword::Unit) => {
+                    let tok = self.consume();
+                    if let Some(_) = scope {
+                        self.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span)?;
+                    } else {
+                        scope = Some(Scope::Local)
+                    }
+                    self.expect_op(Operator::ScopeSep)?;
+                }
+                TokenKind::Id(_) => {
+                    // Lookahead to check if this is actually a scope
+                    match **self.peek_n(1) {
+                        TokenKind::Operator(Operator::ScopeSep) => (),
+                        TokenKind::Operator(Operator::Hash) => {
+                            if let TokenKind::DelimGroup(Delim::Paren,_) = **self.peek_n(2) {
+                                if let TokenKind::Operator(Operator::ScopeSep) = **self.peek_n(3) {
+                                } else {
+                                    break
+                                }
+                            } else {
+                                break
+                            }
+                        }
+                        _ => break,
+                    };
+                    let ident = self.expect_id()?;
+                    if self.consume_if_op(Operator::Hash).is_some() {
+                        // TODO: Add parameter support
+                        self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span)?;
+                        unreachable!();
+                    }
+                    self.expect_op(Operator::ScopeSep)?;
+                    scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
+                }
+                _ => break,
+            }
+        }
+        Ok(scope)
+    }
+
+    /// Parse hierachical identifier
+    fn parse_hier_id(&mut self) -> Result<Option<HierId>> {
+        let mut id = None;
+        self.parse_sep_list_unit(Operator::Dot, true, false, |this| {
+            match **this.peek() {
+                TokenKind::Keyword(Keyword::This) => {
+                    let tok = this.consume();
+                    if let Some(_) = id {
+                        this.report_span(Severity::Error, "this can only be the outermost identifier", tok.span)?;
+                    } else {
+                        id = Some(HierId::This)
+                    }
+                }
+                TokenKind::Keyword(Keyword::Super) => {
+                    let tok = this.consume();
+                    match id {
+                        None | Some(HierId::This) => id = Some(HierId::Super),
+                        Some(_) => {
+                            this.report_span(Severity::Error, "super can only be the outermost identifier", tok.span)?;
+                        }
+                    }
+                }
+                TokenKind::Keyword(Keyword::Root) => {
+                    let tok = this.consume();
+                    if let Some(_) = id {
+                        this.report_span(Severity::Error, "$root can only be the outermost identifier", tok.span)?;
+                    } else {
+                        id = Some(HierId::Root)
+                    }
+                }
+                TokenKind::Id(_) => {
+                    id = Some(HierId::Name(
+                        // Hack to move id out temporarily
+                        mem::replace(&mut id, None).map(Box::new),
+                        Box::new(this.expect_id()?)
+                    ))
+                }
+                _ => return Ok(false)
+            }
+            Ok(true)
+        })?;
+        Ok(id)
     }
 
     fn parse_expr_or_type(&mut self) -> Result<ExprOrType> {
-        Ok(ExprOrType::Expr(self.parse_expr()?))
+        scope!(self);
+        Ok(ExprOrType::Expr(Box::new(parse!(expr))))
     }
 
 }

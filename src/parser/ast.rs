@@ -1,5 +1,24 @@
-use super::super::source::{Spanned};
+use super::super::source::{Span, Spanned};
 use super::super::lexer::{Token, Keyword};
+
+//
+// General purpose helpers
+//
+
+pub trait AstNode where Self: Sized {
+    /// An user-friendly name for error message
+    fn name() -> &'static str;
+
+    /// Given a span, return an `Self` for error-recovery purpose.
+    /// If `None` is returned, a fatal error will be thrown.
+    fn recovery(_: Span) -> Option<Self> {
+        None
+    }
+}
+
+//
+// Unknown
+//
 
 pub enum Item {
     TimeunitDecl,
@@ -12,13 +31,6 @@ pub enum Item {
     BindDirective,
     ConfigDecl,
 }
-
-#[derive(Debug)]
-pub enum ExprKind {
-    Literal(Token)
-}
-
-pub type Expr = Spanned<ExprKind>;
 
 #[derive(Debug)]
 pub enum ExprOrType {
@@ -179,8 +191,66 @@ pub enum DimKind {
 pub type Dim = Spanned<DimKind>;
 
 ///
+/// A.8.3 Expressions
+///
+
+#[derive(Debug)]
+pub enum Select {
+    Range(Box<Expr>, Box<Expr>),
+    PlusRange(Box<Expr>, Box<Expr>),
+    MinusRange(Box<Expr>, Box<Expr>),
+    Value(Box<Expr>)
+}
+
+#[derive(Debug)]
+pub enum ExprKind {
+    Type(Box<DataType>),
+    Literal(Token),
+    
+    /// A hierachical name
+    HierName(Option<Scope>, HierId),
+
+    /// Element select
+    Select(Box<Expr>, Select),
+
+    /// Member access
+    Member(Box<Expr>, Ident),
+}
+
+pub type Expr = Spanned<ExprKind>;
+
+impl AstNode for Expr {
+    fn name() -> &'static str {
+        "expression"
+    }
+}
+
+
+///
 /// A.9.3 Identifiers
 ///
+
+#[derive(Debug)]
+pub enum Scope {
+    /// $unit scope
+    Unit,
+    /// local scope
+    Local,
+    /// a named scope, can possibily be nested with in a outer scope
+    Name(Option<Box<Scope>>, Box<Ident>),
+}
+
+#[derive(Debug)]
+pub enum HierId {
+    /// $root
+    Root,
+    /// this
+    This,
+    /// super or this.super
+    Super,
+    /// a named identifier, can possibily has a parent id
+    Name(Option<Box<HierId>>, Box<Ident>)
+}
 
 /// Should be boxed when nested in other AST structure. An exception is that if the identifier is
 /// a compulsory part for an AST, it does not have to be boxed.
