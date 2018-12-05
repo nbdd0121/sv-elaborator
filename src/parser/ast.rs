@@ -1,4 +1,4 @@
-use super::super::source::{Span, Spanned};
+use super::super::source::{Spanned};
 use super::super::lexer::{Token, Keyword};
 
 pub enum Item {

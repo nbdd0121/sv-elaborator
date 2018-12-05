@@ -1,10 +1,13 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
+    // System task identifiers that are treated as keyword
+    Unit,
+    Root,
+
     // Verilog 95
     Always,
     And,
     Assign,
-    Begin,
     Buf,
     Bufif0,
     Bufif1,
@@ -18,7 +21,6 @@ pub enum Keyword {
     Disable,
     Edge,
     Else,
-    End,
     Endcase,
     Endmodule,
     Endfunction,

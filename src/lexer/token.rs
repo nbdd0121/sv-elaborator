@@ -14,6 +14,7 @@ pub enum Delim {
     TickBrace,
 
     // Keyword delimiters
+    Block,
     Module,
 }
 

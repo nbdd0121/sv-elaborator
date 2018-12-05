@@ -197,10 +197,11 @@ impl Tokenizer {
             }
         }
         if ch == '$' {
-            if name.len() == 1 {
-                TokenKind::Operator(Operator::Dollar)
-            } else {
-                TokenKind::SystemTask(name)
+            match &name as &str {
+                "$" => TokenKind::Operator(Operator::Dollar),
+                "$unit" => TokenKind::Keyword(Keyword::Unit),
+                "$root" => TokenKind::Keyword(Keyword::Root),
+                _ => TokenKind::SystemTask(name),
             }
         } else {
             // We only recognise keywords outside attributes

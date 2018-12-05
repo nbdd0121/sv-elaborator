@@ -9,7 +9,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("always", (TokenKind::Keyword(Keyword::Always), 1));
     m.insert("and", (TokenKind::Keyword(Keyword::And), 1));
     m.insert("assign", (TokenKind::Keyword(Keyword::Assign), 1));
-    m.insert("begin", (TokenKind::Keyword(Keyword::Begin), 1));
+    m.insert("begin", (TokenKind::OpenDelim(Delim::Block), 1));
     m.insert("buf", (TokenKind::Keyword(Keyword::Buf), 1));
     m.insert("bufif0", (TokenKind::Keyword(Keyword::Bufif0), 1));
     m.insert("bufif1", (TokenKind::Keyword(Keyword::Bufif1), 1));
@@ -23,7 +23,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("disable", (TokenKind::Keyword(Keyword::Disable), 1));
     m.insert("edge", (TokenKind::Keyword(Keyword::Edge), 1));
     m.insert("else", (TokenKind::Keyword(Keyword::Else), 1));
-    m.insert("end", (TokenKind::Keyword(Keyword::End), 1));
+    m.insert("end", (TokenKind::CloseDelim(Delim::Block), 1));
     m.insert("endcase", (TokenKind::Keyword(Keyword::Endcase), 1));
     m.insert("endmodule", (TokenKind::CloseDelim(Delim::Module), 1));
     m.insert("endfunction", (TokenKind::Keyword(Keyword::Endfunction), 1));
