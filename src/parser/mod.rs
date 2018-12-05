@@ -277,6 +277,16 @@ impl Parser {
         self.delim_group(delim.tokens, f)
     }
 
+    /// Expect the next token tree to be a delimited group, parse it with given function.
+    fn parse_delim_spanned<T, F: FnMut(&mut Self) -> Result<T>>(
+        &mut self, delim: Delim, f: F
+    ) -> Result<Spanned<T>> {
+        let span = self.peek().span;
+        let delim = self.expect_delim(delim)?;
+        Ok(Spanned::new(self.delim_group(delim.tokens, f)?, span))
+    }
+
+
     /// If the next token tree to be a delimited group, parse it with given function, otherwise
     /// return `None`.
     fn parse_if_delim<T, F: FnMut(&mut Self) -> Result<T>>(
@@ -995,6 +1005,34 @@ impl Parser {
     // A.2.2.1 Net and variable types
     //
 
+    // If this keyword can begin a data_type definition
+    fn is_keyword_typename(kw: Keyword) -> bool {
+        match kw {
+            Keyword::Bit |
+            Keyword::Logic |
+            Keyword::Reg |
+            Keyword::Byte |
+            Keyword::Shortint |
+            Keyword::Int |
+            Keyword::Longint |
+            Keyword::Integer |
+            Keyword::Time |
+            Keyword::Shortreal |
+            Keyword::Real |
+            Keyword::Realtime |
+            Keyword::Struct |
+            Keyword::Union |
+            Keyword::Enum |
+            Keyword::String |
+            Keyword::Chandle |
+            Keyword::Virtual |
+            Keyword::Interface |
+            Keyword::Event |
+            Keyword::Type => true,
+            _ => false,
+        }
+    }
+
     /// Parse a data_type (or data_type_and_implicit). Note that for implicit, if there's no
     /// dimension & signing `None` will be returned.
     ///
@@ -1293,7 +1331,7 @@ impl Parser {
                 unreachable!();
             }
             _ => {
-                self.parse_primary_nocast()
+                self.parse_primary()
                 // let span = self.peek().span.clone();
                 // self.report_span(Severity::Fatal, "expression support is not finished yet", span)?;
                 // unreachable!();
@@ -1337,6 +1375,40 @@ impl Parser {
     //
     // A.8.4 Primaries (or data_type)
     //
+
+    /// Parse primary expression with cast.
+    fn parse_primary(&mut self) -> Result<Option<Expr>> {
+        let mut expr = match **self.peek() {
+            TokenKind::Keyword(Keyword::Const) => {
+                let span = self.consume().span;
+                self.expect_op(Operator::Tick)?;
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+                Spanned::new(ExprKind::ConstCast(Box::new(expr.node)), span.join(expr.span))
+            }
+            TokenKind::Keyword(Keyword::Signed) | 
+            TokenKind::Keyword(Keyword::Unsigned) => {
+                let span = self.peek().span;
+                let sign = self.parse_signing();
+                self.expect_op(Operator::Tick)?;
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+                Spanned::new(ExprKind::SignCast(sign, Box::new(expr.node)), span.join(expr.span))
+            }
+            _ => match self.parse_primary_nocast()? {
+                None => return Ok(None),
+                Some(v) => v,
+            }
+        };
+        loop {
+            if self.consume_if_op(Operator::Tick).is_none() {
+                break
+            }
+
+            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+            let span = expr.span.join(nexpr.span);
+            expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.node)), span)
+        }
+        Ok(Some(expr))
+    }
 
     /// Parse primary expression, except for cast. Cast is special as it can take form
     /// `primary '(expr)` which introduces left recursion.
@@ -1399,6 +1471,12 @@ impl Parser {
                 self.report_span(Severity::Fatal, "paren is not finished yet", span)?;
                 unreachable!();
             }
+            // system_tf_call
+            TokenKind::SystemTask(_) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "system task call", span)?;
+                unreachable!();
+            }
             // The left-over possibilities are:
             // [ class_qualifier | package_scope ] hierarchical_identifier select
             // function_subroutine_call
@@ -1409,6 +1487,13 @@ impl Parser {
             // We cannot really distinguish between them directly. But we noted they all begin
             // with a hierachical name (or keyword typename). So we parse it first, and then try
             // to parse the rest as postfix operation.
+            // Keyword type names, parse as data type
+            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
+                let ty = self.parse_data_type(false)?.unwrap();
+                let span = ty.span;
+                Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
+            }
+            // Otherwise, parse as name
             _ => {
                 let begin_span = self.peek().span;
                 let scope = self.parse_scope()?;

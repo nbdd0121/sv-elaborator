@@ -215,6 +215,11 @@ pub enum ExprKind {
 
     /// Member access
     Member(Box<Expr>, Ident),
+
+    /// Casts
+    ConstCast(Box<Expr>),
+    SignCast(Signing, Box<Expr>),
+    TypeCast(Box<Expr>, Box<Expr>),
 }
 
 pub type Expr = Spanned<ExprKind>;
