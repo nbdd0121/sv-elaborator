@@ -8,6 +8,7 @@ use std::result;
 use std::mem;
 use std::rc::Rc;
 use std::collections::VecDeque;
+use std::borrow::Borrow;
 
 pub struct Parser {
     mgr: Rc<SrcMgr>,
@@ -24,6 +25,9 @@ macro_rules! scope {
         macro_rules! parse {
             (expr) => {
                 $t.parse_unwrap(Self::parse_expr)?
+            };
+            (box(expr)) => {
+                Box::new($t.parse_unwrap(Self::parse_expr)?)
             };
             ([expr]) => {
                 $t.parse_expr()?
@@ -152,27 +156,21 @@ impl Parser {
         }
     }
 
-    fn consume_if_kw(&mut self, kw: Keyword) -> Option<Token> {
-        let nkw = match self.peek().value {
-            TokenKind::Keyword(kw) => kw,
-            _ => return None,
-        };
-        if nkw == kw {
+    fn consume_if<T: Borrow<TokenKind>>(&mut self, token: T) -> Option<Token> {
+        if &self.peek().value == token.borrow() {
             Some(self.consume())
         } else {
             None
         }
     }
 
-    fn consume_if_op(&mut self, op: Operator) -> Option<Token> {
-        let nop = match self.peek().value {
-            TokenKind::Operator(op) => op,
-            _ => return None,
-        };
-        if nop == op {
-            Some(self.consume())
+    /// consume_if for users who don't need the token to be returnd
+    fn check<T: Borrow<TokenKind>>(&mut self, token: T) -> bool {
+        if &self.peek().value == token.borrow() {
+            self.consume();
+            true
         } else {
-            None
+            false
         }
     }
 
@@ -214,23 +212,12 @@ impl Parser {
         }
     }
 
-    fn expect_kw(&mut self, kw: Keyword) -> Result<Token> {
-        match self.consume_if_kw(kw) {
+    fn expect<T: Borrow<TokenKind>>(&mut self, token: T) -> Result<Token> {
+        let token = token.borrow();
+        match self.consume_if(token) {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected keyword {:#?}", kw), span.clone())?;
-                // Error recovery
-                Ok(Spanned::new(TokenKind::Unknown, span))
-            }
-            Some(v) => Ok(v),
-        }
-    }
-
-    fn expect_op(&mut self, op: Operator) -> Result<Token> {
-        match self.consume_if_op(op) {
-            None => {
-                let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected operator {:#?}", op), span.clone())?;
+                self.report_span(Severity::Error, format!("expected token {:?}", token), span.clone())?;
                 // Error recovery
                 Ok(Spanned::new(TokenKind::Unknown, span))
             }
@@ -354,7 +341,7 @@ impl Parser {
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
     fn parse_comma_list<T, F: FnMut(&mut Self) -> Result<Option<T>>>(
-        &mut self, mut f: F, empty: bool, trail: bool
+        &mut self, empty: bool, trail: bool, mut f: F
     ) -> Result<Vec<T>> {
         let mut vec = Vec::new();
 
@@ -374,7 +361,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if_op(Operator::Comma) {
+            let comma = match self.consume_if(TokenKind::Operator(Operator::Comma)) {
                 None => break,
                 Some(v) => v,
             };
@@ -417,7 +404,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if_op(Operator::Comma) {
+            let comma = match self.consume_if(TokenKind::Operator(Operator::Comma)) {
                 None => break,
                 Some(v) => v,
             };
@@ -453,7 +440,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if_op(sep) {
+            let comma = match self.consume_if(TokenKind::Operator(sep)) {
                 None => break,
                 Some(v) => v,
             };
@@ -567,6 +554,7 @@ impl Parser {
     /// extern primitive
     /// ```
     fn parse_item(&mut self) -> Result<Option<Item>> {
+        let mut attr = self.parse_attr_instance()?;
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) => Ok(None),
@@ -579,6 +567,15 @@ impl Parser {
                 let clone = self.peek().span.clone();
                 self.report_span(Severity::Fatal, "extern is not supported", clone)?;
                 unreachable!()
+            }
+            TokenKind::Id(_) => {
+                if let Some(v) = self.parse_instantiation(&mut attr)? {
+                    Ok(Some(v))
+                } else {
+                    let clone = self.peek().span.clone();
+                    self.report_span(Severity::Fatal, "not implemented", clone)?;
+                    unreachable!()
+                }
             }
             _ => {
                 let clone = self.peek().span.clone();
@@ -647,17 +644,17 @@ impl Parser {
     /// ```
     /// We will need to check if items can legally appear in here.
     fn parse_module(&mut self) -> Result<Item> {
-        self.expect_kw(Keyword::Module)?;
+        self.expect(TokenKind::Keyword(Keyword::Module))?;
         let lifetime = self.parse_lifetime();
         let name = self.expect_id()?;
         // TODO Package import declaration
         let param = self.parse_param_port_list()?;
         let port = self.parse_port_list()?;
-        self.expect_op(Operator::Semicolon)?;
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
         let items = self.parse_list(Self::parse_item)?;
-        self.expect_kw(Keyword::Endmodule)?;
+        self.expect(TokenKind::Keyword(Keyword::Endmodule))?;
 
-        if self.consume_if_op(Operator::Colon).is_some() {
+        if self.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
             let id = self.expect_id()?;
             if *id != *name {
                 self.report_span(
@@ -704,7 +701,7 @@ impl Parser {
     /// parameter_port_declaration ::=
     ///   [ parameter | localparam ] [ data_type_or_implicit | type ] param_assignment
     fn parse_param_port_list(&mut self) -> Result<Option<Vec<ParamDecl>>> {
-        if self.consume_if_op(Operator::Hash).is_none() {
+        if self.consume_if(TokenKind::Operator(Operator::Hash)).is_none() {
             return Ok(None)
         }
 
@@ -737,7 +734,7 @@ impl Parser {
                 };
 
                 // If data type or `type` keyword is specified, update kw and ty.
-                if this.consume_if_kw(Keyword::Type).is_some() {
+                if this.consume_if(TokenKind::Keyword(Keyword::Type)).is_some() {
                     let kw = param_decl.kw;
                     let old_decl = mem::replace(&mut param_decl, ParamDecl {
                         kw,
@@ -799,7 +796,7 @@ impl Parser {
     /// ```
     fn parse_port_list(&mut self) -> Result<Option<Vec<PortDecl>>> {
         self.parse_if_delim(Delim::Paren, |this| {
-            if let Some(v) = this.consume_if_op(Operator::WildPattern) {
+            if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
                 this.report_span(Severity::Fatal, "(.*) port declaration is not supported", v.span)?;
                 unreachable!();
             }
@@ -833,7 +830,7 @@ impl Parser {
                 }
 
                 // Explicit port declaration
-                if let Some(_) = this.consume_if_op(Operator::Dot) {
+                if let Some(_) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
                     let name = Box::new(this.expect_id()?);
                     let expr = Box::new(this.parse_unwrap(|this| {
                         this.parse_delim(Delim::Paren, Self::parse_expr)
@@ -855,7 +852,7 @@ impl Parser {
                 }
 
                 // Parse net-type
-                let net = if this.consume_if_kw(Keyword::Var).is_some() {
+                let net = if this.consume_if(TokenKind::Keyword(Keyword::Var)).is_some() {
                     Some(NetPortType::Variable)
                 } else {
                     // TODO parse net-type
@@ -870,7 +867,7 @@ impl Parser {
                     let is_intf = if let TokenKind::Keyword(Keyword::Interface) = **this.peek() {
                         // Okay, this is indeed an interface port
                         this.consume();
-                        if this.consume_if_op(Operator::Dot).is_some() {
+                        if this.consume_if(TokenKind::Operator(Operator::Dot)).is_some() {
                             let modport = this.expect_id()?;
                             Some((None, Some(Box::new(modport))))
                         } else {
@@ -1171,7 +1168,7 @@ impl Parser {
         }
 
         self.check_list(Self::check_unpacked_dim, &mut dim)?;
-        let init = match self.consume_if_op(Operator::Assign) {
+        let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
             None => None,
             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr)?)),
         };
@@ -1208,7 +1205,7 @@ impl Parser {
                 }
                 TokenKind::Operator(Operator::Dollar) => {
                     this.consume();
-                    let limit = match this.consume_if_op(Operator::Colon) {
+                    let limit = match this.consume_if(TokenKind::Operator(Operator::Colon)) {
                         None => None,
                         Some(_) => {
                             Some(Box::new(parse!(expr)))
@@ -1222,7 +1219,7 @@ impl Parser {
                 }
                 _ => {
                     let expr = this.parse_unwrap(Self::parse_expr)?;
-                    if this.consume_if_op(Operator::Colon).is_some() {
+                    if this.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
                         let end = Box::new(parse!(expr));
                         DimKind::Range(Box::new(expr), end)
                     } else {
@@ -1270,6 +1267,76 @@ impl Parser {
             _ => Ok(Some(ret))
         }
     }
+    
+    //
+    // A.4.1.1 Module instantiation
+    //
+
+    /// Parse an instantiation. This can be any type of hierachical instantiaton and we cannot
+    /// judge from only syntax. Returns `None` if this is actually not an instantiation.
+    ///
+    /// ```bnf
+    /// instantiation ::=
+    ///   identifier [ parameter_value_assignment ] hierarchical_instance
+    ///   { , hierarchical_instance } ;
+    /// ```
+    fn parse_instantiation(&mut self, attr: &mut Option<Box<AttrInst>>) -> Result<Option<Item>> {
+        let mut peek = 1;
+        // Skip over parameter assignment if any
+        if let TokenKind::Operator(Operator::Hash) = **self.peek_n(1) {
+            if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(2) {
+                peek = 3;
+            } else {
+                // Not an instantiation
+                return Ok(None)
+            }
+        }
+        // The next one must be an identifier
+        if let TokenKind::Id(_) = **self.peek_n(peek) {
+            peek += 1
+        } else {
+            return Ok(None)
+        }
+        // We must skip over dimension list if any
+        while let TokenKind::DelimGroup(Delim::Bracket, _) = **self.peek_n(peek) {
+            peek += 1
+        }
+        // Now we expect a opening paranthesis
+        if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(peek) {
+            // Bingo!
+        } else {
+            return Ok(None)
+        }
+        
+        let attr = mem::replace(attr, None);
+        let mod_name = self.expect_id()?;
+        if self.check(TokenKind::Operator(Operator::Hash)) {
+            unimplemented!();
+        }
+
+        let list = self.parse_comma_list(false, false, |this| {
+            let name = match this.consume_if_id() {
+                None => return Ok(None),
+                Some(v) => v,
+            };
+            // TODO:Parse port list
+            this.expect_delim(Delim::Paren)?;
+
+            Ok(Some(HierInst {
+                name
+            }))
+        })?;
+
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+
+        Ok(Some(Item::HierInstantiation(Box::new(
+            HierInstantiation {
+                attr,
+                name: mod_name,
+                inst: list,
+            }
+        ))))
+    }
 
     //
     // A.6.1 Continuous assignment and net alias statements
@@ -1278,8 +1345,8 @@ impl Parser {
         self.consume();
         // IMP: Parse drive_strength
         // IMP: Parse delay control
-        let assignments = self.parse_comma_list(Self::parse_assign_expr, false, false)?;
-        self.expect_op(Operator::Semicolon)?;
+        let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr)?;
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
         Ok(Item::ContinuousAssign(assignments))
     }
 
@@ -1479,7 +1546,7 @@ impl Parser {
         let mut expr = match **self.peek() {
             TokenKind::Keyword(Keyword::Const) => {
                 let span = self.consume().span;
-                self.expect_op(Operator::Tick)?;
+                self.expect(TokenKind::Operator(Operator::Tick))?;
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
                 Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
@@ -1487,7 +1554,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Unsigned) => {
                 let span = self.peek().span;
                 let sign = self.parse_signing();
-                self.expect_op(Operator::Tick)?;
+                self.expect(TokenKind::Operator(Operator::Tick))?;
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
                 Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
             }
@@ -1497,7 +1564,7 @@ impl Parser {
             }
         };
         loop {
-            if self.consume_if_op(Operator::Tick).is_none() {
+            if self.consume_if(TokenKind::Operator(Operator::Tick)).is_none() {
                 break
             }
 
@@ -1737,6 +1804,34 @@ impl Parser {
     }
 
     //
+    // A.9.1 Attributes
+    //
+    fn parse_attr_instance(&mut self) -> Result<Option<Box<AttrInst>>> {
+        let attr = self.parse_if_delim_spanned(Delim::Attr, |this| {
+            Ok(AttrInstStruct(
+                this.parse_comma_list(false, false, |this| {
+                    scope!(this);
+                    match this.consume_if_id() {
+                        None => Ok(None),
+                        Some(name) => {
+                            let expr = if this.check(TokenKind::Operator(Operator::Assign)) {
+                                Some(parse!(box(expr)))
+                            } else {
+                                None
+                            };
+                            Ok(Some(AttrSpec {
+                                name,
+                                expr
+                            }))
+                        }
+                    }
+                })?
+            ))
+        })?;
+        Ok(attr.map(Box::new))
+    }
+
+    //
     // A.9.3 Identifiers
     //
 
@@ -1755,7 +1850,7 @@ impl Parser {
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect_op(Operator::ScopeSep)?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
                 }
                 TokenKind::Keyword(Keyword::Unit) => {
                     let tok = self.consume();
@@ -1764,7 +1859,7 @@ impl Parser {
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect_op(Operator::ScopeSep)?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
                 }
                 TokenKind::Id(_) => {
                     // Lookahead to check if this is actually a scope
@@ -1783,12 +1878,12 @@ impl Parser {
                         _ => break,
                     };
                     let ident = self.expect_id()?;
-                    if self.consume_if_op(Operator::Hash).is_some() {
+                    if self.consume_if(TokenKind::Operator(Operator::Hash)).is_some() {
                         // TODO: Add parameter support
                         self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span)?;
                         unreachable!();
                     }
-                    self.expect_op(Operator::ScopeSep)?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
                     scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
                 }
                 _ => break,

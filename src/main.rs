@@ -43,8 +43,10 @@ fn main() {
         let mut psr = parser::Parser::new(src_mgr.clone(), diag_mgr.clone(), tokens);
         let list = psr.parse_source().unwrap();
 
+        let mut printer = PrettyPrint::new();
         for i in list {
-            i.print(&mut ::std::io::stdout(), "").unwrap();
+            printer.print_item(&i);
         }
+        println!("{}", printer.take());
     }
 }

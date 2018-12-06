@@ -161,7 +161,7 @@ pub enum Operator {
      */
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     /// This is an expression operator or structure symbols
     Operator(Operator),
@@ -208,6 +208,14 @@ pub struct DelimGroup {
     pub open: Token,
     pub close: Token,
     pub tokens: VecDeque<Token>,
+}
+
+/// This is just a placeholder to allow partial eq to be used on TokenKind. Should never be
+/// executed.
+impl PartialEq for DelimGroup {
+    fn eq(&self, _other: &Self) -> bool {
+        unreachable!()
+    }
 }
 
 lazy_static!{

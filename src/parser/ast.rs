@@ -33,6 +33,8 @@ pub enum Item {
     ConfigDecl,
 
     ContinuousAssign(Vec<Expr>),
+
+    HierInstantiation(Box<HierInstantiation>),
 }
 
 //
@@ -192,9 +194,25 @@ pub enum DimKind {
 /// Should be boxed when nested in other AST structure.
 pub type Dim = Spanned<DimKind>;
 
-///
-/// A.8.3 Expressions
-///
+//
+// A.4.4.1 Module instantiations
+//
+
+#[derive(Debug)]
+pub struct HierInst {
+    pub name: Ident,
+}
+
+#[derive(Debug)]
+pub struct HierInstantiation {
+    pub attr: Option<Box<AttrInst>>,
+    pub name: Ident,
+    pub inst: Vec<HierInst>,
+}
+
+//
+// A.8.3 Expressions
+//
 
 #[derive(Debug)]
 pub enum Select {
@@ -241,10 +259,24 @@ impl AstNode for Expr {
     }
 }
 
+//
+// A.9.1 Attributes
+//
 
-///
-/// A.9.3 Identifiers
-///
+#[derive(Debug)]
+pub struct AttrSpec {
+    pub name: Ident,
+    pub expr: Option<Box<Expr>>
+}
+
+#[derive(Debug)]
+pub struct AttrInstStruct(pub Vec<AttrSpec>);
+
+pub type AttrInst = Spanned<AttrInstStruct>;
+
+//
+// A.9.3 Identifiers
+//
 
 #[derive(Debug)]
 pub enum Scope {
