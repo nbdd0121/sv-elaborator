@@ -35,12 +35,6 @@ pub enum Item {
     ContinuousAssign(Vec<Expr>),
 }
 
-#[derive(Debug)]
-pub enum ExprOrType {
-    Expr(Box<Expr>),
-    Type(Box<DataType>),
-}
-
 //
 // A.1.2 SystemVerilog source text
 //
@@ -72,7 +66,7 @@ pub struct ParamDecl {
     // Parameter or localparam
     pub kw: Keyword,
     pub ty: Option<Sort>,
-    pub list: Vec<ParamAssign>,
+    pub list: Vec<DeclAssign>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -165,14 +159,6 @@ pub enum NetPortType {
 // A.2.4 Declaration assignments
 //
 
-/// AST for param_assignment
-#[derive(Debug)]
-pub struct ParamAssign {
-    pub name: Ident,
-    pub dim: Vec<Dim>,
-    pub init: Option<ExprOrType>,
-}
-
 /// Most common declaration assignment
 #[derive(Debug)]
 pub struct DeclAssign {
@@ -190,12 +176,12 @@ pub struct DeclAssign {
 pub enum DimKind {
     /// Represent dimension of type `[ constant_expression : constant_expression ]`
     Range(Box<Expr>, Box<Expr>),
-    /// Represent dimension of type `[ constant_expression ]`
+    /// Represent dimension of type `[ constant_expression ]`.
+    /// It can also represent dimension of type `[ data_type ]`, but the resolution will not occur
+    /// during parsing.
     Value(Box<Expr>),
     /// Represent dimension of type `[]`
     Unsized,
-    /// Represent dimension of type `[ data_type ]`
-    Assoc(Box<DataType>),
     /// Represent dimension of type `[ * ]`
     AssocWild,
     /// Represent a queue dimension with optional max size, of type

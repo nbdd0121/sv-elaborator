@@ -744,7 +744,7 @@ impl Parser {
                     };
                 }
 
-                let assign = this.parse_param_assign()?;
+                let assign = this.parse_decl_assign()?;
                 param_decl.list.push(assign);
 
                 Ok(true)
@@ -1137,39 +1137,6 @@ impl Parser {
     // A.2.4 Declaration assignments
     //
 
-    /// Parse a parameter assginment
-    /// ```bnf
-    /// param_assignment ::=
-    ///   parameter_identifier { unpacked_dimension } [ = constant_param_expression ]
-    /// ```
-    fn parse_param_assign(&mut self) -> Result<ParamAssign> {
-        let mut ident = self.expect_id()?;
-        let mut dim = self.parse_list(Self::parse_dim)?;
-
-        // If we see another ID here, it means that the ID we seen previously are probably a
-        // type name that isn't declared. Raise a sensible warning here.
-        if let Some(id) = self.consume_if_id() {
-            self.report_span(
-                Severity::Error,
-                "this looks like a data type but it is not declared",
-                ident.span
-            )?;
-            ident = id;
-            dim = self.parse_list(Self::parse_dim)?;
-        }
-
-        self.check_list(Self::check_unpacked_dim, &mut dim)?;
-        let init = match self.consume_if_op(Operator::Assign) {
-            None => None,
-            Some(_) => Some(self.parse_expr_or_type()?),
-        };
-        Ok(ParamAssign {
-            name: ident,
-            dim,
-            init
-        })
-    }
-
     fn parse_decl_assign(&mut self) -> Result<DeclAssign> {
         let mut ident = self.expect_id()?;
         let mut dim = self.parse_list(Self::parse_dim)?;
@@ -1237,18 +1204,12 @@ impl Parser {
                     DimKind::AssocWild
                 }
                 _ => {
-                    match this.parse_expr_or_type()? {
-                        ExprOrType::Expr(expr) => {
-                            if this.consume_if_op(Operator::Colon).is_some() {
-                                let end = Box::new(parse!(expr));
-                                DimKind::Range(expr, end)
-                            } else {
-                                DimKind::Value(expr)
-                            }
-                        }
-                        ExprOrType::Type(ty) => {
-                            DimKind::Assoc(ty)
-                        }
+                    let expr = this.parse_unwrap(Self::parse_expr)?;
+                    if this.consume_if_op(Operator::Colon).is_some() {
+                        let end = Box::new(parse!(expr));
+                        DimKind::Range(Box::new(expr), end)
+                    } else {
+                        DimKind::Value(Box::new(expr))
                     }
                 }
             })
@@ -1258,7 +1219,6 @@ impl Parser {
     /// Check if a dimension is a legal unpacked dimension
     fn check_unpacked_dim(&mut self, dim: &Dim) -> Result<bool> {
         match **dim {
-            DimKind::Assoc(_) |
             DimKind::AssocWild |
             DimKind::Queue(_) |
             DimKind::Unsized => {
@@ -1280,7 +1240,6 @@ impl Parser {
             Some(v) => v,
         };
         match *ret {
-            DimKind::Assoc(_) |
             DimKind::AssocWild |
             DimKind::Queue(_) |
             DimKind::Value(_) => {
@@ -1867,10 +1826,4 @@ impl Parser {
         })?;
         Ok(id)
     }
-
-    fn parse_expr_or_type(&mut self) -> Result<ExprOrType> {
-        scope!(self);
-        Ok(ExprOrType::Expr(Box::new(parse!(expr))))
-    }
-
 }
