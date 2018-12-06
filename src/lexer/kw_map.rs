@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use super::{Keyword, Delim, TokenKind};
+use super::{Keyword, TokenKind};
 
 lazy_static!{
 pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
@@ -9,7 +9,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("always", (TokenKind::Keyword(Keyword::Always), 1));
     m.insert("and", (TokenKind::Keyword(Keyword::And), 1));
     m.insert("assign", (TokenKind::Keyword(Keyword::Assign), 1));
-    m.insert("begin", (TokenKind::OpenDelim(Delim::Block), 1));
+    m.insert("begin", (TokenKind::Keyword(Keyword::Begin), 1));
     m.insert("buf", (TokenKind::Keyword(Keyword::Buf), 1));
     m.insert("bufif0", (TokenKind::Keyword(Keyword::Bufif0), 1));
     m.insert("bufif1", (TokenKind::Keyword(Keyword::Bufif1), 1));
@@ -23,9 +23,9 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("disable", (TokenKind::Keyword(Keyword::Disable), 1));
     m.insert("edge", (TokenKind::Keyword(Keyword::Edge), 1));
     m.insert("else", (TokenKind::Keyword(Keyword::Else), 1));
-    m.insert("end", (TokenKind::CloseDelim(Delim::Block), 1));
+    m.insert("end", (TokenKind::Keyword(Keyword::End), 1));
     m.insert("endcase", (TokenKind::Keyword(Keyword::Endcase), 1));
-    m.insert("endmodule", (TokenKind::CloseDelim(Delim::Module), 1));
+    m.insert("endmodule", (TokenKind::Keyword(Keyword::Endmodule), 1));
     m.insert("endfunction", (TokenKind::Keyword(Keyword::Endfunction), 1));
     m.insert("endprimitive", (TokenKind::Keyword(Keyword::Endprimitive), 1));
     m.insert("endspecify", (TokenKind::Keyword(Keyword::Endspecify), 1));
@@ -47,9 +47,9 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("integer", (TokenKind::Keyword(Keyword::Integer), 1));
     m.insert("join", (TokenKind::Keyword(Keyword::Join), 1));
     m.insert("large", (TokenKind::Keyword(Keyword::Large), 1));
-    m.insert("macromodule", (TokenKind::OpenDelim(Delim::Module), 1));
+    m.insert("macromodule", (TokenKind::Keyword(Keyword::Module), 1));
     m.insert("medium", (TokenKind::Keyword(Keyword::Medium), 1));
-    m.insert("module", (TokenKind::OpenDelim(Delim::Module), 1));
+    m.insert("module", (TokenKind::Keyword(Keyword::Module), 1));
     m.insert("nand", (TokenKind::Keyword(Keyword::Nand), 1));
     m.insert("negedge", (TokenKind::Keyword(Keyword::Negedge), 1));
     m.insert("nmos", (TokenKind::Keyword(Keyword::Nmos), 1));

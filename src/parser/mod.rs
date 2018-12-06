@@ -214,6 +214,18 @@ impl Parser {
         }
     }
 
+    fn expect_kw(&mut self, kw: Keyword) -> Result<Token> {
+        match self.consume_if_kw(kw) {
+            None => {
+                let span = self.peek().span.clone();
+                self.report_span(Severity::Error, format!("expected keyword {:#?}", kw), span.clone())?;
+                // Error recovery
+                Ok(Spanned::new(TokenKind::Unknown, span))
+            }
+            Some(v) => Ok(v),
+        }
+    }
+
     fn expect_op(&mut self, op: Operator) -> Result<Token> {
         match self.consume_if_op(op) {
             None => {
@@ -556,9 +568,10 @@ impl Parser {
     /// ```
     fn parse_item(&mut self) -> Result<Option<Item>> {
         match self.peek().value {
-            TokenKind::Eof => Ok(None),
+            TokenKind::Eof |
+            TokenKind::Keyword(Keyword::Endmodule) => Ok(None),
             // module_declaration
-            TokenKind::DelimGroup(Delim::Module, _) => Ok(Some(self.parse_module()?)),
+            TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
             // Externs are parsed together (even though they're not currently supported yet)
@@ -634,36 +647,34 @@ impl Parser {
     /// ```
     /// We will need to check if items can legally appear in here.
     fn parse_module(&mut self) -> Result<Item> {
-        let decl = self.parse_delim(Delim::Module, |this| {
-            let lifetime = this.parse_lifetime();
-            let name = this.expect_id()?;
-            // TODO Package import declaration
-            let param = this.parse_param_port_list()?;
-            let port = this.parse_port_list()?;
-            this.expect_op(Operator::Semicolon)?;
-            let items = this.parse_list(Self::parse_item)?;
-
-            Ok(ModuleDecl {
-                lifetime,
-                name,
-                param,
-                port: port.unwrap_or_else(|| Vec::new()),
-                items: items,
-            })
-        })?;
+        self.expect_kw(Keyword::Module)?;
+        let lifetime = self.parse_lifetime();
+        let name = self.expect_id()?;
+        // TODO Package import declaration
+        let param = self.parse_param_port_list()?;
+        let port = self.parse_port_list()?;
+        self.expect_op(Operator::Semicolon)?;
+        let items = self.parse_list(Self::parse_item)?;
+        self.expect_kw(Keyword::Endmodule)?;
 
         if self.consume_if_op(Operator::Colon).is_some() {
             let id = self.expect_id()?;
-            if *id != *decl.name {
+            if *id != *name {
                 self.report_span(
                     Severity::Error,
-                    format!("identifer annotation at end does match declaration, should be '{}'", decl.name),
+                    format!("identifer annotation at end does match declaration, should be '{}'", name),
                     id.span
                 )?;
             }
         }
 
-        Ok(Item::ModuleDecl(Box::new(decl)))
+        Ok(Item::ModuleDecl(Box::new(ModuleDecl {
+            lifetime,
+            name,
+            param,
+            port: port.unwrap_or_else(|| Vec::new()),
+            items: items,
+        })))
     }
 
     //

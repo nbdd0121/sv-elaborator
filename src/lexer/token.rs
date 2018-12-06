@@ -12,10 +12,6 @@ pub enum Delim {
     Attr,
     /// Open-only delimiter "'{". The corresponding close delimiter should be "'}".
     TickBrace,
-
-    // Keyword delimiters
-    Block,
-    Module,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
