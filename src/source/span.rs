@@ -121,7 +121,6 @@ impl FatPos {
 }
 
 /// Represent a span within a single source file.
-#[derive(Clone)]
 pub struct FatSpan {
     pub source: Rc<Source>,
     pub start: usize,

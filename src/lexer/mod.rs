@@ -6,7 +6,7 @@ pub use self::kw::Keyword;
 pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup, TokenStream};
 
 use self::kw_map::HASHMAP;
-use super::source::{Source, SrcMgr, DiagMsg, Severity, Pos, Span, Spanned, FixItHint};
+use super::source::{Source, SrcMgr, Diagnostic, Severity, Pos, Spanned};
 use super::number::{LogicValue, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};
@@ -85,27 +85,24 @@ impl Tokenizer {
     }
 
     fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, start: usize, end: usize) {
-        self.report_diag(DiagMsg {
-            severity: severity,
-            message: msg.into(),
-            span: vec![Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))],
-            hint: Vec::new()
-        })
+        self.report_diag(Diagnostic::new(
+            severity,
+            msg.into(),
+            Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))
+        ));
     }
 
     fn report_span_with_hint<M: Into<String>>(
         &self, severity: Severity, msg: M, hint: String, start: usize, end: usize
     ) {
-        let span = Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end));
-        self.report_diag(DiagMsg {
-            severity: severity,
-            message: msg.into(),
-            span: vec![span],
-            hint: vec![FixItHint::new(span, hint)]
-        })
+        self.report_diag(Diagnostic::new(
+            severity,
+            msg.into(),
+            Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))
+        ).fix_primary(hint));
     }
 
-    fn report_diag(&self, msg: DiagMsg) {
+    fn report_diag(&self, msg: Diagnostic) {
         msg.print(&self.mgr, true, 4)
     }
 

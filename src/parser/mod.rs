@@ -2,7 +2,7 @@ pub mod ast;
 
 use self::ast::*;
 use super::lexer::{Token, TokenKind, Keyword, Operator, TokenStream, Delim, DelimGroup};
-use super::source::{SrcMgr, DiagMsg, Severity, Span, Spanned};
+use super::source::{SrcMgr, Diagnostic, Severity, Span, Spanned};
 
 use std::result;
 use std::mem;
@@ -215,15 +215,14 @@ impl Parser {
     }
 
     fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) -> Result<()> {
-        self.report_diag(DiagMsg {
-            severity: severity,
-            message: msg.into(),
-            span: vec![span],
-            hint: Vec::new(),
-        })
+        self.report_diag(Diagnostic::new(
+            severity,
+            msg.into(),
+            span,
+        ))
     }
 
-    fn report_diag(&self, diag: DiagMsg) -> Result<()> {
+    fn report_diag(&self, diag: Diagnostic) -> Result<()> {
         diag.print(&self.mgr, true, 4);
         if let Severity::Fatal = diag.severity {
             Err(())

@@ -1,3 +1,5 @@
+// Diagnostics engine
+
 use std::fmt;
 use std::cmp;
 use std::rc::Rc;
@@ -5,6 +7,7 @@ use super::{Span, SrcMgr};
 
 use colored::{Color, Colorize};
 
+/// Severity of the diagnostic message.
 #[derive(Debug)]
 pub enum Severity {
     Remark,
@@ -15,6 +18,7 @@ pub enum Severity {
 }
 
 impl Severity {
+    /// Get the color corresponding to this severity.
     fn color(&self) -> Color {
         match self {
             Severity::Remark => Color::Blue,
@@ -38,25 +42,55 @@ impl fmt::Display for Severity {
     }
 }
 
-pub struct FixItHint {
-    span: Span,
-    replace: String
+/// A note for detailed message or suggesting how to fix it.
+pub struct Note {
+    pub span: Span,
+    pub fix: Option<String>,
+    pub message: Option<String>,
 }
 
-impl FixItHint {
-    pub fn new(span: Span, replace: String) -> FixItHint {
-        FixItHint {
-            span: span,
-            replace: replace,
-        }
-    }
-}
-
-pub struct DiagMsg {
+/// A diagnostic message.
+pub struct Diagnostic {
     pub severity: Severity,
     pub message: String,
-    pub span: Vec<Span>,
-    pub hint: Vec<FixItHint>
+    /// This is the primary span that causes the issue. This will not be displayed.
+    /// `new` function will automatically add the span to notes for it to be displayed.
+    pub span: Option<Span>,
+    pub notes: Vec<Note>
+}
+
+/// Helpers for building diagnostic message. Intended to be called in chains.
+impl Diagnostic {
+    pub fn new(severity: Severity, msg: String, span: Span) -> Self {
+        Diagnostic {
+            severity,
+            message: msg,
+            span: Some(span),
+            notes: vec![Note {
+                span,
+                fix: None,
+                message: None
+            }],
+        }
+    }
+
+    pub fn fix_primary(mut self, fix: String) -> Self {
+        self.notes.push(Note {
+            span: self.span.unwrap(),
+            fix: Some(fix),
+            message: None,
+        });
+        self
+    }
+
+    pub fn fix(mut self, span: Span, fix: String) -> Self {
+        self.notes.push(Note {
+            span,
+            fix: Some(fix),
+            message: None,
+        });
+        self
+    }
 }
 
 // Helper class for printing column number in a file with tabs and non-ASCII characters.
@@ -117,7 +151,7 @@ impl VisualString {
     }
 }
 
-impl DiagMsg {
+impl Diagnostic {
     pub fn print(&self, mgr: &SrcMgr, color: bool, tab: usize) {
         // Stringify and color severity
         let mut severity = format!("{}: ", self.severity);
@@ -125,26 +159,26 @@ impl DiagMsg {
             severity = severity.color(self.severity.color()).to_string();
         }
 
-        // Convert all spans to fat spans
-        let spans: Vec<_> = self.span.iter().flat_map(|x| mgr.find_span(*x)).collect();
-
-        // If the message has no associated file, just print it
-        if spans.is_empty() {
-            if color {
-                println!("{}{}", severity, self.message.bold());
-            } else {
-                println!("{}{}", severity, self.message);
+        // Convert spans to fat spans
+        let primary_span = match self.notes.first().and_then(|x| mgr.find_span(x.span)) {
+            None => {
+                // If the message has no associated file, just print it
+                if color {
+                    println!("{}{}", severity, self.message.bold());
+                } else {
+                    println!("{}{}", severity, self.message);
+                }
+                return
             }
-            return
-        }
+            Some(v) => v,
+        };
 
         // Obtain line map
-        let first_span = spans.first().unwrap();
-        let src = &first_span.source;
+        let src = &primary_span.source;
         let linemap = src.linemap();
 
         // Get line number (starting from 0)
-        let line = linemap.line_number(first_span.start);
+        let line = linemap.line_number(primary_span.start);
         // Get position within the line
         let line_start = linemap.line_start_pos(line);
         // Get source code line for handling
@@ -158,37 +192,52 @@ impl DiagMsg {
             msg = msg.bold().to_string();
         }
 
-        // Allocate a char vector to hold indicators
+        // Allocate char vectors to hold indicators and hints
         // Make this 1 longer for possibility to point to the line break character.
         let mut indicators = vec![' '; vstr.visual_length() + 1];
+        let mut fixes = vec![' '; vstr.visual_length()];
         let mut character = '^';
+        let mut has_fix = false;
 
         // Fill in ^ and ~ characters for all spans
-        for span in &spans {
+        for note in &self.notes {
+            let span = match mgr.find_span(note.span) {
+                // The span is non-existent, continue instead
+                None => continue,
+                Some(v) => v,
+            };
+
             // Unlikely event, we cannot display this
-            if !Rc::ptr_eq(&span.source, &first_span.source) {
+            if !Rc::ptr_eq(&span.source, &primary_span.source) {
                 continue
             }
 
             // Get start and end position, clamped within the line.
-            let start = cmp::min(
-                cmp::max(span.start as isize - line_start as isize, 0) as usize,
-                line_text.len()
-            );
-            let end = cmp::min(
-                cmp::max(span.end as isize - line_start as isize, 0) as usize,
-                line_text.len() + 1
-            );
+            let start = span.start as isize - line_start as isize;
+            let start_clamp = cmp::min(cmp::max(start, 0) as usize, line_text.len());
+            let end = span.end as isize - line_start as isize;
+            let end_clamp = cmp::min(cmp::max(end, 0) as usize, line_text.len() + 1);
 
-            // Nothing to display
-            if start == end {
-                continue
-            }
-
-            for i in vstr.visual_column(start)..vstr.visual_column(end) {
+            for i in vstr.visual_column(start_clamp)..vstr.visual_column(end_clamp) {
                 indicators[i] = character;
             }
 
+            // We can only display it if it partially covers this line
+            if note.fix.is_some() && end >= 0 && start <= line_text.len() as isize {
+                let mut vptr = cmp::min(cmp::max(start, 0) as usize, line_text.len());
+                // Now replace the part in vector with the replacement suggestion
+                for ch in note.fix.as_ref().unwrap().chars() {
+                    if vptr >= fixes.len() {
+                        fixes.push(ch);
+                    } else {
+                        fixes[vptr] = ch;
+                    }
+                    vptr += 1;
+                }
+                has_fix = true;
+            }
+
+            // For non-primary notes, the character is different.
             character = '~';
         }
 
@@ -197,40 +246,8 @@ impl DiagMsg {
             indicator_line = indicator_line.green().bold().to_string();
         }
 
-        // If there is any fix-it-hints, we will have an additional line
-        if !self.hint.is_empty() {
-            let mut hints = vec![' '; vstr.visual_length()];
-
-            for hint in &self.hint {
-                let span = match mgr.find_span(hint.span) {
-                    None => continue,
-                    Some(v) => v,
-                };
-
-                // Unlikely event, we cannot display this
-                if !Rc::ptr_eq(&span.source, &first_span.source) {
-                    continue
-                }
-
-                let start = span.start as isize - line_start as isize;
-                let end = span.end as isize - line_start as isize;
-                // We can only display it if it partially covers this line
-                if end < 0 || start > line_text.len() as isize {
-                    continue;
-                }
-                let mut vptr = cmp::min(cmp::max(start, 0) as usize, line_text.len());
-                // Now replace the part in vector with the replacement suggestion
-                for ch in hint.replace.chars() {
-                    if vptr >= hints.len() {
-                        hints.push(ch);
-                    } else {
-                        hints[vptr] = ch;
-                    }
-                    vptr += 1;
-                }
-            }
-
-            let mut line: String = hints.into_iter().collect();
+        if has_fix {
+            let mut line: String = fixes.into_iter().collect();
             if color {
                 line = line.green().to_string();
             }
