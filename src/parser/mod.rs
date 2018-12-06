@@ -23,6 +23,9 @@ macro_rules! scope {
         macro_rules! parse {
             (expr) => {
                 $t.parse_unwrap(Self::parse_expr)?
+            };
+            ([expr]) => {
+                $t.parse_expr()?
             }
         }
     }
@@ -625,21 +628,36 @@ impl Parser {
     /// ```
     /// We will need to check if items can legally appear in here.
     fn parse_module(&mut self) -> Result<Item> {
-        self.parse_delim(Delim::Module, |this| {
+        let decl = self.parse_delim(Delim::Module, |this| {
             let lifetime = this.parse_lifetime();
             let name = this.expect_id()?;
             // TODO Package import declaration
             let param = this.parse_param_port_list()?;
             let port = this.parse_port_list()?;
             this.expect_op(Operator::Semicolon)?;
+            let items = this.parse_list(Self::parse_item)?;
 
-            this.parse_list(Self::parse_item)?;
+            Ok(ModuleDecl {
+                lifetime,
+                name,
+                param,
+                port: port.unwrap_or_else(|| Vec::new()),
+                items: items,
+            })
+        })?;
 
-            println!("{:?} {:?} {:?} {:?}", lifetime, name, param, port);
+        if self.consume_if_op(Operator::Colon).is_some() {
+            let id = self.expect_id()?;
+            if *id != *decl.name {
+                self.report_span(
+                    Severity::Error,
+                    format!("identifer annotation at end does match declaration, should be '{}'", decl.name),
+                    id.span
+                )?;
+            }
+        }
 
-            // Err(())
-            Ok(Item::ModuleDecl)
-        })
+        Ok(Item::ModuleDecl(Box::new(decl)))
     }
 
     //
@@ -1284,25 +1302,64 @@ impl Parser {
         self.consume();
         // IMP: Parse drive_strength
         // IMP: Parse delay control
-        self.parse_comma_list(|this| Ok(Some(this.parse_var_assign()?)), false, false)?;
-        self.expect_op(Operator::Semicolon);
-        Ok(Item::ModuleDecl)
+        let assignments = self.parse_comma_list(Self::parse_assign_expr, false, false)?;
+        self.expect_op(Operator::Semicolon)?;
+        Ok(Item::ContinuousAssign(assignments))
     }
 
     //
     // A.6.2 Procedural blocks and assignments
     //
-    fn parse_var_assign(&mut self) -> Result<()> {
-        self.parse_lvalue()?;
-        self.expect_op(Operator::Assign)?;
-        self.parse_unwrap(Self::parse_expr)?;
-        // TODO Return value
-        Ok(())
+
+    fn is_assign_op(op: Operator) -> bool {
+        match op {
+            Operator::Assign |
+            Operator::AddEq |
+            Operator::SubEq |
+            Operator::MulEq |
+            Operator::DivEq |
+            Operator::ModEq |
+            Operator::AndEq |
+            Operator::OrEq |
+            Operator::XorEq |
+            Operator::LShlEq |
+            Operator::LShrEq |
+            Operator::AShlEq |
+            Operator::AShrEq => true,
+            _ => false,
+        }
     }
 
     //
     // A.8.3 Expressions
     //
+
+    /// Parse an assignment expression
+    ///
+    /// Our rearrangement
+    /// ```bnf
+    /// assignment_expression ::=
+    ///   expression
+    /// | expression assignment_operator expression
+    /// ```
+    fn parse_assign_expr(&mut self) -> Result<Option<Expr>> {
+        scope!(self);
+
+        let expr = match parse!([expr]) {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+
+        match **self.peek() {
+            TokenKind::Operator(op) if Self::is_assign_op(op) => {
+                self.consume();
+                let rhs = parse!(expr);
+                let span = expr.span.join(rhs.span);
+                Ok(Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span)))
+            }
+            _ => Ok(Some(expr))
+        }
+    }
 
     /// Parse an expression (or data_type)
     ///
@@ -1334,6 +1391,7 @@ impl Parser {
     /// | unary_operator { attribute_instance } primary
     /// | inc_or_dec_expression
     /// ```
+    /// TODO: conditional & inside are not yet completed
     fn parse_expr(&mut self) -> Result<Option<Expr>> {
         match **self.peek() {
             // tagged_union_expression
@@ -1388,9 +1446,14 @@ impl Parser {
             // inc_or_dec_operator { attribute_instance } variable_lvalue
             // unary_operator { attribute_instance } primary
             TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "prefix_expression not yet supported", span)?;
-                unreachable!();
+                let span = self.consume().span;
+                if self.consume_if_delim(Delim::Attr).is_some() {
+                    let span = self.peek().span;
+                    self.report_span(Severity::Fatal, "attributes not yet supported", span)?;
+                }
+                let expr = self.parse_unwrap(Self::parse_primary)?;
+                let span = span.join(expr.span);
+                Ok(Some(Spanned::new(ExprKind::Unary(op, Box::new(expr)), span)))
             }
             _ => {
                 self.parse_primary()

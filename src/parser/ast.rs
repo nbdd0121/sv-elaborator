@@ -20,9 +20,10 @@ pub trait AstNode where Self: Sized {
 // Unknown
 //
 
+#[derive(Debug)]
 pub enum Item {
     TimeunitDecl,
-    ModuleDecl,
+    ModuleDecl(Box<ModuleDecl>),
     UdpDecl,
     InterfaceDecl,
     ProgramDecl,
@@ -30,12 +31,27 @@ pub enum Item {
     PackageItem, // TODO Expand
     BindDirective,
     ConfigDecl,
+
+    ContinuousAssign(Vec<Expr>),
 }
 
 #[derive(Debug)]
 pub enum ExprOrType {
     Expr(Box<Expr>),
     Type(Box<DataType>),
+}
+
+//
+// A.1.2 SystemVerilog source text
+//
+
+#[derive(Debug)]
+pub struct ModuleDecl {
+    pub lifetime: Lifetime,
+    pub name: Ident,
+    pub param: Option<Vec<ParamDecl>>,
+    pub port: Vec<PortDecl>,
+    pub items: Vec<Item>
 }
 
 //
@@ -79,7 +95,7 @@ pub enum PortDecl {
 // A.2.1.3 Type declarations
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lifetime {
     Static,
     Automatic,
@@ -216,12 +232,19 @@ pub enum ExprKind {
     /// Member access
     Member(Box<Expr>, Ident),
 
-    /// Casts
+    // Casts
     ConstCast(Box<Expr>),
     SignCast(Signing, Box<Expr>),
     TypeCast(Box<Expr>, Box<Expr>),
 
+    Unary(Operator, Box<Expr>),
     Binary(Box<Expr>, Operator, Box<Expr>),
+
+    /// Assignment
+    Assign(Box<Expr>, Operator, Box<Expr>),
+
+    /// Min-typ-max expression
+    MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 pub type Expr = Spanned<ExprKind>;
