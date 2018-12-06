@@ -1,8 +1,8 @@
 pub mod ast;
 
 use self::ast::*;
-use super::lexer::{Token, TokenKind, Keyword, Operator, TokenStream, Delim, DelimGroup};
-use super::source::{SrcMgr, Diagnostic, Severity, Span, Spanned};
+use super::lexer::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
+use super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Span, Spanned};
 
 use std::result;
 use std::mem;
@@ -11,7 +11,8 @@ use std::collections::VecDeque;
 
 pub struct Parser {
     mgr: Rc<SrcMgr>,
-    lexer: Box<TokenStream>,
+    diag: Rc<DiagMgr>,
+    lexer: VecDeque<Token>,
 }
 
 //
@@ -68,38 +69,49 @@ type Result<T> = result::Result<T, ()>;
 /// In cases where data type can be implicit, we can still perform lookahead to check if an
 /// identifier followes, but we can't really do anything for param expression.
 impl Parser {
-    pub fn new<T: TokenStream + 'static>(mgr: Rc<SrcMgr>, lexer: T) -> Parser {
+    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, lexer: VecDeque<Token>) -> Parser {
         Parser {
-            mgr: mgr,
-            lexer: Box::new(lexer),
+            mgr,
+            diag,
+            lexer: lexer,
+        }
+    }
+
+    fn consume(&mut self) -> Token {
+        match self.lexer.pop_front() {
+            Some(v) => v,
+            None => Token::eof(),
         }
     }
 
     fn peek(&mut self) -> &Token {
-        self.lexer.peek()
+        match self.lexer.front() {
+            Some(v) => v,
+            None => Token::eof_ref(),
+        }
     }
 
     fn peek_n(&mut self, n: usize) -> &Token {
-        self.lexer.peek_n(n)
-    }
-
-    fn consume(&mut self) -> Token {
-        self.lexer.next()
+        if self.lexer.len() > n {
+            &self.lexer[n]
+        } else {
+            Token::eof_ref()
+        }
     }
 
     fn pushback(&mut self, tok: Token) {
-        self.lexer.pushback(tok)
+        self.lexer.push_front(tok);
     }
 
     /// Parse a delimited group of tokens. After calling the callback, the token stream must
     /// be empty.
-    fn delim_group<T, S: TokenStream + 'static, F: FnMut(&mut Self) -> Result<T>>(
-        &mut self, stream: S, mut f: F
+    fn delim_group<T, F: FnMut(&mut Self) -> Result<T>>(
+        &mut self, mut stream: VecDeque<Token>, mut f: F
     ) -> Result<T> {
-        let saved = mem::replace(&mut self.lexer, Box::new(stream));
+        mem::swap(&mut self.lexer, &mut stream);
         let ret = f(self)?;
         self.expect_eof()?;
-        mem::replace(&mut self.lexer, saved);
+        mem::swap(&mut self.lexer, &mut stream);
         Ok(ret)
     }
 
@@ -223,12 +235,7 @@ impl Parser {
     }
 
     fn report_diag(&self, diag: Diagnostic) -> Result<()> {
-        diag.print(&self.mgr, true, 4);
-        if let Severity::Fatal = diag.severity {
-            Err(())
-        } else {
-            Ok(())
-        }
+        self.diag.report(diag)
     }
 
     //

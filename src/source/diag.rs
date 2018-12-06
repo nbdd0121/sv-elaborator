@@ -3,12 +3,14 @@
 use std::fmt;
 use std::cmp;
 use std::rc::Rc;
+use std::cell::RefCell;
+use std::result::Result;
 use super::{Span, SrcMgr};
 
 use colored::{Color, Colorize};
 
 /// Severity of the diagnostic message.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Remark,
     Info,
@@ -256,5 +258,46 @@ impl Diagnostic {
         } else {
             println!("{}\n{}\n{}", msg, vstr.visual_text(), indicator_line);
         }
+    }
+}
+
+/// Diagnostic manager
+struct DiagMgrMut {
+    src: Rc<SrcMgr>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+pub struct DiagMgr {
+    mutable: RefCell<DiagMgrMut>,
+}
+
+impl DiagMgr {
+    /// Create a new diagnostics manager
+    pub fn new(mgr: Rc<SrcMgr>) -> Self {
+        Self {
+            mutable: RefCell::new(DiagMgrMut {
+                src: mgr,
+                diagnostics: Vec::new(),
+            })
+        }
+    }
+
+    /// Add a new diagnostic. Returns `Err` for fatal errors.
+    pub fn report(&self, diag: Diagnostic) -> Result<(), ()> {
+        let mut m = self.mutable.borrow_mut();
+        diag.print(&m.src, true, 4);
+        let severity = diag.severity;
+        m.diagnostics.push(diag);
+        if severity == Severity::Fatal {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Check if there is any error.
+    pub fn has_error(&self) -> bool {
+        let m = self.mutable.borrow();
+        m.diagnostics.iter().any(|diag| diag.severity == Severity::Error || diag.severity == Severity::Fatal)
     }
 }

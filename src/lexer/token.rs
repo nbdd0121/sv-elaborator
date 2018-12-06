@@ -214,43 +214,18 @@ pub struct DelimGroup {
     pub tokens: VecDeque<Token>,
 }
 
-pub trait TokenStream {
-    fn next(&mut self) -> Token;
-    fn peek(&mut self) -> &Token;
-    fn peek_n(&mut self, n: usize) -> &Token;
-    fn pushback(&mut self, tok: Token);
-}
-
 lazy_static!{
 pub static ref EOF: Token = {
     Spanned::new_unspanned(TokenKind::Eof)
 };
 }
 
-impl TokenStream for VecDeque<Token> {
-    fn next(&mut self) -> Token {
-        match self.pop_front() {
-            Some(v) => v,
-            None => Spanned::new_unspanned(TokenKind::Eof)
-        }
+impl Token {
+    pub fn eof() -> Token {
+        Spanned::new_unspanned(TokenKind::Eof)
     }
 
-    fn peek(&mut self) -> &Token {
-        match self.front() {
-            Some(v) => v,
-            None => &EOF,
-        }
-    }
-
-    fn peek_n(&mut self, n: usize) -> &Token {
-        if self.len() > n {
-            &self[n]
-        } else {
-            &EOF
-        }
-    }
-
-    fn pushback(&mut self, tok: Token) {
-        self.push_front(tok);
+    pub fn eof_ref() -> &'static Token {
+        &EOF
     }
 }

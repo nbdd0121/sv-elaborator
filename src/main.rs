@@ -16,7 +16,7 @@ mod printer;
 use std::fs::File;
 use std::io::prelude::*;
 
-use source::{SrcMgr, Source};
+use source::{SrcMgr, Source, DiagMgr};
 use printer::PrettyPrint;
 
 // use lexer::TokenKind;
@@ -28,6 +28,7 @@ fn main() {
     ];
 
     let src_mgr = Rc::new(SrcMgr::new());
+    let diag_mgr = Rc::new(DiagMgr::new(src_mgr.clone()));
 
     'outer: for filename in files_to_test {
         let mut infile = File::open(filename).unwrap();
@@ -38,8 +39,8 @@ fn main() {
         let src = Rc::new(Source::new(filename.to_owned(), contents));
         src_mgr.add_source(src.clone());
 
-        let mut tok = lexer::Tokenizer::new(src_mgr.clone(), &src);
-        let mut psr = parser::Parser::new(src_mgr.clone(), tok);
+        let mut tokens = lexer::Tokenizer::new(src_mgr.clone(), diag_mgr.clone(), &src).all();
+        let mut psr = parser::Parser::new(src_mgr.clone(), diag_mgr.clone(), tokens);
         let list = psr.parse_source().unwrap();
 
         for i in list {

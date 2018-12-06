@@ -3,10 +3,10 @@ mod kw_map;
 mod token;
 
 pub use self::kw::Keyword;
-pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup, TokenStream};
+pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup};
 
 use self::kw_map::HASHMAP;
-use super::source::{Source, SrcMgr, Diagnostic, Severity, Pos, Spanned};
+use super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Spanned};
 use super::number::{LogicValue, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};
@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 
 pub struct Tokenizer {
     pub mgr: Rc<SrcMgr>,
+    pub diag: Rc<DiagMgr>,
     pub src_offset: Pos,
     // Current index pointer
     pub pos: usize,
@@ -29,13 +30,12 @@ pub struct Tokenizer {
     pub keyword: u8,
     pub keyword_stack: Vec<u8>,
     attr: bool,
-    // For implementing TokenStream
-    peek: VecDeque<Token>,
 }
 
 impl Tokenizer {
-    pub fn new(mgr: Rc<SrcMgr>, src: &Rc<Source>) -> Tokenizer {
+    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, src: &Rc<Source>) -> Tokenizer {
         Tokenizer {
+            diag,
             src_offset: mgr.find_src(src).unwrap().start,
             src_text: src.content().clone(),
             mgr: mgr,
@@ -44,7 +44,6 @@ impl Tokenizer {
             keyword: 8,
             keyword_stack: Vec::new(),
             attr: false,
-            peek: VecDeque::new(),
         }
     }
 
@@ -103,7 +102,7 @@ impl Tokenizer {
     }
 
     fn report_diag(&self, msg: Diagnostic) {
-        msg.print(&self.mgr, true, 4)
+        self.diag.report(msg).unwrap();
     }
 
     // Skip CRLF (the CR is already consumed)
@@ -1161,35 +1160,15 @@ impl Tokenizer {
             }
         }
     }
-}
 
-impl TokenStream for Tokenizer {
-    fn next(&mut self) -> Token {
-        let ret = if self.peek.is_empty() {
-            self.next_tree()
-        } else {
-            self.peek.pop_front().unwrap()
-        };
-        ret
-    }
-
-    fn peek(&mut self) -> &Token {
-        if self.peek.is_empty() {
-            let next = self.next_tree();
-            self.peek.push_back(next);
+    pub fn all(&mut self) -> VecDeque<Token> {
+        let mut vec = VecDeque::new();
+        loop {
+            let tok = self.next_tree();
+            match *tok {
+                TokenKind::Eof => return vec,
+                _ => vec.push_back(tok),
+            }
         }
-        self.peek.front().unwrap()
-    }
-
-    fn peek_n(&mut self, n: usize) -> &Token {
-        while self.peek.len() <= n {
-            let next = self.next_tree();
-            self.peek.push_back(next);
-        }
-        &self.peek[n]
-    }
-
-    fn pushback(&mut self, tok: Token) {
-        self.peek.push_front(tok);
     }
 }
