@@ -36,7 +36,7 @@ pub struct Tokenizer {
 impl Tokenizer {
     pub fn new(mgr: Rc<SrcMgr>, src: &Rc<Source>) -> Tokenizer {
         Tokenizer {
-            src_offset: mgr.find_src(src).unwrap().0,
+            src_offset: mgr.find_src(src).unwrap().start,
             src_text: src.content().clone(),
             mgr: mgr,
             pos: 0,
@@ -88,7 +88,7 @@ impl Tokenizer {
         self.report_diag(DiagMsg {
             severity: severity,
             message: msg.into(),
-            span: vec![Span(Pos(self.src_offset.0 + start), Pos(self.src_offset.0 + end))],
+            span: vec![Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))],
             hint: Vec::new()
         })
     }
@@ -96,7 +96,7 @@ impl Tokenizer {
     fn report_span_with_hint<M: Into<String>>(
         &self, severity: Severity, msg: M, hint: String, start: usize, end: usize
     ) {
-        let span = Span(Pos(self.src_offset.0 + start), Pos(self.src_offset.0 + end));
+        let span = Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end));
         self.report_diag(DiagMsg {
             severity: severity,
             message: msg.into(),
@@ -1090,7 +1090,7 @@ impl Tokenizer {
                 TokenKind::BlockComment => continue,
                 _ => ()
             }
-            return Spanned::new(tok, Span(Pos(self.src_offset.0 + self.start), Pos(self.src_offset.0 + self.pos)));
+            return Spanned::new(tok, Pos(self.src_offset.0 + self.start).span_to(Pos(self.src_offset.0 + self.pos)));
         }
     }
 
@@ -1122,8 +1122,8 @@ impl Tokenizer {
                 self.report_span(
                     Severity::Error,
                     "open delimiter that is never closed",
-                    tok.span.0 .0,
-                    tok.span.1 .0,
+                    tok.span.start.0,
+                    tok.span.end.0,
                 );
             }
             Some(v) if v != exp_close => {
@@ -1131,13 +1131,13 @@ impl Tokenizer {
                 self.report_span(
                     Severity::Error,
                     format!("unexpected closing delimiter, expecting {:#?}", exp_close),
-                    close_tok.span.0 .0,
-                    close_tok.span.1 .0,
+                    close_tok.span.start.0,
+                    close_tok.span.end.0,
                 );
             }
             _ => (),
         }
-        let overall_span = tok.span.join(close_tok.span);
+        let overall_span = tok.span.merge(close_tok.span);
         Spanned::new(
             TokenKind::DelimGroup(delim, Box::new(DelimGroup {
                 open: tok,
@@ -1156,8 +1156,8 @@ impl Tokenizer {
                     self.report_span(
                         Severity::Error,
                         "extra closing delimiter",
-                        tok.span.0 .0,
-                        tok.span.1 .0,
+                        tok.span.start.0,
+                        tok.span.end.0,
                     );
                 }
                 _ => return tok,

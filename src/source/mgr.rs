@@ -37,7 +37,7 @@ impl SrcMgrMut {
             if Rc::ptr_eq(&self.files[i], src) {
                 let start = if i == 0 { 0 } else { self.end[i - 1] };
                 let end = self.end[i];
-                return Some(Span(Pos(start), Pos(end)));
+                return Some(Pos(start).span_to(Pos(end)));
             }
         }
         None
@@ -67,8 +67,8 @@ impl SrcMgrMut {
         if span.is_none() {
             return None;
         }
-        let begin = self.find_pos(span.0);
-        let end = self.find_pos(span.1);
+        let begin = self.find_pos(span.start);
+        let end = self.find_pos(span.end);
         if Rc::ptr_eq(&begin.source, &end.source) {
             Some(FatSpan::new(begin.source, begin.pos, end.pos))
         } else {

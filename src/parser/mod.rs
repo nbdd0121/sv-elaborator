@@ -105,9 +105,9 @@ impl Parser {
 
     fn consume_if_delim(&mut self, expected: Delim) -> Option<Box<DelimGroup>> {
         let toksp = self.consume();
-        match toksp.node {
+        match toksp.value {
             TokenKind::DelimGroup(delim, _) if delim == expected => {
-                if let TokenKind::DelimGroup(_, grp) = toksp.node {
+                if let TokenKind::DelimGroup(_, grp) = toksp.value {
                     Some(grp)
                 } else {
                     unreachable!()
@@ -121,7 +121,7 @@ impl Parser {
     }
 
     fn consume_if_eof(&mut self) -> Option<()> {
-        match self.peek().node {
+        match self.peek().value {
             TokenKind::Eof => {
                 self.consume();
                 Some(())
@@ -132,7 +132,7 @@ impl Parser {
 
     fn consume_if_id(&mut self) -> Option<Ident> {
         let toksp = self.consume();
-        if let TokenKind::Id(name) = toksp.node {
+        if let TokenKind::Id(name) = toksp.value {
             Some(Spanned::new(name, toksp.span))
         } else {
             self.pushback(toksp);
@@ -141,7 +141,7 @@ impl Parser {
     }
 
     fn consume_if_kw(&mut self, kw: Keyword) -> Option<Token> {
-        let nkw = match self.peek().node {
+        let nkw = match self.peek().value {
             TokenKind::Keyword(kw) => kw,
             _ => return None,
         };
@@ -153,7 +153,7 @@ impl Parser {
     }
 
     fn consume_if_op(&mut self, op: Operator) -> Option<Token> {
-        let nop = match self.peek().node {
+        let nop = match self.peek().value {
             TokenKind::Operator(op) => op,
             _ => return None,
         };
@@ -183,7 +183,7 @@ impl Parser {
     }
 
     fn expect_eof(&mut self) -> Result<()> {
-        if let TokenKind::Eof = self.peek().node {} else {
+        if let TokenKind::Eof = self.peek().value {} else {
             let span = self.peek().span;
             self.report_span(Severity::Error, "unexpected extra token", span)?;
         }
@@ -311,7 +311,7 @@ impl Parser {
             _ => return Ok(None),
         }
         let token = self.consume();
-        if let TokenKind::DelimGroup(_, grp) = token.node {
+        if let TokenKind::DelimGroup(_, grp) = token.value {
             Ok(Some(Spanned::new(self.delim_group(grp.tokens, f)?, token.span)))
         } else {
             unreachable!();
@@ -549,7 +549,7 @@ impl Parser {
     /// extern primitive
     /// ```
     fn parse_item(&mut self) -> Result<Option<Item>> {
-        match self.peek().node {
+        match self.peek().value {
             TokenKind::Eof => Ok(None),
             // module_declaration
             TokenKind::DelimGroup(Delim::Module, _) => Ok(Some(self.parse_module()?)),
@@ -806,7 +806,7 @@ impl Parser {
 
                 // Could only appear in non-ANSI declaration
                 if prev.is_none() {
-                    match this.peek().node {
+                    match this.peek().value {
                         TokenKind::DelimGroup(Delim::Brace, _) => {
                             ansi = false;
                             return Ok(false)
@@ -976,7 +976,7 @@ impl Parser {
     ///   input | output | inout | ref
     /// ```
     fn parse_port_dir(&mut self) -> Option<PortDir> {
-        match self.peek().node {
+        match self.peek().value {
             TokenKind::Keyword(Keyword::Input) => {
                 self.consume();
                 Some(PortDir::Input)
@@ -1006,7 +1006,7 @@ impl Parser {
     /// lifetime ::= static | automatic
     /// ```
     fn parse_lifetime(&mut self) -> Lifetime {
-        match self.peek().node {
+        match self.peek().value {
             TokenKind::Keyword(Keyword::Automatic) => {
                 self.consume();
                 Lifetime::Automatic
@@ -1074,7 +1074,7 @@ impl Parser {
     /// ```
     fn parse_data_type(&mut self, implicit: bool) -> Result<Option<Box<DataType>>> {
         let toksp = self.consume();
-        match toksp.node {
+        match toksp.value {
             TokenKind::Keyword(kw) => match kw {
                 Keyword::Bit | Keyword::Logic | Keyword::Reg => {
                     let sign = self.parse_signing();
@@ -1119,7 +1119,7 @@ impl Parser {
     /// signing ::= signed | unsigned
     /// ```
     fn parse_signing(&mut self) -> Signing {
-        match self.peek().node {
+        match self.peek().value {
             TokenKind::Keyword(Keyword::Signed) => {
                 self.consume();
                 Signing::Signed
@@ -1185,7 +1185,7 @@ impl Parser {
     fn parse_dim(&mut self) -> Result<Option<Dim>> {
         self.parse_if_delim_spanned(Delim::Bracket, |this| {
             scope!(this);
-            Ok(match this.peek().node {
+            Ok(match this.peek().value {
                 TokenKind::Eof => {
                     DimKind::Unsized
                 }
@@ -1313,7 +1313,7 @@ impl Parser {
             TokenKind::Operator(op) if Self::is_assign_op(op) => {
                 self.consume();
                 let rhs = parse!(expr);
-                let span = expr.span.join(rhs.span);
+                let span = expr.span.merge(rhs.span);
                 Ok(Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span)))
             }
             _ => Ok(Some(expr))
@@ -1393,7 +1393,7 @@ impl Parser {
             }
 
             let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec))?;
-            let span = expr.span.join(rhs.span);
+            let span = expr.span.merge(rhs.span);
             expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, Box::new(rhs)), span);
         }
 
@@ -1411,7 +1411,7 @@ impl Parser {
                     self.report_span(Severity::Fatal, "attributes not yet supported", span)?;
                 }
                 let expr = self.parse_unwrap(Self::parse_primary)?;
-                let span = span.join(expr.span);
+                let span = span.merge(expr.span);
                 Ok(Some(Spanned::new(ExprKind::Unary(op, Box::new(expr)), span)))
             }
             _ => {
@@ -1464,7 +1464,7 @@ impl Parser {
                 let span = self.consume().span;
                 self.expect_op(Operator::Tick)?;
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
-                Spanned::new(ExprKind::ConstCast(Box::new(expr.node)), span.join(expr.span))
+                Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
             TokenKind::Keyword(Keyword::Signed) | 
             TokenKind::Keyword(Keyword::Unsigned) => {
@@ -1472,7 +1472,7 @@ impl Parser {
                 let sign = self.parse_signing();
                 self.expect_op(Operator::Tick)?;
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
-                Spanned::new(ExprKind::SignCast(sign, Box::new(expr.node)), span.join(expr.span))
+                Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
             }
             _ => match self.parse_primary_nocast()? {
                 None => return Ok(None),
@@ -1485,8 +1485,8 @@ impl Parser {
             }
 
             let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
-            let span = expr.span.join(nexpr.span);
-            expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.node)), span)
+            let span = expr.span.merge(nexpr.span);
+            expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.value)), span)
         }
         Ok(Some(expr))
     }
@@ -1592,9 +1592,8 @@ impl Parser {
                         id = Some(HierId::Name(None, Box::new(Spanned::new_unspanned("".to_owned()))))
                     }
                     // TODO: This is a hack. Could do better
-                    let end_span = self.peek().span;
-                    let end_span = Span(end_span.0, end_span.0);
-                    let expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), begin_span.join(end_span));
+                    let span = begin_span.start.span_to(self.peek().span.end);
+                    let expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), span);
                     
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
@@ -1642,15 +1641,13 @@ impl Parser {
                 TokenKind::DelimGroup(Delim::Bracket, _) => {
                     let sel = self.parse_single_select()?;
                     // TODO better end span
-                    let end_span = self.peek().span;
-                    let end_span = Span(end_span.0, end_span.0);
-                    let span = expr.span.join(end_span);
+                    let span = expr.span.end.span_to(self.peek().span.start);
                     expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);
                 }
                 TokenKind::Operator(Operator::Dot) => {
                     self.consume();
                     let id = self.expect_id()?;
-                    let span = expr.span.join(id.span);
+                    let span = expr.span.merge(id.span);
                     expr = Spanned::new(ExprKind::Member(Box::new(expr), id), span);
                 }
                 _ => return Ok(expr)

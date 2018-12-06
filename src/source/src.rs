@@ -3,12 +3,6 @@ use super::{LineMap};
 use std::rc::Rc;
 use lazycell::LazyCell;
 
-thread_local! {
-static DUMMY: Rc<Source> = {
-    Rc::new(Source::new("(dummy)".to_owned(), "".to_owned()))
-};
-}
-
 pub struct Source {
     filename: String,
     content: Rc<String>,
@@ -16,11 +10,6 @@ pub struct Source {
 }
 
 impl Source {
-    // Create a dummy source
-    pub fn dummy() -> Rc<Source> {
-        DUMMY.with(|x| x.clone())
-    }
-
     pub fn new(filename: String, content: String) -> Source {
         Source {
             filename: filename,
