@@ -577,6 +577,7 @@ impl Parser {
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) |
+            TokenKind::Keyword(Keyword::Endgenerate) |
             TokenKind::Keyword(Keyword::End) => Ok(None),
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
@@ -588,8 +589,24 @@ impl Parser {
             TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            // generate_region
+            TokenKind::Keyword(Keyword::Generate) => {
+                let kw = self.consume();
+                self.report_span(Severity::Warning, "there is no need for generate region", kw.span)?;
+                let list = self.parse_list(Self::parse_item_opt)?;
+                self.expect(TokenKind::Keyword(Keyword::Endgenerate))?;
+                Ok(Some(Item::GenRegion(list)))
+            }
             // loop_generate_construct
             TokenKind::Keyword(Keyword::For) => Ok(Some(self.parse_loop_gen(attr)?)),
+            // if_generate_construct
+            TokenKind::Keyword(Keyword::If) => Ok(Some(self.parse_if_gen(attr)?)),
+            // case_generate_construct
+            TokenKind::Keyword(Keyword::Case) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "case_generate_construct is not supported", span)?;
+                unreachable!()
+            }
             TokenKind::Id(_) => {
                 if let Some(v) = self.parse_instantiation(&mut attr)? {
                     Ok(Some(v))
@@ -1475,6 +1492,30 @@ impl Parser {
             cond,
             update,
             block,
+        })))
+    }
+
+    /// Parse a if_generate_construct
+    /// ```bnf
+    /// if_generate_construct ::=
+    ///   if ( constant_expression ) generate_block [ else generate_block ]
+    /// ```
+    fn parse_if_gen(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
+        // Eat the if keyword
+        self.consume();
+        let cond = self.parse_delim(Delim::Paren, Self::parse_expr)?;
+        let true_block = self.parse_gen_block()?;
+        let false_block = if self.check(TokenKind::Keyword(Keyword::Else)) {
+            Some(Box::new(self.parse_gen_block()?))
+        } else {
+            None
+        };
+
+        Ok(Item::IfGen(Box::new(IfGen {
+            attr,
+            cond,
+            true_block,
+            false_block,
         })))
     }
 

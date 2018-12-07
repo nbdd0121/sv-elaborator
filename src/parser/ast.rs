@@ -36,7 +36,9 @@ pub enum Item {
 
     HierInstantiation(Box<HierInstantiation>),
 
+    GenRegion(Vec<Item>),
     LoopGen(Box<LoopGen>),
+    IfGen(Box<IfGen>),
     GenBlock(Box<GenBlock>),
 }
 
@@ -240,6 +242,14 @@ pub struct LoopGen {
     pub cond: Expr,
     pub update: Expr,
     pub block: Item,
+}
+
+#[derive(Debug)]
+pub struct IfGen {
+    pub attr: Option<Box<AttrInst>>,
+    pub cond: Expr,
+    pub true_block: Item,
+    pub false_block: Option<Box<Item>>,
 }
 
 #[derive(Debug)]

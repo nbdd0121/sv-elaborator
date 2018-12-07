@@ -174,6 +174,15 @@ impl PrettyPrint {
                 }
                 self.append(format!(";\n"));
             }
+            Item::GenRegion(list) => {
+                self.indent_append("generate\n");
+                self.indent(4);
+                for item in list {
+                    self.print_item(item);
+                }
+                self.indent(-4);
+                self.indent_append("endgenerate\n");
+            }
             Item::LoopGen(gen) => {
                 self.indent_append("for(");
                 if gen.genvar {
@@ -189,6 +198,20 @@ impl PrettyPrint {
                 self.indent(4);
                 self.print_item(&gen.block);
                 self.indent(-4);
+            }
+            Item::IfGen(gen) => {
+                self.indent_append("if(");
+                self.print_expr(&gen.cond);
+                self.append(")\n");
+                self.indent(4);
+                self.print_item(&gen.true_block);
+                self.indent(-4);
+                if let Some(v) = &gen.false_block {
+                    self.indent_append("else\n");
+                    self.indent(4);
+                    self.print_item(&v);
+                    self.indent(-4);
+                }
             }
             Item::GenBlock(gen) => {
                 self.indent(-4);
