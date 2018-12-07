@@ -23,15 +23,24 @@ pub struct Parser {
 macro_rules! scope {
     ($t:expr) => {
         macro_rules! parse {
+            ([expr]) => {
+                $t.parse_expr()?
+            };
             (expr) => {
                 $t.parse_unwrap(Self::parse_expr)?
             };
             (box(expr)) => {
                 Box::new($t.parse_unwrap(Self::parse_expr)?)
             };
-            ([expr]) => {
-                $t.parse_expr()?
-            }
+            ([$rule:ident]) => {
+                $t.rule()?
+            };
+            ($rule:ident) => {
+                $t.parse_unwrap(Self::$rule)?
+            };
+            (box($rule:ident)) => {
+                Box::new($t.parse_unwrap(Self::$rule)?)
+            };
         }
     }
 }
@@ -1504,6 +1513,31 @@ impl Parser {
         }
     }
 
+
+    /// Parse mintypmax expression
+    ///
+    /// ```bnf
+    /// mintypmax_expression ::=
+    ///   expression | expression : expression : expression
+    /// ```
+    fn parse_mintypmax_expr(&mut self) -> Result<Option<Expr>> {
+        let expr = match self.parse_expr()? {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+
+        if !self.check(TokenKind::Operator(Operator::Colon)) {
+            return Ok(Some(expr))
+        }
+
+        scope!(self);
+        let typ = parse!(box(expr));
+        self.expect(TokenKind::Operator(Operator::Colon))?;
+        let max = parse!(box(expr));
+        let span = expr.span.merge(max.span);
+        Ok(Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span)))
+    }
+
     /// Combined parser of bit_select (single) and part_select_range.
     ///
     /// According to spec
@@ -1632,9 +1666,10 @@ impl Parser {
             }
             // ( mintypmax_expression )
             TokenKind::DelimGroup(Delim::Paren, _) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "paren is not finished yet", span)?;
-                unreachable!();
+                Ok(Some(self.parse_delim_spanned(Delim::Paren, |this| {
+                    scope!(this);
+                    Ok(ExprKind::Paren(parse!(box(parse_mintypmax_expr))))
+                })?))
             }
             // system_tf_call
             TokenKind::SystemTask(_) => {

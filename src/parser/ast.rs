@@ -247,6 +247,9 @@ pub enum ExprKind {
     /// Assignment
     Assign(Box<Expr>, Operator, Box<Expr>),
 
+    /// Parenthesised expression
+    Paren(Box<Expr>),
+
     /// Min-typ-max expression
     MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
 }

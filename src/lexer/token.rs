@@ -1,6 +1,8 @@
 use super::super::number::{LogicValue, LogicNumber};
 use super::kw::Keyword;
 use super::super::source::Spanned;
+
+use std::fmt;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +161,30 @@ pub enum Operator {
      * // "[->"
      * GotoRepeatStart,
      */
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let str = match self {
+            Operator::Add => "+",
+            Operator::Sub => "-",
+            Operator::Mul => "*",
+            Operator::Div => "/",
+            Operator::Mod => "%",
+            Operator::And => "&",
+            Operator::Or => "|",
+            Operator::Xor => "^",
+            Operator::LShl => "<<",
+            Operator::LShr => ">>",
+            Operator::AShl => "<<<",
+            Operator::AShr => ">>>",
+            Operator::Assign => "=",
+            _ => {
+                return write!(f, "{:?} unimp", self);
+            }
+        };
+        write!(f, "{}", str)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

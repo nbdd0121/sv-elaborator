@@ -1,4 +1,5 @@
 use super::parser::ast::*;
+use lexer::TokenKind;
 use lexer::{Keyword};
 
 use util::IdentifyFirstLast;
@@ -44,8 +45,9 @@ impl PrettyPrint {
         for (item, _, last) in obj.list.iter().identify_first_last() {
             self.append(format!("{}", item.name));
             // pub dim: Vec<Dim>,
-            if let Some(ref _v) = item.init {
-                self.append(format!(" = something"));
+            if let Some(ref v) = item.init {
+                self.append(" = ");
+                self.print_expr(v);
             }
             if !last {
                 self.append(format!(", "));
@@ -105,7 +107,7 @@ impl PrettyPrint {
             Item::ContinuousAssign(list) => {
                 self.indent_append("assign ");
                 for (item, _, last) in list.iter().identify_first_last() {
-                    self.append(format!("{:?}", item));
+                    self.print_expr(item);
                     if !last {
                         self.append(format!(", "));
                     }
@@ -113,6 +115,75 @@ impl PrettyPrint {
                 self.append(format!("\n"));
             } 
             _ => unimplemented!(),
+        }
+    }
+
+    fn get_hier_id(obj: &HierId) -> String {
+        match obj {
+            HierId::Name(None, id) => format!("{}", id),
+            HierId::Name(Some(name), id) => format!("{}.{}", Self::get_hier_id(name), id),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn print_expr(&mut self, obj: &Expr) {
+        match &**obj {
+            ExprKind::Literal(v) => {
+                match &**v {
+                    TokenKind::IntegerLiteral(num) => self.append(format!("{}", num)),
+                    _ => unimplemented!(),
+                }
+            }
+            ExprKind::HierName(scope, name) => {
+                if let Some(_) = scope {
+                    unimplemented!();
+                }
+                self.append(Self::get_hier_id(name));
+            }
+            ExprKind::Unary(op, expr) => {
+                self.append(format!("{}", op));
+                self.print_expr(expr);
+            }
+            ExprKind::Assign(lhr, op, rhs) |
+            ExprKind::Binary(lhr, op, rhs) => {
+                self.print_expr(lhr);
+                self.append(format!(" {} ", op));
+                self.print_expr(rhs);
+            }
+            ExprKind::Paren(v) => {
+                self.append("(");
+                self.print_expr(v);
+                self.append(")");
+            }
+            ExprKind::Select(lhs, sel) => {
+                self.print_expr(lhs);
+                self.append("[");
+                match sel {
+                    Select::Value(rhs) => {
+                        self.print_expr(rhs);
+                    }
+                    Select::Range(start, end) => {
+                        self.print_expr(start);
+                        self.append(":");
+                        self.print_expr(end);
+                    }
+                    Select::PlusRange(start, end) => {
+                        self.print_expr(start);
+                        self.append("+:");
+                        self.print_expr(end);
+                    }
+                    Select::MinusRange(start, end) => {
+                        self.print_expr(start);
+                        self.append("-:");
+                        self.print_expr(end);
+                    }
+                }
+                self.append("]");
+            }
+            _ => {
+                eprintln!("{:?}", obj);
+                unimplemented!()
+            }
         }
     }
 }
