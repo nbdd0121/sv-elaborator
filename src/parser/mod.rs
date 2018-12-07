@@ -24,13 +24,13 @@ macro_rules! scope {
     ($t:expr) => {
         macro_rules! parse {
             ([expr]) => {
-                $t.parse_expr()?
+                $t.parse_expr_opt()?
             };
             (expr) => {
-                $t.parse_unwrap(Self::parse_expr)?
+                $t.parse_unwrap(Self::parse_expr_opt)?
             };
             (box(expr)) => {
-                Box::new($t.parse_unwrap(Self::parse_expr)?)
+                Box::new($t.parse_unwrap(Self::parse_expr_opt)?)
             };
             ([$rule:ident]) => {
                 $t.rule()?
@@ -562,21 +562,24 @@ impl Parser {
     /// extern [static] constraint
     /// extern primitive
     /// ```
-    fn parse_item(&mut self) -> Result<Option<Item>> {
+    fn parse_item_opt(&mut self) -> Result<Option<Item>> {
         let mut attr = self.parse_attr_instance()?;
         match self.peek().value {
             TokenKind::Eof |
-            TokenKind::Keyword(Keyword::Endmodule) => Ok(None),
-            // module_declaration
-            TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
-            // continuous_assign
-            TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            TokenKind::Keyword(Keyword::Endmodule) |
+            TokenKind::Keyword(Keyword::End) => Ok(None),
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
                 let clone = self.peek().span.clone();
                 self.report_span(Severity::Fatal, "extern is not supported", clone)?;
                 unreachable!()
             }
+            // module_declaration
+            TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
+            // continuous_assign
+            TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            // loop_generate_construct
+            TokenKind::Keyword(Keyword::For) => Ok(Some(self.parse_loop_gen(attr)?)),
             TokenKind::Id(_) => {
                 if let Some(v) = self.parse_instantiation(&mut attr)? {
                     Ok(Some(v))
@@ -592,6 +595,10 @@ impl Parser {
                 unreachable!()
             }
         }
+    }
+
+    fn parse_item(&mut self) -> Result<Item> {
+        self.parse_unwrap(Self::parse_item_opt)
     }
 
     /// Parse an entire compilation unit
@@ -616,11 +623,11 @@ impl Parser {
     /// ```
     /// TODO: We still need to check if these items can legally appear here.
     pub fn parse_source(&mut self) -> Result<Vec<Item>> {
-        let list = self.parse_list(Self::parse_item)?;
+        let list = self.parse_list(Self::parse_item_opt)?;
         Ok(list)
     }
 
-    /// Parse a module. We processed attributes in parse_item, and externs will not be processed
+    /// Parse a module. We processed attributes in parse_item_opt, and externs will not be processed
     /// here.
     ///
     /// Acccording to spec:
@@ -660,7 +667,7 @@ impl Parser {
         let param = self.parse_param_port_list()?;
         let port = self.parse_port_list()?;
         self.expect(TokenKind::Operator(Operator::Semicolon))?;
-        let items = self.parse_list(Self::parse_item)?;
+        let items = self.parse_list(Self::parse_item_opt)?;
         self.expect(TokenKind::Keyword(Keyword::Endmodule))?;
 
         if self.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
@@ -842,7 +849,7 @@ impl Parser {
                 if let Some(_) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
                     let name = Box::new(this.expect_id()?);
                     let expr = Box::new(this.parse_unwrap(|this| {
-                        this.parse_delim(Delim::Paren, Self::parse_expr)
+                        this.parse_delim(Delim::Paren, Self::parse_expr_opt)
                     })?);
 
                     // If not specified, default to inout
@@ -1179,7 +1186,7 @@ impl Parser {
         self.check_list(Self::check_unpacked_dim, &mut dim)?;
         let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
             None => None,
-            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr)?)),
+            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
         };
         Ok(DeclAssign {
             name: ident,
@@ -1227,7 +1234,7 @@ impl Parser {
                     DimKind::AssocWild
                 }
                 _ => {
-                    let expr = this.parse_unwrap(Self::parse_expr)?;
+                    let expr = this.parse_unwrap(Self::parse_expr_opt)?;
                     if this.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
                         let end = Box::new(parse!(expr));
                         DimKind::Range(Box::new(expr), end)
@@ -1348,6 +1355,120 @@ impl Parser {
     }
 
     //
+    // A.4.2 Generate instantiations
+    //
+
+    /// Parse a loop_generate_construct
+    /// ```bnf
+    /// loop_generate_construct ::=
+    ///   for ( genvar_initialization ; genvar_expression ; genvar_iteration ) generate_block
+    /// ```
+    fn parse_loop_gen(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
+        // Eat the for keyword
+        self.consume();
+        let (genvar, id, init, cond, update) = 
+            self.parse_delim(Delim::Paren, |this| {
+                let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
+                let id = this.expect_id()?;
+                this.expect(TokenKind::Operator(Operator::Assign))?;
+                let init = this.parse_expr()?;
+                this.expect(TokenKind::Operator(Operator::Semicolon))?;
+                let cond = this.parse_expr()?;
+                this.expect(TokenKind::Operator(Operator::Semicolon))?;
+                let update = this.parse_expr()?;
+                Ok((genvar, id, init, cond, update))
+            })?;
+        let block = self.parse_gen_block()?;
+        Ok(Item::LoopGen(Box::new(LoopGen {
+            attr,
+            genvar,
+            id,
+            init,
+            cond,
+            update,
+            block,
+        })))
+    }
+
+    fn parse_gen_block(&mut self) -> Result<Item> {
+        // A generate-block may begin with a label. It is treated as same as label after begin.
+        let label = if let TokenKind::Id(_) = **self.peek() {
+            if let TokenKind::Operator(Operator::Colon) = **self.peek_n(1) {
+                // This is actuall
+                if let TokenKind::Keyword(Keyword::Begin) = **self.peek_n(2) {
+                    let label = self.expect_id()?;
+                    self.consume();
+                    Some(label)
+                } else { None }
+            } else { None }
+        } else { None };
+        
+        let begin = match self.consume_if(TokenKind::Keyword(Keyword::Begin)) {
+            None => return self.parse_item(),
+            Some(v) => v,
+        };
+
+        let name = if self.check(TokenKind::Operator(Operator::Colon)) {
+            Some(self.expect_id()?)
+        } else {
+            None
+        };
+
+        if let (Some(l), Some(n)) = (&label, &name) {
+            if **l != **n {
+                // IMP: Add a span about previous name
+                self.report_span(
+                    Severity::Error,
+                    "block identifiers before and after 'begin' are not identical",
+                    n.span
+                )?;
+            } else {
+                self.report_span(
+                    Severity::Warning,
+                    "duplicate block identifiers before and after 'begin'",
+                    n.span
+                )?;
+            }
+        } else if let (Some(l), None) = (&label, &name) {
+            self.report_diag(
+                Diagnostic::new(
+                    Severity::Warning,
+                    "it is suggested to place block identifier after 'begin'",
+                    l.span.merge(begin.span)
+                ).fix_primary(format!("begin: {}", l))
+            )?;
+        }
+
+        let name = name.or(label);
+        let items = self.parse_list(Self::parse_item_opt)?;
+        
+        self.expect(TokenKind::Keyword(Keyword::End))?;
+
+        if self.check(TokenKind::Operator(Operator::Colon)) {
+            let id = self.expect_id()?;
+            match &name {
+                None => self.report_span(
+                    Severity::Error,
+                    "identifer annotation at end does match declaration, should be empty",
+                    id.span
+                )?,
+                Some(v) => if **v != *id {
+                    self.report_span(
+                        Severity::Error,
+                        format!("identifer annotation at end does match declaration, should be '{}'", v),
+                        id.span
+                    )?
+                }
+            }
+        }
+
+        Ok(Item::GenBlock(Box::new(GenBlock {
+            name: name.map(Box::new),
+            items,
+        })))
+    }
+
+    //
     // A.6.1 Continuous assignment and net alias statements
     //
     fn parse_continuous_assign(&mut self) -> Result<Item> {
@@ -1444,7 +1565,7 @@ impl Parser {
     /// | inc_or_dec_expression
     /// ```
     /// TODO: conditional & inside are not yet completed
-    fn parse_expr(&mut self) -> Result<Option<Expr>> {
+    fn parse_expr_opt(&mut self) -> Result<Option<Expr>> {
         match **self.peek() {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
@@ -1456,6 +1577,10 @@ impl Parser {
                 self.parse_bin_expr(0)
             }
         }
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr> {
+        self.parse_unwrap(Self::parse_expr_opt)
     }
 
     /// Parse binary expression using precedence climing method which saves stack space.
@@ -1521,7 +1646,7 @@ impl Parser {
     ///   expression | expression : expression : expression
     /// ```
     fn parse_mintypmax_expr(&mut self) -> Result<Option<Expr>> {
-        let expr = match self.parse_expr()? {
+        let expr = match self.parse_expr_opt()? {
             None => return Ok(None),
             Some(v) => v,
         };
@@ -1581,7 +1706,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Const) => {
                 let span = self.consume().span;
                 self.expect(TokenKind::Operator(Operator::Tick))?;
-                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
                 Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
             TokenKind::Keyword(Keyword::Signed) | 
@@ -1589,7 +1714,7 @@ impl Parser {
                 let span = self.peek().span;
                 let sign = self.parse_signing();
                 self.expect(TokenKind::Operator(Operator::Tick))?;
-                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
                 Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
             }
             _ => match self.parse_primary_nocast()? {
@@ -1602,7 +1727,7 @@ impl Parser {
                 break
             }
 
-            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr))?;
+            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
             let span = expr.span.merge(nexpr.span);
             expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.value)), span)
         }
@@ -1712,7 +1837,7 @@ impl Parser {
                     }
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);
-                    let expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), span);
+                    let mut expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), span);
                     
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
@@ -1734,11 +1859,10 @@ impl Parser {
                             unreachable!();
                         }
                         // Inc/Dec
-                        TokenKind::Operator(Operator::Inc) |
-                        TokenKind::Operator(Operator::Dec) => {
-                            let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "inc/dec not finished yet", span)?;
-                            unreachable!();
+                        TokenKind::Operator(e @ Operator::Inc) |
+                        TokenKind::Operator(e @ Operator::Dec) => {
+                            let span = span.merge(self.consume().span);
+                            Ok(Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), e), span)))
                         }
                         // Bit select
                         TokenKind::DelimGroup(Delim::Bracket, _) => Ok(Some(self.parse_select(expr)?)),

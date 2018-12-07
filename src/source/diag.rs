@@ -63,10 +63,10 @@ pub struct Diagnostic {
 
 /// Helpers for building diagnostic message. Intended to be called in chains.
 impl Diagnostic {
-    pub fn new(severity: Severity, msg: String, span: Span) -> Self {
+    pub fn new(severity: Severity, msg: impl Into<String>, span: Span) -> Self {
         Diagnostic {
             severity,
-            message: msg,
+            message: msg.into(),
             span: Some(span),
             notes: vec![Note {
                 span,
@@ -76,19 +76,15 @@ impl Diagnostic {
         }
     }
 
-    pub fn fix_primary(mut self, fix: String) -> Self {
-        self.notes.push(Note {
-            span: self.span.unwrap(),
-            fix: Some(fix),
-            message: None,
-        });
+    pub fn fix_primary(mut self, fix: impl Into<String>) -> Self {
+        self.notes[0].fix = Some(fix.into());
         self
     }
 
-    pub fn fix(mut self, span: Span, fix: String) -> Self {
+    pub fn fix(mut self, span: Span, fix: impl Into<String>) -> Self {
         self.notes.push(Note {
             span,
-            fix: Some(fix),
+            fix: Some(fix.into()),
             message: None,
         });
         self

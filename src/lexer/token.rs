@@ -179,6 +179,10 @@ impl fmt::Display for Operator {
             Operator::AShl => "<<<",
             Operator::AShr => ">>>",
             Operator::Assign => "=",
+            Operator::Lt => "<",
+            Operator::Gt => ">",
+            Operator::Inc => "++",
+            Operator::Dec => "--",
             _ => {
                 return write!(f, "{:?} unimp", self);
             }

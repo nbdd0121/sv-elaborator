@@ -112,8 +112,39 @@ impl PrettyPrint {
                         self.append(format!(", "));
                     }
                 }
-                self.append(format!("\n"));
-            } 
+                self.append(format!(";\n"));
+            }
+            Item::LoopGen(gen) => {
+                self.indent_append("for(");
+                if gen.genvar {
+                    self.append("genvar ");
+                }
+                self.append(format!("{} = ", gen.id));
+                self.print_expr(&gen.init);
+                self.append("; ");
+                self.print_expr(&gen.cond);
+                self.append("; ");
+                self.print_expr(&gen.update);
+                self.append(")\n");
+                self.indent(4);
+                self.print_item(&gen.block);
+                self.indent(-4);
+            }
+            Item::GenBlock(gen) => {
+                self.indent(-4);
+                self.indent_append("begin");
+                if let Some(v) = &gen.name {
+                    self.append(format!(": {}", v));
+                }
+                self.append("\n");
+                self.indent(4);
+                for item in &gen.items {
+                    self.print_item(item);
+                }
+                self.indent(-4);
+                self.indent_append("end\n");
+                self.indent(4);
+            }
             _ => unimplemented!(),
         }
     }
@@ -149,6 +180,10 @@ impl PrettyPrint {
                 self.print_expr(lhr);
                 self.append(format!(" {} ", op));
                 self.print_expr(rhs);
+            }
+            ExprKind::PostfixIncDec(expr, op) => {
+                self.print_expr(expr);
+                self.append(format!("{}", op));
             }
             ExprKind::Paren(v) => {
                 self.append("(");

@@ -35,6 +35,13 @@ pub enum Item {
     ContinuousAssign(Vec<Expr>),
 
     HierInstantiation(Box<HierInstantiation>),
+
+    LoopGen(Box<LoopGen>),
+    GenBlock(Box<GenBlock>),
+}
+
+impl AstNode for Item {
+    fn name() -> &'static str { "item" }
 }
 
 //
@@ -211,6 +218,27 @@ pub struct HierInstantiation {
 }
 
 //
+// A.4.2 Generate instantiations
+//
+
+#[derive(Debug)]
+pub struct LoopGen {
+    pub attr: Option<Box<AttrInst>>,
+    pub genvar: bool,
+    pub id: Ident,
+    pub init: Expr,
+    pub cond: Expr,
+    pub update: Expr,
+    pub block: Item,
+}
+
+#[derive(Debug)]
+pub struct GenBlock {
+    pub name: Option<Box<Ident>>,
+    pub items: Vec<Item>,
+}
+
+//
 // A.8.3 Expressions
 //
 
@@ -243,6 +271,7 @@ pub enum ExprKind {
 
     Unary(Operator, Box<Expr>),
     Binary(Box<Expr>, Operator, Box<Expr>),
+    PostfixIncDec(Box<Expr>, Operator),
 
     /// Assignment
     Assign(Box<Expr>, Operator, Box<Expr>),
