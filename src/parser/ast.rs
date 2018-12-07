@@ -202,19 +202,29 @@ pub enum DimKind {
 pub type Dim = Spanned<DimKind>;
 
 //
-// A.4.4.1 Module instantiations
+// A.4.1.1 Module instantiations
 //
 
 #[derive(Debug)]
 pub struct HierInst {
     pub name: Ident,
+    pub dim: Vec<Dim>,
+    pub ports: Vec<Arg>,
 }
 
 #[derive(Debug)]
 pub struct HierInstantiation {
     pub attr: Option<Box<AttrInst>>,
     pub name: Ident,
+    pub param: Option<Vec<Arg>>,
     pub inst: Vec<HierInst>,
+}
+
+#[derive(Debug)]
+pub enum Arg {
+    Ordered(Option<Box<AttrInst>>, Option<Box<Expr>>),
+    Named(Option<Box<AttrInst>>, Box<Ident>, Option<Box<Expr>>),
+    NamedWildcard(Option<Box<AttrInst>>),
 }
 
 //

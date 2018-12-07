@@ -22,7 +22,7 @@ impl<T: Iterator> Iterator for Iter<T> {
     type Item = (T::Item, bool, bool);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ret = self.iter.next().map(|e| (e, self.iter.peek().is_none(), self.first));
+        let ret = self.iter.next().map(|e| (e, self.first, self.iter.peek().is_none()));
         self.first = false;
         ret
     }

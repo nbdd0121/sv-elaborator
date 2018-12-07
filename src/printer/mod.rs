@@ -39,12 +39,38 @@ impl PrettyPrint {
         self.output
     }
 
+    /// Print a list of elements, separated by newline. Each item should assume it is inlined,
+    /// i.e. it does not need to indent itself and shouldn't append newline
+    fn print_comma_list_newline<T>(&mut self, obj: &Vec<T>, mut f: impl FnMut(&mut Self, &T)) {
+        for (item, _, last) in obj.iter().identify_first_last() {
+            self.indent_append("");
+            f(self, item);
+            if !last {
+                self.append(",");
+            }
+            self.append("\n");
+        }
+    }
+
+    fn print_dim(&mut self, obj: &Dim) {
+        match &**obj {
+            DimKind::Value(v) => {
+                self.append("[");
+                self.print_expr(v);
+                self.append("]");
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     fn print_param_decl(&mut self, obj: &ParamDecl) {
         self.indent_append(format!("{} ", if obj.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
         // TODO Print type
         for (item, _, last) in obj.list.iter().identify_first_last() {
             self.append(format!("{}", item.name));
-            // pub dim: Vec<Dim>,
+            for dim in &item.dim {
+                self.print_dim(dim);
+            }
             if let Some(ref v) = item.init {
                 self.append(" = ");
                 self.print_expr(v);
@@ -90,14 +116,48 @@ impl PrettyPrint {
         if let Some(_) = obj.attr {
             unimplemented!();
         }
-        self.append(format!("{} ", obj.name));
+        self.append(format!("{}", obj.name));
+        if let Some(v) = &obj.param {
+            self.append(" #(\n");
+            self.indent(4);
+            self.print_comma_list_newline(v, |this, t| {
+                this.print_arg(t)
+            });
+            self.indent(-4);
+            self.indent_append(")");
+        }
         for (item, first, _) in obj.inst.iter().identify_first_last() {
             if !first {
-                self.append(", ");
+                self.append(",");
             }
-            self.append(format!("{}()", item.name));
+            self.append(format!(" {}", item.name));
+            for dim in &item.dim {
+                self.print_dim(dim);
+            }
+            self.append(" (\n");
+            self.indent(4);
+            self.print_comma_list_newline(&item.ports, |this, t| {
+                this.print_arg(t)
+            });
+            self.indent(-4);
+            self.indent_append(")");
         }
         self.append(";\n");
+    }
+
+    fn print_arg(&mut self, obj: &Arg) {
+        match obj {
+            Arg::Ordered(_, None) => (),
+            Arg::Ordered(_, Some(v)) => self.print_expr(v),
+            Arg::NamedWildcard(_) => self.append(".*"), 
+            Arg::Named(_, id, v) => {
+                self.append(format!(".{}(", id));
+                if let Some(v) = v {
+                    self.print_expr(v);
+                }
+                self.append(")");
+            }
+        }
     }
 
     pub fn print_item(&mut self, obj: &Item) {
@@ -162,6 +222,7 @@ impl PrettyPrint {
             ExprKind::Literal(v) => {
                 match &**v {
                     TokenKind::IntegerLiteral(num) => self.append(format!("{}", num)),
+                    TokenKind::UnbasedLiteral(val) => self.append(format!("'{}", val)),
                     _ => unimplemented!(),
                 }
             }
@@ -189,6 +250,10 @@ impl PrettyPrint {
                 self.append("(");
                 self.print_expr(v);
                 self.append(")");
+            }
+            ExprKind::Member(lhs, id) => {
+                self.print_expr(lhs);
+                self.append(format!(".{}", id));
             }
             ExprKind::Select(lhs, sel) => {
                 self.print_expr(lhs);

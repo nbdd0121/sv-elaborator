@@ -47,6 +47,16 @@ macro_rules! scope {
 
 type Result<T> = result::Result<T, ()>;
 
+//
+// Data types internal to parser
+//
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArgOption {
+    Param,
+    Port,
+    Arg,
+}
+
 /// SystemVerilog Parser.
 ///
 /// The complexity of SystemVerilog comes from determing what an identifer means. There are few
@@ -563,7 +573,7 @@ impl Parser {
     /// extern primitive
     /// ```
     fn parse_item_opt(&mut self) -> Result<Option<Item>> {
-        let mut attr = self.parse_attr_instance()?;
+        let mut attr = self.parse_attr_inst_opt()?;
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) |
@@ -1326,20 +1336,27 @@ impl Parser {
         
         let attr = mem::replace(attr, None);
         let mod_name = self.expect_id()?;
-        if self.check(TokenKind::Operator(Operator::Hash)) {
-            unimplemented!();
-        }
+
+        // Parse parameter value assignment
+        let param = if self.check(TokenKind::Operator(Operator::Hash)) {
+            Some(self.parse_args(ArgOption::Param)?)
+        } else {
+            None
+        };
 
         let list = self.parse_comma_list(false, false, |this| {
             let name = match this.consume_if_id() {
                 None => return Ok(None),
                 Some(v) => v,
             };
-            // TODO:Parse port list
-            this.expect_delim(Delim::Paren)?;
 
+            let mut dim = this.parse_list(Self::parse_dim)?;
+            this.check_list(Self::check_unpacked_dim, &mut dim)?;
+            let ports = this.parse_args(ArgOption::Port)?;
             Ok(Some(HierInst {
-                name
+                name,
+                dim,
+                ports,
             }))
         })?;
 
@@ -1348,10 +1365,81 @@ impl Parser {
         Ok(Some(Item::HierInstantiation(Box::new(
             HierInstantiation {
                 attr,
+                param,
                 name: mod_name,
                 inst: list,
             }
         ))))
+    }
+
+    /// Combined parser of parameter value assignment, port connections, and method argument list.
+    ///
+    /// ```bnf
+    /// list_of_parameter_assignments ::=
+    ///   ordered_parameter_assignment { , ordered_parameter_assignment }
+    /// | named_parameter_assignment { , named_parameter_assignment }
+    /// ordered_parameter_assignment ::=
+    ///   param_expression
+    /// named_parameter_assignment ::=
+    ///   . parameter_identifier ( [ param_expression ] )
+    /// list_of_arguments ::=
+    ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
+    /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
+    /// ```
+    fn parse_args(&mut self, option: ArgOption) -> Result<Vec<Arg>> {
+        let mut named_seen = false;
+        let mut ordered_seen = false;
+        self.parse_delim(Delim::Paren, |this| {
+            this.parse_comma_list(true, false, |this| {
+                let attr = this.parse_attr_inst_opt()?;
+                if option != ArgOption::Port && attr.is_some() {
+                    this.report_span(
+                        Severity::Error,
+                        "attribute instances on argument is not allowed",
+                        attr.as_ref().unwrap().span
+                    )?;
+                }
+                if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
+                    if option != ArgOption::Port {
+                        this.report_span(
+                            Severity::Error,
+                            ".* not allowed as argument",
+                            v.span
+                        )?;
+                    }
+                    named_seen = true;
+                    Ok(Some(Arg::NamedWildcard(attr)))
+                } else if let Some(v) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
+                    let name = this.expect_id()?;
+                    let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt)?;
+                    if ordered_seen && option != ArgOption::Arg {
+                        this.report_span(
+                            Severity::Error,
+                            "mixture of ordered and named argument is not allowed",
+                            v.span.merge(expr.span)
+                        )?;
+                    }
+                    named_seen = true;
+                    Ok(Some(Arg::Named(attr, Box::new(name), expr.value.map(Box::new))))
+                } else {
+                    let expr = this.parse_expr_opt()?.map(Box::new);
+                    if named_seen {
+                        if let Some(expr) = &expr {
+                            this.report_span(
+                                Severity::Error,
+                                "ordered argument cannot appear after named argument",
+                                expr.span
+                            )?;
+                        } else {
+                            // Return None so error message will be about trailing comma.
+                            return Ok(None)
+                        }
+                    }
+                    ordered_seen = true;
+                    Ok(Some(Arg::Ordered(attr, expr)))
+                }
+            })
+        })
     }
 
     //
@@ -1771,7 +1859,7 @@ impl Parser {
             TokenKind::Operator(Operator::Dollar) |
             TokenKind::Keyword(Keyword::Null) => {
                 let tok = self.consume();
-                let sp = tok.span.clone();
+                let sp = tok.span;
                 Ok(Some(Spanned::new(ExprKind::Literal(tok), sp)))
             }
             // empty_queue
@@ -1965,7 +2053,7 @@ impl Parser {
     //
     // A.9.1 Attributes
     //
-    fn parse_attr_instance(&mut self) -> Result<Option<Box<AttrInst>>> {
+    fn parse_attr_inst_opt(&mut self) -> Result<Option<Box<AttrInst>>> {
         let attr = self.parse_if_delim_spanned(Delim::Attr, |this| {
             Ok(AttrInstStruct(
                 this.parse_comma_list(false, false, |this| {
