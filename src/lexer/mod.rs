@@ -686,10 +686,10 @@ impl Tokenizer {
                 num.sized = true;
                 return TokenKind::IntegerLiteral(num);
             }
-
-            // This is only a number, restore position
-            self.pos = size_pos;
         }
+
+        // This is only a number, restore position
+        self.pos = size_pos;
 
         let num: BigUint = str.parse().unwrap();
         TokenKind::IntegerLiteral(LogicNumber {
@@ -762,10 +762,22 @@ impl Tokenizer {
                         self.nextch();
                         TokenKind::OpenDelim(Delim::TickBrace)
                     }
-                    '0' => TokenKind::UnbasedLiteral(LogicValue::Zero),
-                    '1' => TokenKind::UnbasedLiteral(LogicValue::One),
-                    'z' | 'Z' => TokenKind::UnbasedLiteral(LogicValue::Z),
-                    'x' | 'X' => TokenKind::UnbasedLiteral(LogicValue::X),
+                    '0' => {
+                        self.nextch();
+                        TokenKind::UnbasedLiteral(LogicValue::Zero)
+                    }
+                    '1' => {
+                        self.nextch();
+                        TokenKind::UnbasedLiteral(LogicValue::One)
+                    }
+                    'z' | 'Z' => {
+                        self.nextch();
+                        TokenKind::UnbasedLiteral(LogicValue::Z)
+                    }
+                    'x' | 'X' => {
+                        self.nextch();
+                        TokenKind::UnbasedLiteral(LogicValue::X)
+                    }
                     _ => TokenKind::Operator(Operator::Tick)
                 }
             }

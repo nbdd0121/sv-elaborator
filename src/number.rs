@@ -10,6 +10,17 @@ pub enum LogicValue {
     X,
 }
 
+impl fmt::Display for LogicValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LogicValue::Zero => write!(f, "0"),
+            LogicValue::One => write!(f, "1"),
+            LogicValue::Z => write!(f, "z"),
+            LogicValue::X => write!(f, "x"),
+        }
+    }
+}
+
 /// Represntation of Verilog's 4-value logic array
 #[derive(Clone, PartialEq)]
 pub struct LogicNumber {
