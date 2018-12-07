@@ -40,6 +40,7 @@ pub enum Item {
     LoopGen(Box<LoopGen>),
     IfGen(Box<IfGen>),
     GenBlock(Box<GenBlock>),
+    SysTfCall(Box<SysTfCall>),
 }
 
 impl AstNode for Item {
@@ -229,6 +230,10 @@ pub enum Arg {
     NamedWildcard(Option<Box<AttrInst>>),
 }
 
+impl AstNode for Vec<Arg> {
+    fn name() -> &'static str { "arguments" }
+}
+
 //
 // A.4.2 Generate instantiations
 //
@@ -259,6 +264,16 @@ pub struct GenBlock {
 }
 
 //
+// A.8.2 Subroutine call
+//
+
+#[derive(Debug)]
+pub struct SysTfCall {
+    pub task: Spanned<String>,
+    pub args: Option<Vec<Arg>>,
+}
+
+//
 // A.8.3 Expressions
 //
 
@@ -283,6 +298,10 @@ pub enum ExprKind {
 
     /// Member access
     Member(Box<Expr>, Ident),
+
+    // Subroutine calls
+    /// Call to system task
+    SysTfCall(Box<SysTfCall>),
 
     // Casts
     ConstCast(Box<Expr>),

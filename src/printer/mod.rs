@@ -52,6 +52,15 @@ impl PrettyPrint {
         }
     }
 
+    fn print_comma_list<T>(&mut self, obj: &Vec<T>, mut f: impl FnMut(&mut Self, &T)) {
+        for (item, _, last) in obj.iter().identify_first_last() {
+            f(self, item);
+            if !last {
+                self.append(", ");
+            }
+        }
+    }
+
     fn print_dim(&mut self, obj: &Dim) {
         match &**obj {
             DimKind::Value(v) => {
@@ -184,7 +193,7 @@ impl PrettyPrint {
                 self.indent_append("endgenerate\n");
             }
             Item::LoopGen(gen) => {
-                self.indent_append("for(");
+                self.indent_append("for (");
                 if gen.genvar {
                     self.append("genvar ");
                 }
@@ -200,7 +209,7 @@ impl PrettyPrint {
                 self.indent(-4);
             }
             Item::IfGen(gen) => {
-                self.indent_append("if(");
+                self.indent_append("if (");
                 self.print_expr(&gen.cond);
                 self.append(")\n");
                 self.indent(4);
@@ -228,7 +237,26 @@ impl PrettyPrint {
                 self.indent_append("end\n");
                 self.indent(4);
             }
+            Item::SysTfCall(tf) => {
+                self.indent_append("");
+                self.print_sys_tf_call(tf);
+                self.append(";\n");
+            }
             _ => unimplemented!(),
+        }
+    }
+
+    fn get_scope(obj: &Scope) -> String {
+        match obj {
+            Scope::Unit => "$unit".to_owned(),
+            Scope::Local => "local".to_owned(),
+            Scope::Name(parent, this) => {
+                if let Some(parent) = parent {
+                    format!("{}::{}", Self::get_scope(parent), this)
+                } else {
+                    this.to_string()
+                }
+            }
         }
     }
 
@@ -240,21 +268,39 @@ impl PrettyPrint {
         }
     }
 
+    fn print_sys_tf_call(&mut self, obj: &SysTfCall) {
+        self.append(format!("{}", obj.task));
+        if let Some(args) = &obj.args {
+            self.append("(");
+            self.print_comma_list(args, |this, t| {
+                this.print_arg(t)
+            });
+            self.append(")");
+        }
+    }
+
     pub fn print_expr(&mut self, obj: &Expr) {
         match &**obj {
             ExprKind::Literal(v) => {
                 match &**v {
                     TokenKind::IntegerLiteral(num) => self.append(format!("{}", num)),
                     TokenKind::UnbasedLiteral(val) => self.append(format!("'{}", val)),
-                    _ => unimplemented!(),
+                    // TODO: Escape
+                    TokenKind::StringLiteral(str) => self.append(format!("\"{}\"", str)),
+                    _ => {
+                        eprintln!("{:?}", v);
+                        unimplemented!();
+                    }
                 }
             }
             ExprKind::HierName(scope, name) => {
-                if let Some(_) = scope {
-                    unimplemented!();
+                if let Some(scope) = scope {
+                    self.append(Self::get_scope(scope));
+                    self.append("::");
                 }
                 self.append(Self::get_hier_id(name));
             }
+            ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
             ExprKind::Unary(op, expr) => {
                 self.append(format!("{}", op));
                 self.print_expr(expr);

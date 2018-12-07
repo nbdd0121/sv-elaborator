@@ -181,6 +181,10 @@ impl fmt::Display for Operator {
             Operator::Assign => "=",
             Operator::Lt => "<",
             Operator::Gt => ">",
+            Operator::LAnd => "&&",
+            Operator::LOr => "||",
+            Operator::Eq => "==",
+            Operator::Neq => "!=",
             Operator::Inc => "++",
             Operator::Dec => "--",
             _ => {

@@ -607,6 +607,12 @@ impl Parser {
                 self.report_span(Severity::Fatal, "case_generate_construct is not supported", span)?;
                 unreachable!()
             }
+            // elaboration_system_task
+            TokenKind::SystemTask(_) => {
+                let tf = self.parse_sys_tf_call()?;
+                self.expect(TokenKind::Operator(Operator::Semicolon))?;
+                Ok(Some(Item::SysTfCall(Box::new(tf))))
+            }
             TokenKind::Id(_) => {
                 if let Some(v) = self.parse_instantiation(&mut attr)? {
                     Ok(Some(v))
@@ -1403,10 +1409,10 @@ impl Parser {
     ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
     /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
     /// ```
-    fn parse_args(&mut self, option: ArgOption) -> Result<Vec<Arg>> {
+    fn parse_args_opt(&mut self, option: ArgOption) -> Result<Option<Vec<Arg>>> {
         let mut named_seen = false;
         let mut ordered_seen = false;
-        self.parse_delim(Delim::Paren, |this| {
+        self.parse_if_delim(Delim::Paren, |this| {
             this.parse_comma_list(true, false, |this| {
                 let attr = this.parse_attr_inst_opt()?;
                 if option != ArgOption::Port && attr.is_some() {
@@ -1457,6 +1463,10 @@ impl Parser {
                 }
             })
         })
+    }
+
+    fn parse_args(&mut self, option: ArgOption) -> Result<Vec<Arg>> {
+        self.parse_unwrap(|this| this.parse_args_opt(option))
     }
 
     //
@@ -1630,6 +1640,25 @@ impl Parser {
             Operator::AShrEq => true,
             _ => false,
         }
+    }
+
+    //
+    // A.8.2 Subroutine calls
+    //
+
+    fn parse_sys_tf_call(&mut self) -> Result<SysTfCall> {
+        let task = {
+            let token = self.consume();
+            match token.value {
+                TokenKind::SystemTask(name) => Spanned::new(name, token.span),
+                _ => unreachable!(),
+            }
+        };
+        let args = self.parse_args_opt(ArgOption::Arg)?;
+        Ok(SysTfCall {
+            task,
+            args,
+        })
     }
 
     //
@@ -1927,9 +1956,10 @@ impl Parser {
             }
             // system_tf_call
             TokenKind::SystemTask(_) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "system task call", span)?;
-                unreachable!();
+                let tf = self.parse_sys_tf_call()?;
+                // IMP: better span
+                let span = tf.task.span.start.span_to(self.peek().span.start);
+                Ok(Some(Spanned::new(ExprKind::SysTfCall(Box::new(tf)), span)))
             }
             // The left-over possibilities are:
             // [ class_qualifier | package_scope ] hierarchical_identifier select
