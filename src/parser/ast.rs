@@ -64,20 +64,12 @@ pub struct ModuleDecl {
 // A.1.3 Module parameters and ports
 //
 
-/// Represent either a "type" keyword or a data type
-#[derive(Debug)]
-pub enum Sort {
-    // We use "Kind" to denote type of type
-    Kind,
-    Type(Box<DataType>),
-}
-
 /// AST for parameter_declaration or localparam_declaration
 #[derive(Debug)]
 pub struct ParamDecl {
     // Parameter or localparam
     pub kw: Keyword,
-    pub ty: Option<Sort>,
+    pub ty: Option<Box<DataType>>,
     pub list: Vec<DeclAssign>,
 }
 
@@ -115,6 +107,9 @@ pub enum Lifetime {
 /// explicit data_type is required a check is needed.
 #[derive(Debug)]
 pub enum DataTypeKind {
+    /// This isn't really a data type, but it is more convinient to have it here.
+    Type,
+
     Implicit(Signing, Vec<Dim>),
     IntVec(Keyword, Signing, Vec<Dim>),
     IntAtom(Keyword, Signing),

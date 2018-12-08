@@ -782,30 +782,18 @@ impl Parser {
                     _ => (),
                 };
 
-                // If data type or `type` keyword is specified, update kw and ty.
-                if this.consume_if(TokenKind::Keyword(Keyword::Type)).is_some() {
+                // If data type is specified, update kw and ty.
+                if let Some(v) = this.parse_data_type(true)? {
                     let kw = param_decl.kw;
                     let old_decl = mem::replace(&mut param_decl, ParamDecl {
                         kw,
-                        ty: Some(Sort::Kind),
+                        ty: Some(Box::new(v)),
                         list: Vec::new()
                     });
                     if !old_decl.list.is_empty() {
                         vec.push(old_decl);
                     }
-                } else {
-                    if let Some(v) = this.parse_data_type(true)? {
-                        let kw = param_decl.kw;
-                        let old_decl = mem::replace(&mut param_decl, ParamDecl {
-                            kw,
-                            ty: Some(Sort::Type(v)),
-                            list: Vec::new()
-                        });
-                        if !old_decl.list.is_empty() {
-                            vec.push(old_decl);
-                        }
-                    };
-                }
+                };
 
                 let assign = this.parse_decl_assign()?;
                 param_decl.list.push(assign);
@@ -996,7 +984,7 @@ impl Parser {
                         PortDir::Input | PortDir::Inout => NetPortType::Default,
                         PortDir::Output => match dtype.as_ref() {
                             None => NetPortType::Default,
-                            Some(v) => match ***v {
+                            Some(v) => match **v {
                                 DataTypeKind::Implicit(..) => NetPortType::Default,
                                 _ => NetPortType::Variable,
                             }
@@ -1006,11 +994,11 @@ impl Parser {
                 });
 
                 // Default to implicit wire
-                let dtype = dtype.unwrap_or_else(|| {
-                    Box::new(Spanned::new(
+                let dtype = Box::new(dtype.unwrap_or_else(|| {
+                    Spanned::new(
                         DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), dirsp
-                    ))
-                });
+                    )
+                }));
 
                 let decl = PortDecl::Data(dir, net, dtype, vec![assign]);
                 if let Some(v) = mem::replace(&mut prev, Some(decl)) {
@@ -1115,7 +1103,8 @@ impl Parser {
     }
 
     /// Parse a data_type (or data_type_and_implicit). Note that for implicit, if there's no
-    /// dimension & signing `None` will be returned.
+    /// dimension & signing `None` will be returned. Note that we also treat `type` as data-type
+    /// for simplicity.
     ///
     /// ```bnf
     /// data_type ::=
@@ -1135,14 +1124,14 @@ impl Parser {
     /// | ps_covergroup_identifier
     /// | type_reference
     /// ```
-    fn parse_data_type(&mut self, implicit: bool) -> Result<Option<Box<DataType>>> {
+    fn parse_data_type(&mut self, implicit: bool) -> Result<Option<DataType>> {
         let toksp = self.consume();
         match toksp.value {
             TokenKind::Keyword(kw) => match kw {
                 Keyword::Bit | Keyword::Logic | Keyword::Reg => {
                     let sign = self.parse_signing();
                     let dim = self.parse_list(Self::parse_pack_dim)?;
-                    Ok(Some(Box::new(Spanned::new(DataTypeKind::IntVec(kw, sign, dim), toksp.span.clone()))))
+                    Ok(Some(Spanned::new(DataTypeKind::IntVec(kw, sign, dim), toksp.span.clone())))
                 }
                 Keyword::Signed | Keyword::Unsigned => {
                     let sp = toksp.span.clone();
@@ -1150,10 +1139,15 @@ impl Parser {
                     if implicit {
                         let sign = self.parse_signing();
                         let dim = self.parse_list(Self::parse_pack_dim)?;
-                        Ok(Some(Box::new(Spanned::new(DataTypeKind::Implicit(sign, dim), sp))))
+                        Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), sp)))
                     } else {
                         Ok(None)
                     }
+                }
+                Keyword::Type => {
+                    let token = self.consume();
+                    // TODO: Might be parenthesis
+                    Ok(Some(Spanned::new(DataTypeKind::Type, token.span)))
                 }
                 _ => {
                     self.pushback(toksp);
@@ -1165,7 +1159,7 @@ impl Parser {
                 self.pushback(toksp);
                 if implicit {
                     let dim = self.parse_list(Self::parse_pack_dim)?;
-                    Ok(Some(Box::new(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), sp))))
+                    Ok(Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), sp)))
                 } else {
                     Ok(None)
                 }
@@ -1973,7 +1967,7 @@ impl Parser {
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
-                let ty = self.parse_data_type(false)?.unwrap();
+                let ty = Box::new(self.parse_data_type(false)?.unwrap());
                 let span = ty.span;
                 Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
             }
