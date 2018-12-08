@@ -62,14 +62,32 @@ impl PrettyPrint {
     }
 
     fn print_dim(&mut self, obj: &Dim) {
+        self.append("[");
         match &**obj {
-            DimKind::Value(v) => {
-                self.append("[");
-                self.print_expr(v);
-                self.append("]");
+            DimKind::Value(rhs) => {
+                self.print_expr(rhs);
             }
-            _ => unimplemented!(),
+            DimKind::Range(start, end) => {
+                self.print_expr(start);
+                self.append(":");
+                self.print_expr(end);
+            }
+            DimKind::PlusRange(start, end) => {
+                self.print_expr(start);
+                self.append("+:");
+                self.print_expr(end);
+            }
+            DimKind::MinusRange(start, end) => {
+                self.print_expr(start);
+                self.append("-:");
+                self.print_expr(end);
+            }
+            DimKind::Unsized => (),
+            DimKind::AssocWild => {
+                self.append("*");
+            }
         }
+        self.append("]");
     }
 
     fn print_param_decl(&mut self, obj: &ParamDecl) {
@@ -326,28 +344,7 @@ impl PrettyPrint {
             }
             ExprKind::Select(lhs, sel) => {
                 self.print_expr(lhs);
-                self.append("[");
-                match sel {
-                    Select::Value(rhs) => {
-                        self.print_expr(rhs);
-                    }
-                    Select::Range(start, end) => {
-                        self.print_expr(start);
-                        self.append(":");
-                        self.print_expr(end);
-                    }
-                    Select::PlusRange(start, end) => {
-                        self.print_expr(start);
-                        self.append("+:");
-                        self.print_expr(end);
-                    }
-                    Select::MinusRange(start, end) => {
-                        self.print_expr(start);
-                        self.append("-:");
-                        self.print_expr(end);
-                    }
-                }
-                self.append("]");
+                self.print_dim(sel);
             }
             _ => {
                 eprintln!("{:?}", obj);

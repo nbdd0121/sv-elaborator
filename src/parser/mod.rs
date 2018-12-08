@@ -2,7 +2,7 @@ pub mod ast;
 
 use self::ast::*;
 use super::lexer::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
-use super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Span, Spanned};
+use super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
 
 use std::result;
 use std::mem;
@@ -14,6 +14,7 @@ pub struct Parser {
     mgr: Rc<SrcMgr>,
     diag: Rc<DiagMgr>,
     lexer: VecDeque<Token>,
+    eof: Token,
 }
 
 //
@@ -93,24 +94,26 @@ enum ArgOption {
 /// identifier followes, but we can't really do anything for param expression.
 impl Parser {
     pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, lexer: VecDeque<Token>) -> Parser {
+        let last_pos = lexer.back().map(|x| x.span.end).unwrap_or(Pos(0));
         Parser {
             mgr,
             diag,
             lexer: lexer,
+            eof: Spanned::new(TokenKind::Eof, last_pos.span_to(last_pos))
         }
     }
 
     fn consume(&mut self) -> Token {
         match self.lexer.pop_front() {
             Some(v) => v,
-            None => Token::eof(),
+            None => self.eof.clone(),
         }
     }
 
     fn peek(&mut self) -> &Token {
         match self.lexer.front() {
             Some(v) => v,
-            None => Token::eof_ref(),
+            None => &self.eof,
         }
     }
 
@@ -118,7 +121,7 @@ impl Parser {
         if self.lexer.len() > n {
             &self.lexer[n]
         } else {
-            Token::eof_ref()
+            &self.eof
         }
     }
 
@@ -129,12 +132,15 @@ impl Parser {
     /// Parse a delimited group of tokens. After calling the callback, the token stream must
     /// be empty.
     fn delim_group<T, F: FnMut(&mut Self) -> Result<T>>(
-        &mut self, mut stream: VecDeque<Token>, mut f: F
+        &mut self, mut stream: Box<DelimGroup>, mut f: F
     ) -> Result<T> {
-        mem::swap(&mut self.lexer, &mut stream);
+        let mut delim_eof = Spanned::new(TokenKind::Eof, stream.close.span);
+        mem::swap(&mut self.lexer, &mut stream.tokens);
+        mem::swap(&mut self.eof, &mut delim_eof);
         let ret = f(self)?;
         self.expect_eof()?;
-        mem::swap(&mut self.lexer, &mut stream);
+        self.lexer = stream.tokens;
+        self.eof = delim_eof;
         Ok(ret)
     }
 
@@ -301,7 +307,7 @@ impl Parser {
         &mut self, delim: Delim, f: F
     ) -> Result<T> {
         let delim = self.expect_delim(delim)?;
-        self.delim_group(delim.tokens, f)
+        self.delim_group(delim, f)
     }
 
     /// Expect the next token tree to be a delimited group, parse it with given function.
@@ -310,7 +316,7 @@ impl Parser {
     ) -> Result<Spanned<T>> {
         let span = self.peek().span;
         let delim = self.expect_delim(delim)?;
-        Ok(Spanned::new(self.delim_group(delim.tokens, f)?, span))
+        Ok(Spanned::new(self.delim_group(delim, f)?, span))
     }
 
 
@@ -321,7 +327,7 @@ impl Parser {
     ) -> Result<Option<T>> {
         match self.consume_if_delim(delim) {
             None => Ok(None),
-            Some(v) => Ok(Some(self.delim_group(v.tokens, f)?))
+            Some(v) => Ok(Some(self.delim_group(v, f)?))
         }
     }
 
@@ -336,7 +342,7 @@ impl Parser {
         }
         let token = self.consume();
         if let TokenKind::DelimGroup(_, grp) = token.value {
-            Ok(Some(Spanned::new(self.delim_group(grp.tokens, f)?, token.span)))
+            Ok(Some(Spanned::new(self.delim_group(grp, f)?, token.span)))
         } else {
             unreachable!();
         }
@@ -1196,7 +1202,7 @@ impl Parser {
 
     fn parse_decl_assign(&mut self) -> Result<DeclAssign> {
         let mut ident = self.expect_id()?;
-        let mut dim = self.parse_list(Self::parse_dim)?;
+        let mut dim = self.parse_list(Self::parse_dim_opt)?;
 
         // If we see another ID here, it means that the ID we seen previously are probably a
         // type name that isn't declared. Raise a sensible warning here.
@@ -1207,7 +1213,7 @@ impl Parser {
                 ident.span
             )?;
             ident = id;
-            dim = self.parse_list(Self::parse_dim)?;
+            dim = self.parse_list(Self::parse_dim_opt)?;
         }
 
         self.check_list(Self::check_unpacked_dim, &mut dim)?;
@@ -1226,9 +1232,9 @@ impl Parser {
     // A.2.5 Declaration ranges
     //
 
-    /// Parse a dimension. This is called variable_dimension in the spec. We've noted that it is
-    /// a superset of all dimensions so we can simply call this function from other dimension
-    /// parsing function.
+    /// Parse a dimension or a selection. This is called variable_dimension in the spec. We parse
+    /// these together as sometimes we cannot distinguish between them, e.g. data declaration vs
+    /// bit-select expression.
     ///
     /// ```bnf
     /// unpacked_dimension ::=  [ constant_range ] | [ constant_expression ]
@@ -1238,38 +1244,45 @@ impl Parser {
     ///   unsized_dimension | unpacked_dimension | associative_dimension | queue_dimension
     /// queue_dimension ::= [ $ [ : constant_expression ] ]
     /// unsized_dimension ::= [ ]
+    /// bit_select ::=
+    ///   { [ expression ] }
+    /// part_select_range ::=
+    ///   constant_range | indexed_range
+    /// indexed_range ::=
+    ///   expression +: constant_expression | expression -: constant_expression
     /// ```
-    fn parse_dim(&mut self) -> Result<Option<Dim>> {
+    fn parse_dim_opt(&mut self) -> Result<Option<Dim>> {
         self.parse_if_delim_spanned(Delim::Bracket, |this| {
-            scope!(this);
-            Ok(match this.peek().value {
+            match **this.peek() {
                 TokenKind::Eof => {
-                    DimKind::Unsized
-                }
-                TokenKind::Operator(Operator::Dollar) => {
-                    this.consume();
-                    let limit = match this.consume_if(TokenKind::Operator(Operator::Colon)) {
-                        None => None,
-                        Some(_) => {
-                            Some(Box::new(parse!(expr)))
-                        }
-                    };
-                    DimKind::Queue(limit)
+                    return Ok(DimKind::Unsized)
                 }
                 TokenKind::Operator(Operator::Mul) => {
-                    this.consume();
-                    DimKind::AssocWild
-                }
-                _ => {
-                    let expr = this.parse_unwrap(Self::parse_expr_opt)?;
-                    if this.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
-                        let end = Box::new(parse!(expr));
-                        DimKind::Range(Box::new(expr), end)
-                    } else {
-                        DimKind::Value(Box::new(expr))
+                    if let TokenKind::Eof = **this.peek_n(1) {
+                        this.consume();
+                        return Ok(DimKind::AssocWild)
                     }
                 }
-            })
+                _ => (),
+            }
+            let expr = this.parse_expr()?;
+            match **this.peek() {
+                TokenKind::Operator(Operator::Colon) => {
+                    this.consume();
+                    Ok(DimKind::Range(Box::new(expr), Box::new(this.parse_expr()?)))
+                }
+                TokenKind::Operator(Operator::PlusColon) => {
+                    this.consume();
+                    Ok(DimKind::PlusRange(Box::new(expr), Box::new(this.parse_expr()?)))
+                }
+                TokenKind::Operator(Operator::MinusColon) => {
+                    this.consume();
+                    Ok(DimKind::MinusRange(Box::new(expr), Box::new(this.parse_expr()?)))
+                }
+                _ => {
+                    Ok(DimKind::Value(Box::new(expr)))
+                }
+            }
         })
     }
 
@@ -1277,7 +1290,8 @@ impl Parser {
     fn check_unpacked_dim(&mut self, dim: &Dim) -> Result<bool> {
         match **dim {
             DimKind::AssocWild |
-            DimKind::Queue(_) |
+            DimKind::PlusRange(..) |
+            DimKind::MinusRange(..) |
             DimKind::Unsized => {
                 self.report_span(
                     Severity::Error,
@@ -1292,13 +1306,14 @@ impl Parser {
 
     /// Parse a packed dimension
     fn parse_pack_dim(&mut self) -> Result<Option<Dim>> {
-        let ret = match self.parse_dim()? {
+        let ret = match self.parse_dim_opt()? {
             None => return Ok(None),
             Some(v) => v,
         };
         match *ret {
             DimKind::AssocWild |
-            DimKind::Queue(_) |
+            DimKind::PlusRange(..) |
+            DimKind::MinusRange(..) |
             DimKind::Value(_) => {
                 self.report_span(
                     Severity::Error,
@@ -1367,7 +1382,7 @@ impl Parser {
                 Some(v) => v,
             };
 
-            let mut dim = this.parse_list(Self::parse_dim)?;
+            let mut dim = this.parse_list(Self::parse_dim_opt)?;
             this.check_list(Self::check_unpacked_dim, &mut dim)?;
             let ports = this.parse_args(ArgOption::Port)?;
             Ok(Some(HierInst {
@@ -1815,44 +1830,11 @@ impl Parser {
         Ok(Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span)))
     }
 
-    /// Combined parser of bit_select (single) and part_select_range.
-    ///
-    /// According to spec
-    /// ```bnf
-    /// bit_select ::=
-    ///   { [ expression ] } <- we parse [ expression ] here instead.
-    /// part_select_range ::=
-    ///   constant_range | indexed_range
-    /// indexed_range ::=
-    ///   expression +: constant_expression | expression -: constant_expression
-    /// ```
-    fn parse_single_select(&mut self) -> Result<Select> {
-        self.parse_delim(Delim::Bracket, |this| {
-            scope!(this);
-            let expr = parse!(expr);
-            match **this.peek() {
-                TokenKind::Operator(Operator::Colon) => {
-                    this.consume();
-                    Ok(Select::Range(Box::new(expr), Box::new(parse!(expr))))
-                }
-                TokenKind::Operator(Operator::PlusColon) => {
-                    this.consume();
-                    Ok(Select::PlusRange(Box::new(expr), Box::new(parse!(expr))))
-                }
-                TokenKind::Operator(Operator::MinusColon) => {
-                    this.consume();
-                    Ok(Select::MinusRange(Box::new(expr), Box::new(parse!(expr))))
-                }
-                _ => Ok(Select::Value(Box::new(expr))),
-            }
-        })
-    }
-
     //
-    // A.8.4 Primaries (or data_type)
+    // A.8.4 Primaries
     //
 
-    /// Parse primary expression with cast.
+    /// Parse primary expression (or data_type) with cast.
     fn parse_primary(&mut self) -> Result<Option<Expr>> {
         let mut expr = match **self.peek() {
             TokenKind::Keyword(Keyword::Const) => {
@@ -1886,8 +1868,8 @@ impl Parser {
         Ok(Some(expr))
     }
 
-    /// Parse primary expression, except for cast. Cast is special as it can take form
-    /// `primary '(expr)` which introduces left recursion.
+    /// Parse primary expression (or data_type), except for cast. Cast is special as it can take
+    /// form `primary '(expr)` which introduces left recursion.
     ///
     /// According to spec
     /// ```bnf
@@ -1907,6 +1889,7 @@ impl Parser {
     /// | this
     /// | $
     /// | null
+    /// | data_type
     /// ```
     fn parse_primary_nocast(&mut self) -> Result<Option<Expr>> {
         match **self.peek() {
@@ -1962,10 +1945,16 @@ impl Parser {
             // cast
             // sequence_method_call
             // this
+            // data_type
             // We cannot really distinguish between them directly. But we noted they all begin
             // with a hierachical name (or keyword typename). So we parse it first, and then try
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
+            TokenKind::Keyword(Keyword::Type) => {
+                let ty = Box::new(self.parse_data_type(false)?.unwrap());
+                let span = ty.span;
+                Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
+            }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
                 let ty = Box::new(self.parse_data_type(false)?.unwrap());
                 let span = ty.span;
@@ -2035,7 +2024,7 @@ impl Parser {
             match **self.peek() {
                 // Bit select
                 TokenKind::DelimGroup(Delim::Bracket, _) => {
-                    let sel = self.parse_single_select()?;
+                    let sel = self.parse_dim_opt()?.unwrap();
                     // TODO better end span
                     let span = expr.span.end.span_to(self.peek().span.start);
                     expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);

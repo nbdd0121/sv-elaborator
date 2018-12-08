@@ -109,7 +109,6 @@ pub enum Lifetime {
 pub enum DataTypeKind {
     /// This isn't really a data type, but it is more convinient to have it here.
     Type,
-
     Implicit(Signing, Vec<Dim>),
     IntVec(Keyword, Signing, Vec<Dim>),
     IntAtom(Keyword, Signing),
@@ -118,9 +117,12 @@ pub enum DataTypeKind {
     Enum, // TODO
     String,
     Chandle,
-    Interface, // TODO
+    VirtualInterface, // TODO
     Event,
-    // TODO
+    /// A hierahical name. Could possibly be typedef'd type, class type or covergroup identifier.
+    HierName(Option<Scope>, HierId),
+    /// Type reference of form type'(expr_or_data_type)
+    TypeRef(Box<Expr>),
 }
 
 /// Should be boxed when nested in other AST structure.
@@ -181,20 +183,24 @@ pub struct DeclAssign {
 /// Possible ways of specifying a variable dimension
 #[derive(Debug)]
 pub enum DimKind {
-    /// Represent dimension of type `[ constant_expression : constant_expression ]`
-    Range(Box<Expr>, Box<Expr>),
-    /// Represent dimension of type `[ constant_expression ]`.
+    /// Represent bit-select/dimension of type `[ expression ]`.
     /// It can also represent dimension of type `[ data_type ]`, but the resolution will not occur
     /// during parsing.
     Value(Box<Expr>),
+    /// Represent bit-select/dimension of type `[ expression : expression ]`
+    /// It can also represent a queue dimension with optional max size, of type
+    /// `[ $ [ : constant expression ] ]` but the resolution will not occur during parsing.
+    Range(Box<Expr>, Box<Expr>),
+    /// Represent bit-select of type `[ expression +: expression ]`
+    PlusRange(Box<Expr>, Box<Expr>),
+    /// Represent bit-select of type `[ expression -: expression ]`
+    MinusRange(Box<Expr>, Box<Expr>),
     /// Represent dimension of type `[]`
     Unsized,
     /// Represent dimension of type `[ * ]`
     AssocWild,
-    /// Represent a queue dimension with optional max size, of type
-    /// `[ $ [ : constant expression ] ]`
-    Queue(Option<Box<Expr>>)
 }
+
 
 /// Should be boxed when nested in other AST structure.
 pub type Dim = Spanned<DimKind>;
@@ -273,15 +279,10 @@ pub struct SysTfCall {
 //
 
 #[derive(Debug)]
-pub enum Select {
-    Range(Box<Expr>, Box<Expr>),
-    PlusRange(Box<Expr>, Box<Expr>),
-    MinusRange(Box<Expr>, Box<Expr>),
-    Value(Box<Expr>)
-}
-
-#[derive(Debug)]
 pub enum ExprKind {
+    /// As in many cases expression and type can occur in a same context, we have
+    /// `ExprKind::Type` in the enum to represent the case where we know "this is definitely a
+    /// type". In some cases other expression can also be viewed as type, e.g. `id[x]`
     Type(Box<DataType>),
     Literal(Token),
     
@@ -289,7 +290,7 @@ pub enum ExprKind {
     HierName(Option<Scope>, HierId),
 
     /// Element select
-    Select(Box<Expr>, Select),
+    Select(Box<Expr>, Dim),
 
     /// Member access
     Member(Box<Expr>, Ident),
