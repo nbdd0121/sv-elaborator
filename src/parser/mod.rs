@@ -415,7 +415,7 @@ impl Parser {
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
     fn parse_comma_list_unit<F: FnMut(&mut Self) -> Result<bool>>(
-        &mut self, mut f: F, empty: bool, trail: bool
+        &mut self, empty: bool, trail: bool, mut f: F
     ) -> Result<()> {
         // Parse first element
         if !f(self)? {
@@ -590,6 +590,10 @@ impl Parser {
                 let clone = self.peek().span.clone();
                 self.report_span(Severity::Fatal, "extern is not supported", clone)?;
                 unreachable!()
+            }
+            TokenKind::Keyword(Keyword::Parameter) |
+            TokenKind::Keyword(Keyword::Localparam) => {
+                Ok(Some(Item::ParamDecl(Box::new(self.parse_param_decl()?))))
             }
             // module_declaration
             TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
@@ -770,7 +774,7 @@ impl Parser {
                 list: Vec::new()
             };
 
-            this.parse_comma_list_unit(|this| {
+            this.parse_comma_list_unit(true, false, |this| {
                 // If a new keyword is seen update it.
                 match **this.peek() {
                     TokenKind::Eof => return Ok(false),
@@ -803,7 +807,7 @@ impl Parser {
                 };
                 param_decl.list.push(assign);
                 Ok(true)
-            }, true, false)?;
+            })?;
 
             if !param_decl.list.is_empty() {
                 vec.push(param_decl);
@@ -851,7 +855,7 @@ impl Parser {
             let mut prev = None;
             let mut vec = Vec::new();
 
-            this.parse_comma_list_unit(|this| {
+            this.parse_comma_list_unit(true, false, |this| {
                 if this.consume_if_eof().is_some() {
                     return Ok(false)
                 }
@@ -1011,7 +1015,7 @@ impl Parser {
                 }
 
                 return Ok(true)
-            }, true, false)?;
+            })?;
 
             if !ansi {
                 let span = this.peek().span.clone();
@@ -1051,6 +1055,41 @@ impl Parser {
             }
             _ => None,
         }
+    }
+
+    //
+    // A.2.1.1 Parameter declarations
+    //
+
+    /// Parse a parameter declaration. See also `parse_param_port_list`.
+    fn parse_param_decl(&mut self) -> Result<ParamDecl> {
+        let kw = if let TokenKind::Keyword(kw) = *self.consume() {
+            kw
+        } else {
+            unreachable!();
+        };
+
+        let (ty, assign) = self.parse_data_type_decl_assign()?;
+        let mut list = vec![assign];
+        if self.check(TokenKind::Operator(Operator::Comma)) {
+            self.parse_comma_list_unit(false, false, |this| {
+                match this.parse_decl_assign_opt()? {
+                    None => Ok(false),
+                    Some(v) => {
+                        list.push(v);
+                        Ok(true)
+                    }
+                }
+            })?;
+        }
+
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        
+        Ok(ParamDecl {
+            kw,
+            ty: ty.map(Box::new),
+            list
+        })
     }
 
     //
@@ -1281,8 +1320,11 @@ impl Parser {
     // A.2.4 Declaration assignments
     //
 
-    fn parse_decl_assign(&mut self) -> Result<DeclAssign> {
-        let mut ident = self.expect_id()?;
+    fn parse_decl_assign_opt(&mut self) -> Result<Option<DeclAssign>> {
+        let mut ident = match self.consume_if_id() {
+            None => return Ok(None),
+            Some(v) => v,
+        };
         let mut dim = self.parse_list(Self::parse_dim_opt)?;
 
         // If we see another ID here, it means that the ID we seen previously are probably a
@@ -1302,11 +1344,15 @@ impl Parser {
             None => None,
             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
         };
-        Ok(DeclAssign {
+        Ok(Some(DeclAssign {
             name: ident,
             dim,
             init
-        })
+        }))
+    }
+
+    fn parse_decl_assign(&mut self) -> Result<DeclAssign> {
+        self.parse_unwrap(Self::parse_decl_assign_opt)
     }
 
     //

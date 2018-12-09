@@ -29,9 +29,9 @@ pub enum Item {
     InterfaceDecl,
     ProgramDecl,
     PackageDecl,
-    PackageItem, // TODO Expand
     BindDirective,
     ConfigDecl,
+    ParamDecl(Box<ParamDecl>),
 
     ContinuousAssign(Vec<Expr>),
 
@@ -186,6 +186,10 @@ pub struct DeclAssign {
     pub name: Ident,
     pub dim: Vec<Dim>,
     pub init: Option<Box<Expr>>,
+}
+
+impl AstNode for DeclAssign {
+    fn name() -> &'static str { "declaration assignment" }
 }
 
 //
