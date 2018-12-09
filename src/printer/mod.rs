@@ -163,7 +163,7 @@ impl PrettyPrint {
     }
 
     fn print_module_decl(&mut self, obj: &ModuleDecl) {
-        self.indent_append("module");
+        self.indent_append(format!("{}", obj.kw));
         self.indent(4);
         if obj.lifetime == Lifetime::Automatic {
             self.append(format!(" automatic"));
@@ -189,7 +189,7 @@ impl PrettyPrint {
         for item in &obj.items {
             self.print_item(item);
         }
-        self.append(format!("endmodule\n"));
+        self.append(format!("end{}\n", obj.kw));
         self.indent(-4);
     }
 

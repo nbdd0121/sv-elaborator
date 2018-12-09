@@ -53,8 +53,10 @@ impl AstNode for Item {
 // A.1.2 SystemVerilog source text
 //
 
+/// Declaration of module, interface or program
 #[derive(Debug)]
 pub struct ModuleDecl {
+    pub kw: Keyword,
     pub lifetime: Lifetime,
     pub name: Ident,
     pub pkg_import: Vec<Vec<PkgImportItem>>,

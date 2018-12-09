@@ -600,7 +600,17 @@ impl Parser {
                 Ok(Some(Item::ParamDecl(Box::new(self.parse_param_decl()?))))
             }
             // module_declaration
-            TokenKind::Keyword(Keyword::Module) => Ok(Some(self.parse_module()?)),
+            TokenKind::Keyword(Keyword::Module) => {
+                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Module, Keyword::Endmodule)?))))
+            }
+            // interface_declaration
+            TokenKind::Keyword(Keyword::Interface) => {
+                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Interface, Keyword::Endinterface)?))))
+            }
+            // program_declaration
+            TokenKind::Keyword(Keyword::Program) => {
+                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Program, Keyword::Endprogram)?))))
+            }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
             // generate_region
@@ -674,10 +684,10 @@ impl Parser {
         Ok(list)
     }
 
-    /// Parse a module. We processed attributes in parse_item_opt, and externs will not be processed
-    /// here.
+    /// Parse a module, interface or program. We processed attributes in parse_item_opt, and
+    /// externs will not be processed here.
     ///
-    /// Acccording to spec:
+    /// Acccording to spec (excl interface & program as they're similar):
     /// ```bnf
     /// module_nonansi_header ::=
     ///   { attribute_instance } module_keyword [ lifetime ] module_identifier
@@ -706,8 +716,8 @@ impl Parser {
     ///   module_header { item } endmodule [ : module_identifier ]
     /// ```
     /// We will need to check if items can legally appear in here.
-    fn parse_module(&mut self) -> Result<Item> {
-        self.expect(TokenKind::Keyword(Keyword::Module))?;
+    fn parse_module(&mut self, kw: Keyword, end_kw: Keyword) -> Result<ModuleDecl> {
+        self.consume();
         let lifetime = self.parse_lifetime();
         let name = self.expect_id()?;
         let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt)?;
@@ -715,7 +725,7 @@ impl Parser {
         let port = self.parse_port_list()?;
         self.expect(TokenKind::Operator(Operator::Semicolon))?;
         let items = self.parse_list(Self::parse_item_opt)?;
-        self.expect(TokenKind::Keyword(Keyword::Endmodule))?;
+        self.expect(TokenKind::Keyword(end_kw))?;
 
         if self.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
             let id = self.expect_id()?;
@@ -728,14 +738,15 @@ impl Parser {
             }
         }
 
-        Ok(Item::ModuleDecl(Box::new(ModuleDecl {
+        Ok(ModuleDecl {
+            kw,
             lifetime,
             name,
             pkg_import,
             param,
             port: port.unwrap_or_else(|| Vec::new()),
             items: items,
-        })))
+        })
     }
 
     //
