@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
     // System task identifiers that are treated as keyword
@@ -266,4 +268,16 @@ pub enum Keyword {
 
     // SV 17
     // No new keywords
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let str = match self {
+            Keyword::Logic => "logic",
+            _ => {
+                return write!(f, "{:?} unimp", self);
+            }
+        };
+        write!(f, "{}", str)
+    }
 }

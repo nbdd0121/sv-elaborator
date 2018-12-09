@@ -92,7 +92,10 @@ impl PrettyPrint {
 
     fn print_param_decl(&mut self, obj: &ParamDecl) {
         self.indent_append(format!("{} ", if obj.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
-        // TODO Print type
+        if let Some(ty) = &obj.ty {
+            self.print_type(ty);
+            self.append(" ");
+        }
         for (item, _, last) in obj.list.iter().identify_first_last() {
             self.append(format!("{}", item.name));
             for dim in &item.dim {
@@ -104,6 +107,57 @@ impl PrettyPrint {
             }
             if !last {
                 self.append(format!(", "));
+            }
+        }
+    }
+
+    fn print_port_decl(&mut self, obj: &PortDecl) {
+        match obj {
+            PortDecl::Data(dir, _net, ty, list) => {
+                self.indent_append(format!("{} ", dir));
+                // TODO: Net
+                self.print_type(&ty);
+                self.append(" ");
+                for (item, _, last) in list.iter().identify_first_last() {
+                    self.append(format!("{}", item.name));
+                    for dim in &item.dim {
+                        self.print_dim(dim);
+                    }
+                    if let Some(ref v) = item.init {
+                        self.append(" = ");
+                        self.print_expr(v);
+                    }
+                    if !last {
+                        self.append(format!(", "));
+                    }
+                }
+            }
+            PortDecl::Interface(intf, modport, list) => {
+                if let Some(intf) = intf {
+                    self.indent_append(format!("{}", intf));
+                } else {
+                    self.indent_append("interface");
+                }
+                if let Some(modport) = modport {
+                    self.append(format!(".{}", modport));
+                }
+                for (item, _, last) in list.iter().identify_first_last() {
+                    self.append(format!(" {}", item.name));
+                    for dim in &item.dim {
+                        self.print_dim(dim);
+                    }
+                    if let Some(ref v) = item.init {
+                        self.append(" = ");
+                        self.print_expr(v);
+                    }
+                    if !last {
+                        self.append(format!(","));
+                    }
+                }
+            }
+            _ => {
+                // TODO
+                self.append("TODO");
             }
         }
     }
@@ -126,7 +180,8 @@ impl PrettyPrint {
         if obj.port.len() != 0 {
             self.append(format!(" (\n"));
             for (item, _, last) in obj.port.iter().identify_first_last() {
-                self.append(format!("{:?}{}\n", item, if { last } { "" } else { "," }));
+                self.print_port_decl(item);
+                self.append(format!("{}\n", if { last } { "" } else { "," }));
             }
             self.append(format!(")"));
         }
@@ -264,6 +319,37 @@ impl PrettyPrint {
         }
     }
 
+    //
+    // Expression and data type
+    //
+
+    fn print_type(&mut self, obj: &DataType) {
+        match &**obj {
+            DataTypeKind::Type => self.append("type"),
+            DataTypeKind::IntVec(kw, sign, dim) => {
+                self.append(format!("{}", kw));
+                if sign == &Signing::Signed {
+                    self.append("signed");
+                }
+                for dim in dim {
+                    self.print_dim(dim);
+                }
+            }
+            DataTypeKind::Implicit(sign, dim) => {
+                if sign == &Signing::Signed {
+                    self.append("signed");
+                }
+                for dim in dim {
+                    self.print_dim(dim);
+                }
+            }
+            _ => {
+                eprintln!("{:?}", obj);
+                unimplemented!()
+            }
+        }
+    }
+
     fn get_scope(obj: &Scope) -> String {
         match obj {
             Scope::Unit => "$unit".to_owned(),
@@ -299,6 +385,7 @@ impl PrettyPrint {
 
     pub fn print_expr(&mut self, obj: &Expr) {
         match &**obj {
+            ExprKind::Type(v) => self.print_type(&v),
             ExprKind::Literal(v) => {
                 match &**v {
                     TokenKind::IntegerLiteral(num) => self.append(format!("{}", num)),

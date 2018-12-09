@@ -1,5 +1,6 @@
 use super::super::source::{Span, Spanned};
 use super::super::lexer::{Token, Keyword, Operator};
+use std::fmt;
 
 //
 // General purpose helpers
@@ -81,6 +82,17 @@ pub enum PortDir {
     Ref,
 }
 
+impl fmt::Display for PortDir {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PortDir::Input => write!(f, "input"),
+            PortDir::Output => write!(f, "output"),
+            PortDir::Inout => write!(f, "inout"),
+            PortDir::Ref => write!(f, "ref"),
+        }
+    }
+}
+
 /// The type of ANSI port
 #[derive(Debug)]
 pub enum PortDecl {
@@ -120,7 +132,7 @@ pub enum DataTypeKind {
     VirtualInterface, // TODO
     Event,
     /// A hierahical name. Could possibly be typedef'd type, class type or covergroup identifier.
-    HierName(Option<Scope>, HierId),
+    HierName(Option<Scope>, HierId, Vec<Dim>),
     /// Type reference of form type'(expr_or_data_type)
     TypeRef(Box<Expr>),
 }
@@ -128,7 +140,7 @@ pub enum DataTypeKind {
 /// Should be boxed when nested in other AST structure.
 pub type DataType = Spanned<DataTypeKind>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signing {
     Signed,
     Unsigned,

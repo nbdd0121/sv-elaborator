@@ -1094,7 +1094,6 @@ impl Parser {
             Keyword::Time |
             Keyword::Shortreal |
             Keyword::Real |
-            Keyword::Realtime |
             Keyword::Struct |
             Keyword::Union |
             Keyword::Enum |
@@ -1174,6 +1173,86 @@ impl Parser {
                 self.pushback(toksp);
                 Ok(None)
             }
+        }
+    }
+
+    /// Parse a data_type that starts with a keyword. This does not exist in the spec, but is
+    /// useful for parsing within combined data type & expression parser. This includes all
+    /// data_type_or_implicit that begins with type keyword or dimension.
+    ///
+    /// ```bnf
+    /// kw_data_type ::=
+    ///   integer_vector_type [ signing ] { packed_dimension }
+    /// | integer_atom_type [ signing ]
+    /// | non_integer_type
+    /// | struct_union [ packed [ signing ] ] { struct_union_member { struct_union_member } }
+    ///   { packed_dimension }
+    /// | enum [ enum_base_type ] { enum_name_declaration { , enum_name_declaration } }
+    ///   { packed_dimension }
+    /// | string
+    /// | chandle
+    /// | virtual [ interface ] interface_identifier [ parameter_value_assignment ] [ . modport_identifier ]
+    /// | event
+    /// | type_reference
+    /// | [ signing ] { packed_dimension }
+    /// ```
+    /// TODO: Better span in this function
+    fn parse_kw_data_type(&mut self) -> Result<Option<DataType>> {
+        match **self.peek() {
+            TokenKind::Keyword(Keyword::Bit) |
+            TokenKind::Keyword(Keyword::Logic) |
+            TokenKind::Keyword(Keyword::Reg) => {
+                // This makes Keyword::Reg turn into Keyword::Logic
+                let kw = self.consume();
+                let ty = if let TokenKind::Keyword(Keyword::Bit) = *kw {
+                    Keyword::Bit
+                } else {
+                    Keyword::Logic
+                };
+                let sign = self.parse_signing();
+                let dim = self.parse_list(Self::parse_pack_dim)?;
+                Ok(Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)))
+            }
+            TokenKind::Keyword(Keyword::Signed) |
+            TokenKind::Keyword(Keyword::Unsigned) => {
+                let span = self.peek().span;
+                let sign = self.parse_signing();
+                let dim = self.parse_list(Self::parse_pack_dim)?;
+                Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span)))
+            }
+            TokenKind::Keyword(Keyword::Type) => {
+                let token = self.consume();
+                // TODO: Might be parenthesis
+                Ok(Some(Spanned::new(DataTypeKind::Type, token.span)))
+            }
+            TokenKind::DelimGroup(Delim::Bracket, _) => {
+                let span = self.peek().span;
+                let dim = self.parse_list(Self::parse_pack_dim)?;
+                Ok(Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)))
+            }
+            _ => {
+                Ok(None)
+            }
+        }
+    }
+
+    /// Convert an expression to a type. Useful when we try to parse thing as expression first due
+    /// to ambiguity, then realised that it is actually a type.
+    fn conv_expr_to_type(&mut self, expr: Expr) -> Result<DataType> {
+        match expr.value {
+            ExprKind::Type(ty) => Ok(*ty),
+            ExprKind::HierName(scope, name) => {
+                Ok(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span))
+            }
+            ExprKind::Select(ty, dim) => {
+                let mut ty = self.conv_expr_to_type(*ty)?;
+                match *ty {
+                    DataTypeKind::HierName(_, _, ref mut dimlist) => dimlist.push(dim),
+                    _ => unreachable!(),
+                };
+                Ok(ty)
+            }
+            _ => panic!("not a type!"),
         }
     }
 
@@ -1950,13 +2029,14 @@ impl Parser {
             // with a hierachical name (or keyword typename). So we parse it first, and then try
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
+            TokenKind::DelimGroup(Delim::Bracket, _) |
             TokenKind::Keyword(Keyword::Type) => {
-                let ty = Box::new(self.parse_data_type(false)?.unwrap());
+                let ty = Box::new(self.parse_kw_data_type()?.unwrap());
                 let span = ty.span;
                 Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
             }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
-                let ty = Box::new(self.parse_data_type(false)?.unwrap());
+                let ty = Box::new(self.parse_kw_data_type()?.unwrap());
                 let span = ty.span;
                 Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
             }
@@ -2038,15 +2118,6 @@ impl Parser {
                 _ => return Ok(expr)
             }
         }
-    }
-
-    //
-    // A.8.5 Expression left-side values
-    //
-    fn parse_lvalue(&mut self) -> Result<()> {
-        // TODO
-        self.expect_id()?;
-        Ok(())
     }
 
     //
