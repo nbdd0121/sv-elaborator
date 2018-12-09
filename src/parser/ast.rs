@@ -31,6 +31,7 @@ pub enum Item {
     PackageDecl,
     BindDirective,
     ConfigDecl,
+    PkgImport(Vec<PkgImportItem>),
     ParamDecl(Box<ParamDecl>),
 
     ContinuousAssign(Vec<Expr>),
@@ -56,6 +57,7 @@ impl AstNode for Item {
 pub struct ModuleDecl {
     pub lifetime: Lifetime,
     pub name: Ident,
+    pub pkg_import: Vec<Vec<PkgImportItem>>,
     pub param: Option<Vec<ParamDecl>>,
     pub port: Vec<PortDecl>,
     pub items: Vec<Item>
@@ -104,6 +106,9 @@ pub enum PortDecl {
 //
 // A.2.1.3 Type declarations
 //
+
+#[derive(Debug)]
+pub struct PkgImportItem(pub Ident, pub Option<Ident>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lifetime {

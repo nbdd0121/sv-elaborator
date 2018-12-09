@@ -591,6 +591,10 @@ impl Parser {
                 self.report_span(Severity::Fatal, "extern is not supported", clone)?;
                 unreachable!()
             }
+            TokenKind::Keyword(Keyword::Import) => {
+                // IMP: This can also be DPI import
+                Ok(Some(Item::PkgImport(self.parse_pkg_import_decl()?)))
+            }
             TokenKind::Keyword(Keyword::Parameter) |
             TokenKind::Keyword(Keyword::Localparam) => {
                 Ok(Some(Item::ParamDecl(Box::new(self.parse_param_decl()?))))
@@ -706,7 +710,7 @@ impl Parser {
         self.expect(TokenKind::Keyword(Keyword::Module))?;
         let lifetime = self.parse_lifetime();
         let name = self.expect_id()?;
-        // TODO Package import declaration
+        let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt)?;
         let param = self.parse_param_port_list()?;
         let port = self.parse_port_list()?;
         self.expect(TokenKind::Operator(Operator::Semicolon))?;
@@ -727,6 +731,7 @@ impl Parser {
         Ok(Item::ModuleDecl(Box::new(ModuleDecl {
             lifetime,
             name,
+            pkg_import,
             param,
             port: port.unwrap_or_else(|| Vec::new()),
             items: items,
@@ -1095,6 +1100,35 @@ impl Parser {
     //
     // A.2.1.3 Type declarations
     //
+
+    /// Parse a package import declaration
+    fn parse_pkg_import_decl_opt(&mut self) -> Result<Option<Vec<PkgImportItem>>> {
+        if self.consume_if(TokenKind::Keyword(Keyword::Import)).is_none() {
+            return Ok(None);
+        }
+        let list = self.parse_comma_list(false, false, Self::parse_pkg_import_item_opt)?;
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        Ok(Some(list))
+    }
+
+    fn parse_pkg_import_decl(&mut self) -> Result<Vec<PkgImportItem>> {
+        Ok(self.parse_pkg_import_decl_opt()?.unwrap())
+    }
+
+    /// Parse a package import item
+    fn parse_pkg_import_item_opt(&mut self) -> Result<Option<PkgImportItem>> {
+        let pkg = match self.consume_if_id() {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+        self.expect(TokenKind::Operator(Operator::ScopeSep))?;
+        let id = if self.check(TokenKind::Operator(Operator::Mul)) {
+            None
+        } else {
+            Some(self.expect_id()?)
+        };
+        Ok(Some(PkgImportItem(pkg, id)))
+    }
 
     /// Parse a lifeime, defaulted to static
     /// ```bnf
