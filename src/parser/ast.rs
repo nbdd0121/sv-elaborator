@@ -24,11 +24,8 @@ pub trait AstNode where Self: Sized {
 #[derive(Debug)]
 pub enum Item {
     TimeunitDecl,
-    ModuleDecl(Box<ModuleDecl>),
+    DesignDecl(Box<DesignDecl>),
     UdpDecl,
-    InterfaceDecl,
-    ProgramDecl,
-    PackageDecl,
     BindDirective,
     ConfigDecl,
     PkgImport(Vec<PkgImportItem>),
@@ -53,16 +50,17 @@ impl AstNode for Item {
 // A.1.2 SystemVerilog source text
 //
 
-/// Declaration of module, interface or program
+/// Declaration of module, interface, program or package
 #[derive(Debug)]
-pub struct ModuleDecl {
+pub struct DesignDecl {
+    pub attr: Option<Box<AttrInst>>,
     pub kw: Keyword,
     pub lifetime: Lifetime,
     pub name: Ident,
     pub pkg_import: Vec<Vec<PkgImportItem>>,
     pub param: Option<Vec<ParamDecl>>,
     pub port: Vec<PortDecl>,
-    pub items: Vec<Item>
+    pub items: Vec<Item>,
 }
 
 //

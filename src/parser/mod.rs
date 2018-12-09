@@ -601,15 +601,23 @@ impl Parser {
             }
             // module_declaration
             TokenKind::Keyword(Keyword::Module) => {
-                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Module, Keyword::Endmodule)?))))
+                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Module, Keyword::Endmodule)?))))
+            }
+            // udp_declaration
+            TokenKind::Keyword(Keyword::Primitive) => {
+                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Primitive, Keyword::Endprimitive)?))))
             }
             // interface_declaration
             TokenKind::Keyword(Keyword::Interface) => {
-                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Interface, Keyword::Endinterface)?))))
+                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Interface, Keyword::Endinterface)?))))
             }
             // program_declaration
             TokenKind::Keyword(Keyword::Program) => {
-                Ok(Some(Item::ModuleDecl(Box::new(self.parse_module(Keyword::Program, Keyword::Endprogram)?))))
+                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Program, Keyword::Endprogram)?))))
+            }
+            // package_declaration
+            TokenKind::Keyword(Keyword::Package) => {
+                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Package, Keyword::Endpackage)?))))
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
@@ -715,8 +723,8 @@ impl Parser {
     /// module_declaration ::=
     ///   module_header { item } endmodule [ : module_identifier ]
     /// ```
-    /// We will need to check if items can legally appear in here.
-    fn parse_module(&mut self, kw: Keyword, end_kw: Keyword) -> Result<ModuleDecl> {
+    /// TODO: We will need to check if items can legally appear in here.
+    fn parse_design_unit(&mut self, attr: Option<Box<AttrInst>>, kw: Keyword, end_kw: Keyword) -> Result<DesignDecl> {
         self.consume();
         let lifetime = self.parse_lifetime();
         let name = self.expect_id()?;
@@ -738,7 +746,8 @@ impl Parser {
             }
         }
 
-        Ok(ModuleDecl {
+        Ok(DesignDecl {
+            attr,
             kw,
             lifetime,
             name,

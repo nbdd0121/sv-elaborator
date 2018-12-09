@@ -162,7 +162,7 @@ impl PrettyPrint {
         }
     }
 
-    fn print_module_decl(&mut self, obj: &ModuleDecl) {
+    fn print_module_decl(&mut self, obj: &DesignDecl) {
         self.indent_append(format!("{}", obj.kw));
         self.indent(4);
         if obj.lifetime == Lifetime::Automatic {
@@ -244,7 +244,7 @@ impl PrettyPrint {
 
     pub fn print_item(&mut self, obj: &Item) {
         match obj {
-            Item::ModuleDecl(v) => self.print_module_decl(v),
+            Item::DesignDecl(v) => self.print_module_decl(v),
             Item::HierInstantiation(v) => self.print_hier_instantiation(v),
             Item::ContinuousAssign(list) => {
                 self.indent_append("assign ");
