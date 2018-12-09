@@ -67,7 +67,6 @@ pub enum Keyword {
     Pulldown,
     Rcmos,
     Real,
-    Realtime,
     Reg,
     Release,
     Repeat,

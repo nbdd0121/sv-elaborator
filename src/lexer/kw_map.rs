@@ -69,7 +69,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("pulldown", (TokenKind::Keyword(Keyword::Pulldown), 1));
     m.insert("rcmos", (TokenKind::Keyword(Keyword::Rcmos), 1));
     m.insert("real", (TokenKind::Keyword(Keyword::Real), 1));
-    m.insert("realtime", (TokenKind::Keyword(Keyword::Realtime), 1));
+    m.insert("realtime", (TokenKind::Keyword(Keyword::Real), 1));
     m.insert("reg", (TokenKind::Keyword(Keyword::Reg), 1));
     m.insert("release", (TokenKind::Keyword(Keyword::Release), 1));
     m.insert("repeat", (TokenKind::Keyword(Keyword::Repeat), 1));
