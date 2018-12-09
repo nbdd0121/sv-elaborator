@@ -343,6 +343,16 @@ impl PrettyPrint {
                     self.print_dim(dim);
                 }
             }
+            DataTypeKind::HierName(scope, name, dim) => {
+                if let Some(scope) = scope {
+                    self.append(Self::get_scope(scope));
+                    self.append("::");
+                }
+                self.append(Self::get_hier_id(name));
+                for dim in dim {
+                    self.print_dim(dim);
+                }
+            }
             _ => {
                 eprintln!("{:?}", obj);
                 unimplemented!()

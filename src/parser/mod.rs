@@ -789,7 +789,8 @@ impl Parser {
                 };
 
                 // If data type is specified, update kw and ty.
-                if let Some(v) = this.parse_data_type(true)? {
+                let (ty, assign) = this.parse_data_type_decl_assign()?;
+                if let Some(v) = ty {
                     let kw = param_decl.kw;
                     let old_decl = mem::replace(&mut param_decl, ParamDecl {
                         kw,
@@ -800,10 +801,7 @@ impl Parser {
                         vec.push(old_decl);
                     }
                 };
-
-                let assign = this.parse_decl_assign()?;
                 param_decl.list.push(assign);
-
                 Ok(true)
             }, true, false)?;
 
@@ -894,6 +892,60 @@ impl Parser {
                     return Ok(true)
                 }
 
+                // First try parse this as an interface port. Note that `interface_name id` is not
+                // tellable from `typedef_name id`, in this case we parse it as interface port if
+                // there is no direction, as we can easily convert if our guess is incorrect. The
+                // otherway around is a bit harder.
+                // If both none, then there is a chance that this is an interface port
+                let is_intf = if let TokenKind::Keyword(Keyword::Interface) = **this.peek() {
+                    // Okay, this is definitely an interface port
+                    this.consume();
+                    if this.consume_if(TokenKind::Operator(Operator::Dot)).is_some() {
+                        let modport = this.expect_id()?;
+                        Some((None, Some(Box::new(modport))))
+                    } else {
+                        Some((None, None))
+                    }
+                } else if let TokenKind::Id(_) = **this.peek() {
+                    // If we see the dot, then this is definitely is a interface
+                    if let TokenKind::Operator(Operator::Dot) = **this.peek_n(1) {
+                        let intf = this.expect_id()?;
+                        this.consume();
+                        let modport = this.expect_id()?;
+                        Some((Some(Box::new(intf)), Some(Box::new(modport))))
+                    } else if dir.is_none() {
+                        if let TokenKind::Id(_) = **this.peek_n(1) {
+                            // This is of form "id id", we consider it as interface port if there is
+                            // no direction.
+                            let intf = this.expect_id()?;
+                            Some((Some(Box::new(intf)), None))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // This is an interface port declaration
+                if let Some((a, b)) = is_intf {
+                    // Interface should not be specified with direction
+                    if !dir.is_none() {
+                        this.report_span(
+                            Severity::Error,
+                            "interface declaration should not be specified together with direction",
+                            dirsp
+                        )?;
+                    }
+                    let decl = PortDecl::Interface(a, b, vec![this.parse_decl_assign()?]);
+                    if let Some(v) = mem::replace(&mut prev, Some(decl)) {
+                        vec.push(v);
+                    }
+                    return Ok(true);
+                }
+
                 // Parse net-type
                 let net = if this.consume_if(TokenKind::Keyword(Keyword::Var)).is_some() {
                     Some(NetPortType::Variable)
@@ -902,66 +954,13 @@ impl Parser {
                     None
                 };
 
-                // Parse data-type
-                let dtype = this.parse_data_type(true)?;
+                let (dtype, assign) = this.parse_data_type_decl_assign()?;
 
-                // If both none, then there is a chance that this is an interface port
-                if net.is_none() && dtype.is_none() {
-                    let is_intf = if let TokenKind::Keyword(Keyword::Interface) = **this.peek() {
-                        // Okay, this is indeed an interface port
-                        this.consume();
-                        if this.consume_if(TokenKind::Operator(Operator::Dot)).is_some() {
-                            let modport = this.expect_id()?;
-                            Some((None, Some(Box::new(modport))))
-                        } else {
-                            Some((None, None))
-                        }
-                    } else if let TokenKind::Id(_) = **this.peek() {
-                        // If we see the dot, then this is definitely is a interface
-                        if let TokenKind::Operator(Operator::Dot) = **this.peek_n(1) {
-                            let intf = this.expect_id()?;
-                            this.consume();
-                            let modport = this.expect_id()?;
-                            Some((Some(Box::new(intf)), Some(Box::new(modport))))
-                        } else if let TokenKind::Id(_) = **this.peek_n(1) {
-                            // This is of form "id id", and we already ruled out possibility that this
-                            // is a data port. So it must be interface port
-                            let intf = this.expect_id()?;
-                            Some((Some(Box::new(intf)), None))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    // This is an interface port declaration
-                    if let Some((a, b)) = is_intf {
-                        // Interface should not be specified with direction
-                        if !dir.is_none() {
-                            this.report_span(
-                                Severity::Error,
-                                "interface declaration should not be specified together with direction",
-                                dirsp
-                            )?;
-                        }
-                        let decl = PortDecl::Interface(a, b, vec![this.parse_decl_assign()?]);
-                        if let Some(v) = mem::replace(&mut prev, Some(decl)) {
-                            vec.push(v);
-                        }
-                        return Ok(true);
-                    }
-
-                    if dir.is_none() {
-                        // If nothing is declared for first port, it is non-ANSI
-                        if prev.is_none() {
-                            ansi = false;
-                            return Ok(false);
-                        }
-                    }
+                // If they are all none, it means this is an ANSI port.
+                if dir.is_none() && net.is_none() && dtype.is_none() && prev.is_none() {
+                    ansi = false;
+                    return Ok(false);
                 }
-
-                let assign = this.parse_decl_assign()?;
 
                 // Nothing specified, inherit everything
                 if dir.is_none() && net.is_none() && dtype.is_none() {
@@ -1107,71 +1106,52 @@ impl Parser {
         }
     }
 
-    /// Parse a data_type (or data_type_and_implicit). Note that for implicit, if there's no
-    /// dimension & signing `None` will be returned. Note that we also treat `type` as data-type
-    /// for simplicity.
-    ///
-    /// ```bnf
-    /// data_type ::=
-    ///   integer_vector_type [ signing ] { packed_dimension }
-    /// | integer_atom_type [ signing ]
-    /// | non_integer_type
-    /// | struct_union [ packed [ signing ] ] { struct_union_member { struct_union_member } }
-    ///   { packed_dimension }
-    /// | enum [ enum_base_type ] { enum_name_declaration { , enum_name_declaration } }
-    ///   { packed_dimension }
-    /// | string
-    /// | chandle
-    /// | virtual [ interface ] interface_identifier [ parameter_value_assignment ] [ . modport_identifier ]
-    /// | [ class_scope | package_scope ] type_identifier { packed_dimension }
-    /// | class_type
-    /// | event
-    /// | ps_covergroup_identifier
-    /// | type_reference
-    /// ```
-    fn parse_data_type(&mut self, implicit: bool) -> Result<Option<DataType>> {
-        let toksp = self.consume();
-        match toksp.value {
-            TokenKind::Keyword(kw) => match kw {
-                Keyword::Bit | Keyword::Logic | Keyword::Reg => {
-                    let sign = self.parse_signing();
-                    let dim = self.parse_list(Self::parse_pack_dim)?;
-                    Ok(Some(Spanned::new(DataTypeKind::IntVec(kw, sign, dim), toksp.span.clone())))
-                }
-                Keyword::Signed | Keyword::Unsigned => {
-                    let sp = toksp.span.clone();
-                    self.pushback(toksp);
-                    if implicit {
-                        let sign = self.parse_signing();
-                        let dim = self.parse_list(Self::parse_pack_dim)?;
-                        Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), sp)))
-                    } else {
-                        Ok(None)
+    /// Parse a data type (or implicit) followed a decl_assign.
+    fn parse_data_type_decl_assign(&mut self) -> Result<(Option<DataType>, DeclAssign)> {
+        let expr = self.parse_expr()?;
+        let span = expr.span;
+        let dtype = match self.conv_expr_to_type(expr)? {
+            None => {
+                self.report_span(Severity::Error, "expected data type or identifier", span)?;
+                // TODO: Do error recovery here.
+                return Err(())
+            }
+            Some(v) => v,
+        };
+        
+        match self.consume_if_id() {
+            Some(name) => {
+                let mut dim = self.parse_list(Self::parse_dim_opt)?;
+                self.check_list(Self::check_unpacked_dim, &mut dim)?;
+                let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
+                    None => None,
+                    Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
+                };
+                Ok((Some(dtype), DeclAssign {
+                    name,
+                    dim,
+                    init
+                }))
+            }
+            None => {
+                match self.conv_type_to_id(dtype)? {
+                    Some((name, dim)) => {
+                        let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
+                            None => None,
+                            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
+                        };
+                        Ok((None, DeclAssign {
+                            name,
+                            dim,
+                            init
+                        }))
+                    }
+                    None => {
+                        self.report_span(Severity::Error, "data type should be followed by an identifier", span)?;
+                        // TODO: Error recovery
+                        Err(())
                     }
                 }
-                Keyword::Type => {
-                    let token = self.consume();
-                    // TODO: Might be parenthesis
-                    Ok(Some(Spanned::new(DataTypeKind::Type, token.span)))
-                }
-                _ => {
-                    self.pushback(toksp);
-                    Ok(None)
-                }
-            }
-            TokenKind::DelimGroup(Delim::Bracket, _) => {
-                let sp = toksp.span.clone();
-                self.pushback(toksp);
-                if implicit {
-                    let dim = self.parse_list(Self::parse_pack_dim)?;
-                    Ok(Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), sp)))
-                } else {
-                    Ok(None)
-                }
-            }
-            _ => {
-                self.pushback(toksp);
-                Ok(None)
             }
         }
     }
@@ -1195,6 +1175,12 @@ impl Parser {
     /// | event
     /// | type_reference
     /// | [ signing ] { packed_dimension }
+    /// ```
+    ///
+    /// The following BNFs exist in spec but they're parsed as expression:
+    /// ```bnf
+    /// | [ class_scope | package_scope ] type_identifier { packed_dimension }
+    /// | class_type
     /// ```
     /// TODO: Better span in this function
     fn parse_kw_data_type(&mut self) -> Result<Option<DataType>> {
@@ -1238,21 +1224,37 @@ impl Parser {
 
     /// Convert an expression to a type. Useful when we try to parse thing as expression first due
     /// to ambiguity, then realised that it is actually a type.
-    fn conv_expr_to_type(&mut self, expr: Expr) -> Result<DataType> {
+    fn conv_expr_to_type(&mut self, expr: Expr) -> Result<Option<DataType>> {
         match expr.value {
-            ExprKind::Type(ty) => Ok(*ty),
+            ExprKind::Type(ty) => Ok(Some(*ty)),
             ExprKind::HierName(scope, name) => {
-                Ok(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span))
+                Ok(Some(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span)))
             }
             ExprKind::Select(ty, dim) => {
-                let mut ty = self.conv_expr_to_type(*ty)?;
+                let mut ty = match self.conv_expr_to_type(*ty)? {
+                    None => return Ok(None),
+                    Some(v) => v,
+                };
                 match *ty {
                     DataTypeKind::HierName(_, _, ref mut dimlist) => dimlist.push(dim),
+                    // If this is a keyword typename, the dimension should already be handled.
                     _ => unreachable!(),
                 };
-                Ok(ty)
+                Ok(Some(ty))
             }
-            _ => panic!("not a type!"),
+            _ => Ok(None),
+        }
+    }
+
+    /// We made a observation that every identifier (with unpacked dimension) looks like an data
+    /// type. This function tries to convert a data_type to an identifier (and a dimension list).
+    fn conv_type_to_id(&mut self, ty: DataType) -> Result<Option<(Ident, Vec<Dim>)>> {
+        match ty.value {
+            // TODO: what about dimension
+            DataTypeKind::HierName(None, HierId::Name(None, id), dim) => {
+                Ok(Some((*id, dim)))
+            }
+            _ => Ok(None),
         }
     }
 
