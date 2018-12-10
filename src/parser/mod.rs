@@ -273,7 +273,7 @@ impl Parser {
     }
 
     fn report_diag(&self, diag: Diagnostic) {
-        self.diag.report(diag).unwrap()
+        self.diag.report(diag)
     }
 
     //

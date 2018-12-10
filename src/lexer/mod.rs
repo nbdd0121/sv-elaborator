@@ -104,7 +104,7 @@ impl Tokenizer {
     }
 
     fn report_diag(&self, msg: Diagnostic) {
-        self.diag.report(msg).unwrap();
+        self.diag.report(msg)
     }
 
     // Skip CRLF (the CR is already consumed)

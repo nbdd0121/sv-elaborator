@@ -4,7 +4,6 @@ use std::fmt;
 use std::cmp;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::result::Result;
 use super::{Span, SrcMgr};
 
 use colored::{Color, Colorize};
@@ -279,15 +278,13 @@ impl DiagMgr {
     }
 
     /// Add a new diagnostic. Returns `Err` for fatal errors.
-    pub fn report(&self, diag: Diagnostic) -> Result<(), ()> {
+    pub fn report(&self, diag: Diagnostic) {
         let mut m = self.mutable.borrow_mut();
         diag.print(&m.src, true, 4);
         let severity = diag.severity;
         m.diagnostics.push(diag);
         if severity == Severity::Fatal {
-            Err(())
-        } else {
-            Ok(())
+            panic!(Severity::Fatal);
         }
     }
 

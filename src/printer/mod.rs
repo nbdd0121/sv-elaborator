@@ -338,6 +338,20 @@ impl PrettyPrint {
                 self.print_sys_tf_call(tf);
                 self.append(";\n");
             }
+            Item::ParamDecl(decl) => {
+                self.indent_append(format!("{} ", if decl.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
+                if let Some(ty) = &decl.ty {
+                    self.print_type(ty);
+                    self.append(" ");
+                }
+                for (item, _, last) in decl.list.iter().identify_first_last() {
+                    self.print_decl_assign(item);
+                    if !last {
+                        self.append(format!(", "));
+                    }
+                }
+                self.append(";\n");
+            }
             Item::DataDecl(decl) => {
                 self.indent_append("");
                 if decl.has_const {
