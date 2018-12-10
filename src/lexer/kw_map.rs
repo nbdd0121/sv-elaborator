@@ -22,7 +22,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("default", (TokenKind::Keyword(Keyword::Default), 1));
     m.insert("defparam", (TokenKind::Keyword(Keyword::Defparam), 1));
     m.insert("disable", (TokenKind::Keyword(Keyword::Disable), 1));
-    m.insert("edge", (TokenKind::Keyword(Keyword::Edge), 1));
+    m.insert("edge", (TokenKind::Edge(Edge::Edge), 1));
     m.insert("else", (TokenKind::Keyword(Keyword::Else), 1));
     m.insert("end", (TokenKind::Keyword(Keyword::End), 1));
     m.insert("endcase", (TokenKind::Keyword(Keyword::Endcase), 1));
@@ -52,7 +52,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("medium", (TokenKind::ChargeStrength(ChargeStrength::Medium), 1));
     m.insert("module", (TokenKind::Keyword(Keyword::Module), 1));
     m.insert("nand", (TokenKind::Primitive(Primitive::Nand), 1));
-    m.insert("negedge", (TokenKind::Keyword(Keyword::Negedge), 1));
+    m.insert("negedge", (TokenKind::Edge(Edge::Negedge), 1));
     m.insert("nmos", (TokenKind::Primitive(Primitive::Nmos), 1));
     m.insert("nor", (TokenKind::Primitive(Primitive::Nor), 1));
     m.insert("not", (TokenKind::Keyword(Keyword::Not), 1));
@@ -62,7 +62,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("output", (TokenKind::PortDir(PortDir::Output), 1));
     m.insert("parameter", (TokenKind::Keyword(Keyword::Parameter), 1));
     m.insert("pmos", (TokenKind::Primitive(Primitive::Pmos), 1));
-    m.insert("posedge", (TokenKind::Keyword(Keyword::Posedge), 1));
+    m.insert("posedge", (TokenKind::Edge(Edge::Posedge), 1));
     m.insert("primitive", (TokenKind::Keyword(Keyword::Primitive), 1));
     m.insert("pull0", (TokenKind::Strength0(DriveStrength::Pull), 1));
     m.insert("pull1", (TokenKind::Strength1(DriveStrength::Pull), 1));

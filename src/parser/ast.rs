@@ -121,6 +121,13 @@ pub enum Signing {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Posedge,
+    Negedge,
+    Edge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Primitive {
     Cmos,
     Rcmos,
@@ -394,6 +401,7 @@ pub struct GenBlock {
 #[derive(Debug)]
 pub enum StmtKind {
     Empty,
+    TimingCtrl(TimingCtrl, Box<Stmt>),
 }
 
 #[derive(Debug)]
@@ -405,6 +413,32 @@ pub struct Stmt {
 
 impl AstNode for Stmt {
     fn name() -> &'static str { "statement" }
+}
+
+//
+// A.6.5 Timing control statements
+//
+
+#[derive(Debug)]
+pub struct EventExprItem {
+    pub edge: Option<Edge>,
+    pub expr: Box<Expr>,
+    pub iff: Option<Box<Expr>>,
+}
+
+#[derive(Debug)]
+pub enum EventExpr {
+    List(Vec<EventExprItem>),
+    Paren(Box<EventExpr>),
+}
+
+#[derive(Debug)]
+pub enum TimingCtrl {
+    DelayCtrl(Box<Expr>),
+    ExprEventCtrl(Box<EventExpr>),
+    NameEventCtrl(Option<Scope>, HierId),
+    ImplicitEventCtrl,
+    // CycleDelay
 }
 
 //
@@ -511,6 +545,10 @@ pub enum HierId {
     Super,
     /// a named identifier, can possibily has a parent id
     Name(Option<Box<HierId>>, Box<Ident>)
+}
+
+impl AstNode for HierId {
+    fn name() -> &'static str { "hierachical identifier" }
 }
 
 /// Should be boxed when nested in other AST structure. An exception is that if the identifier is

@@ -55,10 +55,6 @@ pub enum Operator {
     LNot,
     // "~",
     Not,
-    // "#"
-    Hash,
-    // ","
-    Comma,
     // "."
     Dot,
     // "<"
@@ -67,10 +63,6 @@ pub enum Operator {
     Gt,
     // "?"
     Question,
-    // "@"
-    At,
-    // "@*"
-    AtStar,
     // "'"
     Tick,
     // "$"
@@ -127,10 +119,6 @@ pub enum Operator {
     Dec,
     // "->>""
     NonblockTrigger,
-    // "##"
-    CycleDelay,
-    // "@@"
-    AtAt,
     // "::"
     ScopeSep,
     // ":="
@@ -206,10 +194,23 @@ pub enum TokenKind {
     //
     // Operator groups
     //
+    /// "@"
+    At,
+    /// "#"
+    Hash,
+    /// ","
+    Comma,
     /// ":"
     Colon,
     /// ";"
     Semicolon,
+
+    /// "@*"
+    AtStar,
+    /// "@@"
+    AtAt,
+    /// "##"
+    CycleDelay,
     /// "(*)"
     ParenedStar,
 
@@ -228,6 +229,7 @@ pub enum TokenKind {
     /// Exclude supply1, which will be parsed as NetTy
     Strength1(DriveStrength),
     ChargeStrength(ChargeStrength),
+    Edge(Edge),
     /// Exclude not, and, or, xor, which will be parsed as keyword,
     Primitive(Primitive),
 

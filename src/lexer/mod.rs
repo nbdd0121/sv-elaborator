@@ -997,12 +997,12 @@ impl Tokenizer {
             }
             '#' => {
                 if self.nextch_if('#') {
-                    TokenKind::Operator(Operator::CycleDelay)
+                    TokenKind::CycleDelay
                 } else {
-                    TokenKind::Operator(Operator::Hash)
+                    TokenKind::Hash
                 }
             }
-            ',' => TokenKind::Operator(Operator::Comma),
+            ',' => TokenKind::Comma,
             '.' => {
                 if self.nextch_if('*') {
                     TokenKind::Operator(Operator::WildPattern)
@@ -1096,13 +1096,13 @@ impl Tokenizer {
                 match self.peekch() {
                     Some('@') => {
                         self.nextch();
-                        TokenKind::Operator(Operator::AtAt)
+                        TokenKind::AtAt
                     }
                     Some('*') => {
                         self.nextch();
-                        TokenKind::Operator(Operator::AtStar)
+                        TokenKind::AtStar
                     }
-                    _ => TokenKind::Operator(Operator::At),
+                    _ => TokenKind::At,
                 }
             }
             _ => {
