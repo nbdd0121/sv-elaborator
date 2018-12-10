@@ -152,6 +152,8 @@ pub enum Operator {
 impl fmt::Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let str = match self {
+            Operator::LNot => "!",
+            Operator::Not => "~",
             Operator::Add => "+",
             Operator::Sub => "-",
             Operator::Mul => "*",
@@ -166,6 +168,7 @@ impl fmt::Display for Operator {
             Operator::AShr => ">>>",
             Operator::Assign => "=",
             Operator::Lt => "<",
+            Operator::Leq => "<=",
             Operator::Gt => ">",
             Operator::LAnd => "&&",
             Operator::LOr => "||",
@@ -230,6 +233,7 @@ pub enum TokenKind {
     Strength1(DriveStrength),
     ChargeStrength(ChargeStrength),
     Edge(Edge),
+    UniqPrio(UniqPrio),
     /// Exclude not, and, or, xor, which will be parsed as keyword,
     Primitive(Primitive),
 

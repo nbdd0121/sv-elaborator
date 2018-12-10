@@ -404,7 +404,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if(TokenKind::Operator(Operator::Comma)) {
+            let comma = match self.consume_if(TokenKind::Comma) {
                 None => break,
                 Some(v) => v,
             };
@@ -447,7 +447,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if(TokenKind::Operator(Operator::Comma)) {
+            let comma = match self.consume_if(TokenKind::Comma) {
                 None => break,
                 Some(v) => v,
             };
@@ -639,6 +639,12 @@ impl Parser {
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            // initial_construct
+            TokenKind::Keyword(Keyword::Initial) => {
+                self.consume();
+                let stmt = self.parse_stmt()?;
+                Ok(Some(Item::Initial(Box::new(stmt))))
+            }
             // always_construct
             TokenKind::AlwaysKw(_) => Ok(Some(self.parse_always()?)),
             // generate_region
@@ -828,7 +834,7 @@ impl Parser {
     /// parameter_port_declaration ::=
     ///   [ parameter | localparam ] [ data_type_or_implicit | type ] param_assignment
     fn parse_param_port_list(&mut self) -> Result<Option<Vec<ParamDecl>>> {
-        if self.consume_if(TokenKind::Operator(Operator::Hash)).is_none() {
+        if self.consume_if(TokenKind::Hash).is_none() {
             return Ok(None)
         }
 
@@ -1127,7 +1133,7 @@ impl Parser {
 
         let (ty, assign) = self.parse_data_type_decl_assign()?;
         let mut list = vec![assign];
-        if self.check(TokenKind::Operator(Operator::Comma)) {
+        if self.check(TokenKind::Comma) {
             self.parse_comma_list_unit(false, false, |this| {
                 match this.parse_decl_assign_opt()? {
                     None => Ok(false),
@@ -1158,7 +1164,7 @@ impl Parser {
         let lifetime = self.parse_lifetime();
         let (ty, assign) = self.parse_data_type_decl_assign()?;
         let mut list = vec![assign];
-        if self.check(TokenKind::Operator(Operator::Comma)) {
+        if self.check(TokenKind::Comma) {
             self.parse_comma_list_unit(false, false, |this| {
                 match this.parse_decl_assign_opt()? {
                     None => Ok(false),
@@ -1310,7 +1316,7 @@ impl Parser {
             // Possibily a custom-defined net-type.
             TokenKind::Id(_) => {
                 // If there's delay control, then definitely net-type.
-                if let TokenKind::Operator(Operator::Hash) = **self.peek_n(1) {
+                if let TokenKind::Hash = **self.peek_n(1) {
                     unimplemented!();
                 }
                 // Otherwise this can either be a net declaration or data declaration.
@@ -1587,7 +1593,7 @@ impl Parser {
             return ItemDAB::IntfPort
         }
         // Skip over parameter assignment if any
-        if let TokenKind::Operator(Operator::Hash) = **self.peek_n(1) {
+        if let TokenKind::Hash = **self.peek_n(1) {
             has_hash = true;
             if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(2) {
                 peek = 3;
@@ -1631,7 +1637,7 @@ impl Parser {
         let mod_name = self.expect_id()?;
 
         // Parse parameter value assignment
-        let param = if self.check(TokenKind::Operator(Operator::Hash)) {
+        let param = if self.check(TokenKind::Hash) {
             Some(self.parse_args(ArgOption::Param)?)
         } else {
             None
@@ -1923,6 +1929,65 @@ impl Parser {
     }
 
     //
+    // A.6.3 Parallel and sequential blocks
+    //
+    fn parse_seq_block(&mut self, label: &mut Option<Ident>) -> Result<StmtKind> {
+        let begin = self.consume();
+        if self.check(TokenKind::Colon) {
+            let id = self.expect_id()?;
+            if let Some(v) = label {
+                if *id != **v {
+                    // IMP: Add a span about previous name
+                    self.report_span(
+                        Severity::Error,
+                        "block identifiers before and after 'begin' are not identical",
+                        id.span
+                    )?;
+                } else {
+                    self.report_span(
+                        Severity::Warning,
+                        "duplicate block identifiers before and after 'begin'",
+                        id.span
+                    )?;
+                }
+            }
+            *label = Some(id);
+        } else if let Some(v) = label {
+            self.report_diag(
+                Diagnostic::new(
+                    Severity::Warning,
+                    "it is suggested to place block identifier after 'begin'",
+                    v.span.merge(begin.span)
+                ).fix_primary(format!("begin: {}", v))
+            )?;
+        }
+
+        let items = self.parse_list(Self::parse_stmt_opt)?;
+        
+        self.expect(TokenKind::Keyword(Keyword::End))?;
+
+        if self.check(TokenKind::Colon) {
+            let id = self.expect_id()?;
+            match label {
+                None => self.report_span(
+                    Severity::Error,
+                    "identifer annotation at end does match declaration, should be empty",
+                    id.span
+                )?,
+                Some(v) => if **v != *id {
+                    self.report_span(
+                        Severity::Error,
+                        format!("identifer annotation at end does match declaration, should be '{}'", v),
+                        id.span
+                    )?
+                }
+            }
+        }
+
+        Ok(StmtKind::SeqBlock(items))
+    }
+
+    //
     // A.6.4 Statements
     //
 
@@ -1930,30 +1995,158 @@ impl Parser {
     fn parse_stmt_opt(&mut self) -> Result<Option<Stmt>> {
         // These are common to all statements:
         // an optional identifier and an attribute.
-        let label = if let TokenKind::Id(_) = **self.peek() {
+        let mut label = if let TokenKind::Id(_) = **self.peek() {
             if let TokenKind::Colon = **self.peek_n(1) {
                 let id = self.expect_id()?;
                 self.consume();
-                Some(Box::new(id))
+                Some(id)
             } else { None }
         } else { None };
         let attr = self.parse_attr_inst_opt()?;
 
-        match **self.peek() {
+        let kind = match **self.peek() {
+            TokenKind::Keyword(Keyword::End) => return Ok(None),
+            // null_statement
             TokenKind::Semicolon => {
                 self.consume();
-                Ok(Some(Stmt {
-                    label,
-                    attr,
-                    value: StmtKind::Empty,
-                }))
+                StmtKind::Empty
             }
-            _ => Ok(None),
-        }
+            // conditional_statement or case_statement
+            TokenKind::UniqPrio(uniq) => {
+                let prio = self.consume();
+                match **self.peek() {
+                    TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(Some(uniq))?,
+                    // TODO: case
+                    _ => {
+                        self.report_span(
+                            Severity::Error,
+                            "expected if or case statement after unique, unique0 or priority",
+                            prio.span
+                        )?;
+                        // Error recovery
+                        StmtKind::Empty
+                    }
+                }
+            }
+            // conditional_statement
+            TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(None)?,
+            // seq_block
+            TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label)?,
+            // procedural_timing_control_statement
+            TokenKind::Hash |
+            TokenKind::CycleDelay |
+            TokenKind::AtStar |
+            TokenKind::At => self.parse_timing_ctrl_stmt()?,
+            _ => {
+                let expr = self.parse_expr()?;
+                self.expect(TokenKind::Semicolon)?;
+                StmtKind::Expr(Box::new(expr))
+            }
+        };
+
+        Ok(Some(Stmt {
+            label: label.map(Box::new),
+            attr,
+            value: kind,
+        }))
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {
         self.parse_unwrap(Self::parse_stmt_opt)
+    }
+
+    //
+    // A.6.5 Timing control statements
+    //
+
+    fn parse_timing_ctrl_stmt(&mut self) -> Result<StmtKind> {
+        let ctrl = self.parse_timing_ctrl()?;
+        let stmt = self.parse_stmt()?;
+        Ok(StmtKind::TimingCtrl(ctrl, Box::new(stmt)))
+    }
+
+    fn parse_timing_ctrl(&mut self) -> Result<TimingCtrl> {
+        match **self.peek() {
+            TokenKind::Hash => unimplemented!(),
+            TokenKind::CycleDelay => unimplemented!(),
+            TokenKind::AtStar => {
+                self.consume();
+                Ok(TimingCtrl::ImplicitEventCtrl)
+            }
+            TokenKind::At => {
+                self.consume();
+                match **self.peek() {
+                    TokenKind::ParenedStar => {
+                        self.consume();
+                        Ok(TimingCtrl::ImplicitEventCtrl)
+                    }
+                    TokenKind::DelimGroup(Delim::Paren, _) => {
+                        Ok(TimingCtrl::ExprEventCtrl(
+                            Box::new(self.parse_delim(Delim::Paren, Self::parse_event_expr)?)
+                        ))
+                    }
+                    _ => {
+                        let scope = self.parse_scope()?;
+                        let id = self.parse_unwrap(Self::parse_hier_id)?;
+                        Ok(TimingCtrl::NameEventCtrl(
+                            scope, id
+                        ))
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn parse_event_expr_item(&mut self) -> Result<EventExpr> {
+        if let Some(v) = self.parse_if_delim(Delim::Paren, Self::parse_event_expr)? {
+            return Ok(EventExpr::Paren(Box::new(v)))
+        }
+        let edge = if let TokenKind::Edge(edge) = **self.peek() {
+            self.consume();
+            Some(edge)
+        } else {
+            None
+        };
+        let expr = Box::new(self.parse_expr()?);
+        let iff = if self.check(TokenKind::Keyword(Keyword::Iff)) {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+        Ok(EventExpr::Item(Box::new(EventExprItem {
+            edge,
+            expr,
+            iff,
+        })))
+    }
+
+    fn parse_event_expr(&mut self) -> Result<EventExpr> {
+        let mut item = vec![self.parse_event_expr_item()?];
+        while self.check(TokenKind::Comma) || self.check(TokenKind::Keyword(Keyword::Or)) {
+            item.push(self.parse_event_expr_item()?);
+        }
+        if item.len() > 1 {
+            Ok(EventExpr::List(item))
+        } else {
+            Ok(item.pop().unwrap())
+        }
+    }
+
+    //
+    // A.6.6 Conditional statements
+    //
+    fn parse_if_stmt(&mut self, uniq: Option<UniqPrio>) -> Result<StmtKind> {
+        self.consume();
+        let cond = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr)?);
+        let true_stmt = Box::new(self.parse_stmt()?);
+        let false_stmt = if self.check(TokenKind::Keyword(Keyword::Else)) {
+            // TODO: Else if clause cannot begin with UniqPrio
+            Some(Box::new(self.parse_stmt()?))
+        } else {
+            None
+        };
+        Ok(StmtKind::If(uniq, cond, true_stmt, false_stmt))
     }
 
     //
@@ -2504,7 +2697,7 @@ impl Parser {
                     // Lookahead to check if this is actually a scope
                     match **self.peek_n(1) {
                         TokenKind::Operator(Operator::ScopeSep) => (),
-                        TokenKind::Operator(Operator::Hash) => {
+                        TokenKind::Hash => {
                             if let TokenKind::DelimGroup(Delim::Paren,_) = **self.peek_n(2) {
                                 if let TokenKind::Operator(Operator::ScopeSep) = **self.peek_n(3) {
                                 } else {
@@ -2517,7 +2710,7 @@ impl Parser {
                         _ => break,
                     };
                     let ident = self.expect_id()?;
-                    if self.consume_if(TokenKind::Operator(Operator::Hash)).is_some() {
+                    if self.consume_if(TokenKind::Hash).is_some() {
                         // TODO: Add parameter support
                         self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span)?;
                         unreachable!();

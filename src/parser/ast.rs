@@ -48,6 +48,17 @@ pub enum AlwaysKw {
     AlwaysFf,
 }
 
+impl fmt::Display for AlwaysKw {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            AlwaysKw::Always => "always",
+            AlwaysKw::AlwaysComb => "always_comb",
+            AlwaysKw::AlwaysLatch => "always_latch",
+            AlwaysKw::AlwaysFf => "always_ff",
+        })
+    }
+}
+
 /// Represent a built-in atomic integer type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntAtomTy {
@@ -127,6 +138,33 @@ pub enum Edge {
     Edge,
 }
 
+impl fmt::Display for Edge {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            Edge::Posedge => "posedge",
+            Edge::Negedge => "negedge",
+            Edge::Edge => "edge",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UniqPrio {
+    Unique,
+    Unique0,
+    Priority,
+}
+
+impl fmt::Display for UniqPrio {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            UniqPrio::Unique => "unique",
+            UniqPrio::Unique0 => "unique0",
+            UniqPrio::Priority => "priority",
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Primitive {
     Cmos,
@@ -173,6 +211,7 @@ pub enum Item {
     DataDecl(Box<DataDecl>),
 
     ContinuousAssign(Vec<Expr>),
+    Initial(Box<Stmt>),
     Always(AlwaysKw, Box<Stmt>),
 
     HierInstantiation(Box<HierInstantiation>),
@@ -402,6 +441,9 @@ pub struct GenBlock {
 pub enum StmtKind {
     Empty,
     TimingCtrl(TimingCtrl, Box<Stmt>),
+    If(Option<UniqPrio>, Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    SeqBlock(Vec<Stmt>),
+    Expr(Box<Expr>),
 }
 
 #[derive(Debug)]
@@ -428,7 +470,8 @@ pub struct EventExprItem {
 
 #[derive(Debug)]
 pub enum EventExpr {
-    List(Vec<EventExprItem>),
+    Item(Box<EventExprItem>),
+    List(Vec<EventExpr>),
     Paren(Box<EventExpr>),
 }
 

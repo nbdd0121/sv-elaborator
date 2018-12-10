@@ -52,6 +52,15 @@ impl PrettyPrint {
         }
     }
 
+    fn print_sep_list<T>(&mut self, sep: &'static str, obj: &Vec<T>, mut f: impl FnMut(&mut Self, &T)) {
+        for (item, _, last) in obj.iter().identify_first_last() {
+            f(self, item);
+            if !last {
+                self.append(sep);
+            }
+        }
+    }
+
     fn print_comma_list<T>(&mut self, obj: &Vec<T>, mut f: impl FnMut(&mut Self, &T)) {
         for (item, _, last) in obj.iter().identify_first_last() {
             f(self, item);
@@ -259,6 +268,11 @@ impl PrettyPrint {
                     }
                 }
                 self.append(format!(";\n"));
+            }
+            Item::Always(kw, stmt) => {
+                self.indent_append(format!("{} ", kw));
+                self.print_stmt(&stmt);
+                self.append("\n");
             }
             Item::GenRegion(list) => {
                 self.indent_append("generate\n");
@@ -471,6 +485,89 @@ impl PrettyPrint {
             _ => {
                 eprintln!("{:?}", obj);
                 unimplemented!()
+            }
+        }
+    }
+
+    fn print_event_expr(&mut self, obj: &EventExpr) {
+        match obj {
+            EventExpr::Item(item) => {
+                if let Some(v) = item.edge {
+                    self.append(format!("{} ", v));
+                }
+                self.print_expr(&item.expr);
+                if let Some(v) = &item.iff {
+                    self.append(" iff ");
+                    self.print_expr(&v);
+                }
+            }
+            EventExpr::List(v) => {
+                self.print_sep_list(" or ", v, Self::print_event_expr)
+            }
+            EventExpr::Paren(v) => {
+                self.append("(");
+                self.print_event_expr(v);
+                self.append(")");
+            }
+        }
+    }
+
+    fn print_timing_ctrl(&mut self, obj: &TimingCtrl) {
+        match obj {
+            TimingCtrl::ExprEventCtrl(expr) => {
+                self.append("@(");
+                self.print_event_expr(&expr);
+                self.append(")");
+            }
+            _ => {
+                eprintln!("{:?}", obj);
+                unimplemented!();
+            }
+        }
+    }
+
+    pub fn print_stmt(&mut self, obj: &Stmt) {
+        match &obj.value {
+            StmtKind::TimingCtrl(timing, stmt) => {
+                self.print_timing_ctrl(timing);
+                self.append(" ");
+                self.print_stmt(&stmt);
+            }
+            StmtKind::If(uniq, cond, t, f) => {
+                if let Some(v) = uniq {
+                    self.append(format!("{} ", v));
+                }
+                self.append("if (");
+                self.print_expr(&cond);
+                self.append(") ");
+                self.print_stmt(&t);
+                if let Some(v) = f {
+                    self.append(" else ");
+                    self.print_stmt(&v);
+                }
+            }
+            StmtKind::SeqBlock(list) => {
+                self.append("begin");
+                if let Some(v) = &obj.label {
+                    self.append(format!(": {}", v));
+                }
+                self.append("\n");
+                self.indent(4);
+                for item in list {
+                    self.indent_append("");
+                    self.print_stmt(item);
+                    self.append("\n");
+                }
+                self.indent(-4);
+                self.indent_append("end");
+            }
+            StmtKind::Expr(expr) => {
+                self.print_expr(&expr);
+                self.append(";");
+            }
+            _ => {
+                eprintln!("{:?}", obj);
+                // unimplemented!();
             }
         }
     }

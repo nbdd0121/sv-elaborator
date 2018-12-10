@@ -201,7 +201,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("null", (TokenKind::Keyword(Keyword::Null), 5));
     m.insert("package", (TokenKind::Keyword(Keyword::Package), 5));
     m.insert("packed", (TokenKind::Keyword(Keyword::Packed), 5));
-    m.insert("priority", (TokenKind::Keyword(Keyword::Priority), 5));
+    m.insert("priority", (TokenKind::UniqPrio(UniqPrio::Priority), 5));
     m.insert("program", (TokenKind::Keyword(Keyword::Program), 5));
     m.insert("property", (TokenKind::Keyword(Keyword::Property), 5));
     m.insert("protected", (TokenKind::Keyword(Keyword::Protected), 5));
@@ -228,7 +228,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("type", (TokenKind::Keyword(Keyword::Type), 5));
     m.insert("typedef", (TokenKind::Keyword(Keyword::Typedef), 5));
     m.insert("union", (TokenKind::Keyword(Keyword::Union), 5));
-    m.insert("unique", (TokenKind::Keyword(Keyword::Unique), 5));
+    m.insert("unique", (TokenKind::UniqPrio(UniqPrio::Unique), 5));
     m.insert("var", (TokenKind::Keyword(Keyword::Var), 5));
     m.insert("virtual", (TokenKind::Keyword(Keyword::Virtual), 5));
     m.insert("void", (TokenKind::Keyword(Keyword::Void), 5));
@@ -256,7 +256,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("strong", (TokenKind::Keyword(Keyword::Strong), 6));
     m.insert("sync_accept_on", (TokenKind::Keyword(Keyword::SyncAcceptOn), 6));
     m.insert("sync_reject_on", (TokenKind::Keyword(Keyword::SyncRejectOn), 6));
-    m.insert("unique0", (TokenKind::Keyword(Keyword::Unique0), 6));
+    m.insert("unique0", (TokenKind::UniqPrio(UniqPrio::Unique0), 6));
     m.insert("until", (TokenKind::Keyword(Keyword::Until), 6));
     m.insert("until_with", (TokenKind::Keyword(Keyword::UntilWith), 6));
     m.insert("untyped", (TokenKind::Keyword(Keyword::Untyped), 6));
