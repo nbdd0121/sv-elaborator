@@ -90,6 +90,17 @@ impl PrettyPrint {
         self.append("]");
     }
 
+    fn print_decl_assign(&mut self, obj: &DeclAssign) {
+        self.append(format!("{}", obj.name));
+        for dim in &obj.dim {
+            self.print_dim(dim);
+        }
+        if let Some(ref v) = obj.init {
+            self.append(" = ");
+            self.print_expr(v);
+        }
+    }
+
     fn print_param_decl(&mut self, obj: &ParamDecl) {
         self.indent_append(format!("{} ", if obj.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
         if let Some(ty) = &obj.ty {
@@ -97,14 +108,7 @@ impl PrettyPrint {
             self.append(" ");
         }
         for (item, _, last) in obj.list.iter().identify_first_last() {
-            self.append(format!("{}", item.name));
-            for dim in &item.dim {
-                self.print_dim(dim);
-            }
-            if let Some(ref v) = item.init {
-                self.append(" = ");
-                self.print_expr(v);
-            }
+            self.print_decl_assign(item);
             if !last {
                 self.append(format!(", "));
             }
@@ -315,7 +319,28 @@ impl PrettyPrint {
                 self.print_sys_tf_call(tf);
                 self.append(";\n");
             }
-            _ => unimplemented!(),
+            Item::DataDecl(decl) => {
+                self.indent_append("");
+                if decl.has_const {
+                    self.append("const ");
+                }
+                if let DataTypeKind::Implicit(..) = *decl.ty {
+                    self.append("var ");
+                }
+                self.print_type(&decl.ty);
+                self.append(" ");
+                for (item, _, last) in decl.list.iter().identify_first_last() {
+                    self.print_decl_assign(item);
+                    if !last {
+                        self.append(format!(", "));
+                    }
+                }
+                self.append(";\n");
+            }
+            _ => {
+                eprintln!("{:?}", obj);
+                unimplemented!()
+            }
         }
     }
 

@@ -58,6 +58,14 @@ enum ArgOption {
     Arg,
 }
 
+/// Disambiguated item that can possibly start with identifier.
+enum ItemDAB {
+    DataDecl,
+    HierInst,
+    IntfPort,
+    NetDecl,
+}
+
 /// SystemVerilog Parser.
 ///
 /// The complexity of SystemVerilog comes from determing what an identifer means. There are few
@@ -83,15 +91,25 @@ enum ArgOption {
 /// When parsing port, we need to disambiguate interface port declaration in addition to implicit
 /// data type.
 ///
-/// Some of them are easy to check:
-/// * As module/interfaces/etc can be declared in other files, to disambiguate hierachical
-/// instantiation we need to lookahead a check if it is an instantation.
-/// * For interface port declaration, we only need to lookahead if it is of form "id.id id"
+/// We disambiguate hierachical instantiation we need to lookahead a check if it is an
+/// instantation. For interface port declaration vs data declaration, we will parse ambiguate terms
+/// as data declaration outside ANSI port declaration (as later is more common and it is easy to
+/// convert). In ANSI port declaration we do other way around, as interface port has not directions
+/// and so we kind-of assume if directions are omitted it should be an interface port (It still
+/// possible that it ends up being a variable port with direction inherited from previous ports,
+/// but conversion is also easy in this case.
 ///
-/// But for net-type and data-type, we actually need to have knowledge about identifiers to make
-/// correct decision because we cannot tell apart from net-type + implicit data-type vs data-type.
-/// In cases where data type can be implicit, we can still perform lookahead to check if an
-/// identifier followes, but we can't really do anything for param expression.
+/// For param expression case, we coded the parser so that the expression parsing function will
+/// accept all data types as expressions. By making data types as subset of expressions, we don't
+/// need to disambiguate anymore. We only have to perform expression-to-type conversion when needed
+///
+/// For net-type and data-type, we cannot tell from user-defined net-type vs data-type.
+/// We will parse everything as data-type, and fix later if semantics analysis found out that
+/// out guess is wrong.
+///
+/// We've noted that all identifiers are actually legal data types, so for implicit data type
+/// followed by identifier case we will parse them as data type first and when we see no
+/// identifiers following we can perform conversion.
 impl Parser {
     pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, lexer: VecDeque<Token>) -> Parser {
         let last_pos = lexer.back().map(|x| x.span.end).unwrap_or(Pos(0));
@@ -579,7 +597,7 @@ impl Parser {
     /// extern primitive
     /// ```
     fn parse_item_opt(&mut self) -> Result<Option<Item>> {
-        let mut attr = self.parse_attr_inst_opt()?;
+        let attr = self.parse_attr_inst_opt()?;
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) |
@@ -645,13 +663,32 @@ impl Parser {
                 self.expect(TokenKind::Operator(Operator::Semicolon))?;
                 Ok(Some(Item::SysTfCall(Box::new(tf))))
             }
+            // net_declaration
+            TokenKind::Keyword(Keyword::Interconnect) => {
+                unimplemented!();
+            }
+            // also net_declaration
+            TokenKind::Keyword(kw) if Self::is_keyword_nettype(kw) => {
+                unimplemented!();
+            }
+            // data_declaration. Either begin with const/var or explicit data type.
+            TokenKind::Keyword(Keyword::Const) |
+            TokenKind::Keyword(Keyword::Var) |
+            TokenKind::Keyword(Keyword::Type) => {
+                Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
+            }
+            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
+                Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
+            }
             TokenKind::Id(_) => {
-                if let Some(v) = self.parse_instantiation(&mut attr)? {
-                    Ok(Some(v))
-                } else {
-                    let clone = self.peek().span.clone();
-                    self.report_span(Severity::Fatal, "not implemented", clone)?;
-                    unreachable!()
+                match self.disambiguate_item() {
+                    ItemDAB::HierInst => Ok(Some(self.parse_instantiation(attr)?)),
+                    ItemDAB::DataDecl => Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?)))),
+                    _ => {
+                        let clone = self.peek().span.clone();
+                        self.report_span(Severity::Fatal, "not implemented", clone)?;
+                        unreachable!()
+                    }
                 }
             }
             _ => {
@@ -1121,6 +1158,35 @@ impl Parser {
     // A.2.1.3 Type declarations
     //
 
+    fn parse_data_decl(&mut self, attr: Option<Box<AttrInst>>) -> Result<DataDecl> {
+        let has_const = self.check(TokenKind::Keyword(Keyword::Const));
+        let _has_var = self.check(TokenKind::Keyword(Keyword::Var));
+        let lifetime = self.parse_lifetime();
+        let (ty, assign) = self.parse_data_type_decl_assign()?;
+        let mut list = vec![assign];
+        if self.check(TokenKind::Operator(Operator::Comma)) {
+            self.parse_comma_list_unit(false, false, |this| {
+                match this.parse_decl_assign_opt()? {
+                    None => Ok(false),
+                    Some(v) => {
+                        list.push(v);
+                        Ok(true)
+                    }
+                }
+            })?;
+        }
+
+        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        
+        Ok(DataDecl {
+            attr,
+            has_const,
+            lifetime,
+            ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
+            list
+        })
+    }
+
     /// Parse a package import declaration
     fn parse_pkg_import_decl_opt(&mut self) -> Result<Option<Vec<PkgImportItem>>> {
         if self.consume_if(TokenKind::Keyword(Keyword::Import)).is_none() {
@@ -1172,7 +1238,26 @@ impl Parser {
     // A.2.2.1 Net and variable types
     //
 
-    // If this keyword can begin a data_type definition
+    /// If this keyword is a net_type
+    fn is_keyword_nettype(kw: Keyword) -> bool {
+        match kw {
+            Keyword::Supply0 |
+            Keyword::Supply1 |
+            Keyword::Tri |
+            Keyword::Triand |
+            Keyword::Trior |
+            Keyword::Trireg |
+            Keyword::Tri0 |
+            Keyword::Tri1 |
+            Keyword::Uwire |
+            Keyword::Wire |
+            Keyword::Wand |
+            Keyword::Wor => true,
+            _ => false,
+        }
+    }
+
+    /// If this keyword can begin a data_type definition
     fn is_keyword_typename(kw: Keyword) -> bool {
         match kw {
             Keyword::Bit |
@@ -1247,6 +1332,31 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// Parse a net declaration or data declaration.
+    fn parse_net_decl_assign(&mut self) -> Result<()> {
+        match **self.peek() {
+            TokenKind::Keyword(Keyword::Interconnect) => {
+                unimplemented!();
+            }
+            TokenKind::Keyword(kw) if Self::is_keyword_nettype(kw) => {
+                unimplemented!();
+            }
+            // Possibily a custom-defined net-type.
+            TokenKind::Id(_) => {
+                // If there's delay control, then definitely net-type.
+                if let TokenKind::Operator(Operator::Hash) = **self.peek_n(1) {
+                    unimplemented!();
+                }
+                // Otherwise this can either be a net declaration or data declaration.
+                // We prefer to parse it as data declaration as it is more common. We can easily
+                // convert it if we actually parsed it wrongly.
+            }
+            _ => (),
+        }
+        unimplemented!();
+        // If we reached here we will parse everything as net type.
     }
 
     /// Parse a data_type that starts with a keyword. This does not exist in the spec, but is
@@ -1511,30 +1621,30 @@ impl Parser {
     // A.4.1.1 Module instantiation
     //
 
-    /// Parse an instantiation. This can be any type of hierachical instantiaton and we cannot
-    /// judge from only syntax. Returns `None` if this is actually not an instantiation.
-    ///
-    /// ```bnf
-    /// instantiation ::=
-    ///   identifier [ parameter_value_assignment ] hierarchical_instance
-    ///   { , hierarchical_instance } ;
-    /// ```
-    fn parse_instantiation(&mut self, attr: &mut Option<Box<AttrInst>>) -> Result<Option<Item>> {
+    /// Try to tell which item does an identifier begin by looking ahead.
+    fn disambiguate_item(&mut self) -> ItemDAB {
         let mut peek = 1;
+        let mut has_hash = false;
+        // This is an interface port
+        if let TokenKind::Operator(Operator::Dot) = **self.peek_n(1) {
+            return ItemDAB::IntfPort
+        }
         // Skip over parameter assignment if any
         if let TokenKind::Operator(Operator::Hash) = **self.peek_n(1) {
+            has_hash = true;
             if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(2) {
                 peek = 3;
             } else {
-                // Not an instantiation
-                return Ok(None)
+                // Hash a hash but no parenthesis, then the hash should be delay control.
+                // This is therefore a net_declaration
+                return ItemDAB::NetDecl
             }
         }
-        // The next one must be an identifier
+        // For net declaration and instantiation, the next one must be an identifier
         if let TokenKind::Id(_) = **self.peek_n(peek) {
             peek += 1
         } else {
-            return Ok(None)
+            return ItemDAB::DataDecl
         }
         // We must skip over dimension list if any
         while let TokenKind::DelimGroup(Delim::Bracket, _) = **self.peek_n(peek) {
@@ -1542,12 +1652,25 @@ impl Parser {
         }
         // Now we expect a opening paranthesis
         if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(peek) {
-            // Bingo!
+            // We've found an instantiation if we see parenthesis
+            ItemDAB::HierInst
         } else {
-            return Ok(None)
+            // Otherwise, if hash is seen, it's actually a parenthesised delay control.
+            // This is a data declaration or net declaration, but as the former one is most common
+            // we will treat it as data declaration, as it is not hard to convert if semantic
+            // analysis found out otherwise
+            if has_hash { ItemDAB::NetDecl } else { ItemDAB::DataDecl }
         }
-        
-        let attr = mem::replace(attr, None);
+    }
+
+    /// Parse an instantiation.
+    ///
+    /// ```bnf
+    /// instantiation ::=
+    ///   identifier [ parameter_value_assignment ] hierarchical_instance
+    ///   { , hierarchical_instance } ;
+    /// ```
+    fn parse_instantiation(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
         let mod_name = self.expect_id()?;
 
         // Parse parameter value assignment
@@ -1575,14 +1698,14 @@ impl Parser {
 
         self.expect(TokenKind::Operator(Operator::Semicolon))?;
 
-        Ok(Some(Item::HierInstantiation(Box::new(
+        Ok(Item::HierInstantiation(Box::new(
             HierInstantiation {
                 attr,
                 param,
                 name: mod_name,
                 inst: list,
             }
-        ))))
+        )))
     }
 
     /// Combined parser of parameter value assignment, port connections, and method argument list.

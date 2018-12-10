@@ -30,6 +30,7 @@ pub enum Item {
     ConfigDecl,
     PkgImport(Vec<PkgImportItem>),
     ParamDecl(Box<ParamDecl>),
+    DataDecl(Box<DataDecl>),
 
     ContinuousAssign(Vec<Expr>),
 
@@ -179,6 +180,15 @@ pub enum NetPortType {
     Variable,
     /// It should have default net type
     Default,
+}
+
+#[derive(Debug)]
+pub struct DataDecl {
+    pub attr: Option<Box<AttrInst>>,
+    pub has_const: bool,
+    pub lifetime: Lifetime,
+    pub ty: DataType,
+    pub list: Vec<DeclAssign>,
 }
 
 //
