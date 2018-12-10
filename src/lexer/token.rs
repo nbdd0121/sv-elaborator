@@ -123,8 +123,6 @@ pub enum Operator {
     MinusColon,
     // ".*"
     WildPattern,
-    // "'{"
-    TickBrace,
     // "++"
     Inc,
     // "--"
@@ -210,11 +208,16 @@ pub enum TokenKind {
     //
     // Keyword groups
     //
-    Always(AlwaysKeyword),
+    PortDir(PortDir),
+    AlwaysKw(AlwaysKw),
     Signing(Signing),
     IntAtomTy(IntAtomTy),
+    IntVecTy(IntVecTy),
     NonIntTy(NonIntTy),
     NetTy(NetTy),
+    Strength0(DriveStrength),
+    Strength1(DriveStrength),
+    ChargeStrength(ChargeStrength),
 
     /// Identifier
     Id(String),
@@ -260,21 +263,5 @@ pub struct DelimGroup {
 impl PartialEq for DelimGroup {
     fn eq(&self, _other: &Self) -> bool {
         unreachable!()
-    }
-}
-
-lazy_static!{
-pub static ref EOF: Token = {
-    Spanned::new_unspanned(TokenKind::Eof)
-};
-}
-
-impl Token {
-    pub fn eof() -> Token {
-        Spanned::new_unspanned(TokenKind::Eof)
-    }
-
-    pub fn eof_ref() -> &'static Token {
-        &EOF
     }
 }

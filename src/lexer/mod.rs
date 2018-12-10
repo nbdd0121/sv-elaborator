@@ -1,3 +1,5 @@
+#![warn(dead_code)]
+
 mod kw;
 mod kw_map;
 mod token;
@@ -892,10 +894,16 @@ impl Tokenizer {
                 }
             }
             '^' => {
-                if self.nextch_if('|') {
-                    TokenKind::Operator(Operator::Xnor)
-                } else {
-                    TokenKind::Operator(Operator::Xor)
+                match self.peekch() {
+                    Some('=') => {
+                        self.nextch();
+                        TokenKind::Operator(Operator::XorEq)
+                    }
+                    Some('|') => {
+                        self.nextch();
+                        TokenKind::Operator(Operator::Xnor)
+                    }
+                    _ => TokenKind::Operator(Operator::Xor)
                 }
             }
             '|' => {
@@ -1080,7 +1088,13 @@ impl Tokenizer {
                 }
             }
             '?' => TokenKind::Operator(Operator::Question),
-            '@' => TokenKind::Operator(Operator::At),
+            '@' => {
+                if self.nextch_if('@') {
+                    TokenKind::Operator(Operator::AtAt)
+                } else {
+                    TokenKind::Operator(Operator::At)
+                }
+            }
             _ => {
                 self.report_pos(Severity::Error, "unknown character in source file", self.start);
                 TokenKind::Unknown

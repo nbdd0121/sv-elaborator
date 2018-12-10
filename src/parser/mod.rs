@@ -676,6 +676,8 @@ impl Parser {
             TokenKind::Keyword(Keyword::Var) |
             TokenKind::Keyword(Keyword::Type) |
             TokenKind::IntAtomTy(_) |
+            TokenKind::IntVecTy(_) |
+            TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) => {
                 Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
             }
@@ -1101,21 +1103,9 @@ impl Parser {
     /// ```
     fn parse_port_dir(&mut self) -> Option<PortDir> {
         match self.peek().value {
-            TokenKind::Keyword(Keyword::Input) => {
+            TokenKind::PortDir(dir) => {
                 self.consume();
-                Some(PortDir::Input)
-            }
-            TokenKind::Keyword(Keyword::Output) => {
-                self.consume();
-                Some(PortDir::Output)
-            }
-            TokenKind::Keyword(Keyword::Inout) => {
-                self.consume();
-                Some(PortDir::Inout)
-            }
-            TokenKind::Keyword(Keyword::Ref) => {
-                self.consume();
-                Some(PortDir::Ref)
+                Some(dir)
             }
             _ => None,
         }
@@ -1243,9 +1233,6 @@ impl Parser {
     /// If this keyword can begin a data_type definition
     fn is_keyword_typename(kw: Keyword) -> bool {
         match kw {
-            Keyword::Bit |
-            Keyword::Logic |
-            Keyword::Reg |
             Keyword::Struct |
             Keyword::Union |
             Keyword::Enum |
@@ -1363,15 +1350,14 @@ impl Parser {
     /// TODO: Better span in this function
     fn parse_kw_data_type(&mut self) -> Result<Option<DataType>> {
         match **self.peek() {
-            TokenKind::Keyword(Keyword::Bit) |
-            TokenKind::Keyword(Keyword::Logic) |
+            TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) => {
-                // This makes Keyword::Reg turn into Keyword::Logic
+                // This makes Keyword::Reg turn into IntVecTy::Logic
                 let kw = self.consume();
-                let ty = if let TokenKind::Keyword(Keyword::Bit) = *kw {
-                    Keyword::Bit
+                let ty = if let TokenKind::IntVecTy(IntVecTy::Bit) = *kw {
+                    IntVecTy::Bit
                 } else {
-                    Keyword::Logic
+                    IntVecTy::Logic
                 };
                 let sign = self.parse_signing();
                 let dim = self.parse_list(Self::parse_pack_dim)?;
@@ -2263,6 +2249,8 @@ impl Parser {
             TokenKind::DelimGroup(Delim::Bracket, _) |
             TokenKind::Keyword(Keyword::Type) |
             TokenKind::IntAtomTy(_) |
+            TokenKind::IntVecTy(_) |
+            TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) => {
                 let ty = Box::new(self.parse_kw_data_type()?.unwrap());
                 let span = ty.span;

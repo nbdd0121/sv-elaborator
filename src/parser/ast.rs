@@ -20,21 +20,35 @@ pub trait AstNode where Self: Sized {
 //
 // Keyword enums
 //
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AlwaysKeyword {
+pub enum PortDir {
+    Input,
+    Output,
+    Inout,
+    Ref,
+}
+
+impl fmt::Display for PortDir {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PortDir::Input => write!(f, "input"),
+            PortDir::Output => write!(f, "output"),
+            PortDir::Inout => write!(f, "inout"),
+            PortDir::Ref => write!(f, "ref"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlwaysKw {
     Always,
     AlwaysComb,
     AlwaysLatch,
     AlwaysFf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Signing {
-    Signed,
-    Unsigned,
-}
-
-/// Represent a built-in atomic integer types
+/// Represent a built-in atomic integer type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntAtomTy {
     Byte,
@@ -43,6 +57,19 @@ pub enum IntAtomTy {
     Longint,
     Integer,
     Time,
+}
+
+/// Represent a built-in vectored integer base type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntVecTy {
+    Bit,
+    Logic,
+}
+
+impl fmt::Display for IntVecTy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", if self == &IntVecTy::Bit { "bit" } else { "logic" })
+    }
 }
 
 /// Represent a built-in non-integer type. The spec says that realtime is an alias to real.
@@ -67,6 +94,30 @@ pub enum NetTy {
     Wire,
     Wand,
     Wor,
+}
+
+/// Represent a drive strength
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveStrength {
+    Supply,
+    Strong,
+    Pull,
+    Weak,
+    Highz,
+}
+
+/// Represent a charge strength
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChargeStrength {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signing {
+    Signed,
+    Unsigned,
 }
 
 //
@@ -129,25 +180,6 @@ pub struct ParamDecl {
     pub list: Vec<DeclAssign>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum PortDir {
-    Input,
-    Output,
-    Inout,
-    Ref,
-}
-
-impl fmt::Display for PortDir {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PortDir::Input => write!(f, "input"),
-            PortDir::Output => write!(f, "output"),
-            PortDir::Inout => write!(f, "inout"),
-            PortDir::Ref => write!(f, "ref"),
-        }
-    }
-}
-
 /// The type of ANSI port
 #[derive(Debug)]
 pub enum PortDecl {
@@ -180,9 +212,9 @@ pub enum DataTypeKind {
     /// This isn't really a data type, but it is more convinient to have it here.
     Type,
     Implicit(Signing, Vec<Dim>),
-    IntVec(Keyword, Signing, Vec<Dim>),
+    IntVec(IntVecTy, Signing, Vec<Dim>),
     IntAtom(IntAtomTy, Signing),
-    NonIntType(Keyword),
+    NonIntType(NonIntTy),
     StructUnion, // TODO
     Enum, // TODO
     String,

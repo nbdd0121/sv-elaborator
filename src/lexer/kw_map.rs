@@ -7,7 +7,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     let mut m = HashMap::new();
 
     // Verilog 95
-    m.insert("always", (TokenKind::Always(AlwaysKeyword::Always), 1));
+    m.insert("always", (TokenKind::AlwaysKw(AlwaysKw::Always), 1));
     m.insert("and", (TokenKind::Keyword(Keyword::And), 1));
     m.insert("assign", (TokenKind::Keyword(Keyword::Assign), 1));
     m.insert("begin", (TokenKind::Keyword(Keyword::Begin), 1));
@@ -38,18 +38,18 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("forever", (TokenKind::Keyword(Keyword::Forever), 1));
     m.insert("fork", (TokenKind::Keyword(Keyword::Fork), 1));
     m.insert("function", (TokenKind::Keyword(Keyword::Function), 1));
-    m.insert("highz0", (TokenKind::Keyword(Keyword::Highz0), 1));
-    m.insert("highz1", (TokenKind::Keyword(Keyword::Highz1), 1));
+    m.insert("highz0", (TokenKind::Strength0(DriveStrength::Highz), 1));
+    m.insert("highz1", (TokenKind::Strength1(DriveStrength::Highz), 1));
     m.insert("if", (TokenKind::Keyword(Keyword::If), 1));
     m.insert("ifnone", (TokenKind::Keyword(Keyword::Ifnone), 1));
     m.insert("initial", (TokenKind::Keyword(Keyword::Initial), 1));
-    m.insert("inout", (TokenKind::Keyword(Keyword::Inout), 1));
-    m.insert("input", (TokenKind::Keyword(Keyword::Input), 1));
+    m.insert("inout", (TokenKind::PortDir(PortDir::Inout), 1));
+    m.insert("input", (TokenKind::PortDir(PortDir::Input), 1));
     m.insert("integer", (TokenKind::IntAtomTy(IntAtomTy::Integer), 1));
     m.insert("join", (TokenKind::Keyword(Keyword::Join), 1));
-    m.insert("large", (TokenKind::Keyword(Keyword::Large), 1));
+    m.insert("large", (TokenKind::ChargeStrength(ChargeStrength::Large), 1));
     m.insert("macromodule", (TokenKind::Keyword(Keyword::Module), 1));
-    m.insert("medium", (TokenKind::Keyword(Keyword::Medium), 1));
+    m.insert("medium", (TokenKind::ChargeStrength(ChargeStrength::Medium), 1));
     m.insert("module", (TokenKind::Keyword(Keyword::Module), 1));
     m.insert("nand", (TokenKind::Keyword(Keyword::Nand), 1));
     m.insert("negedge", (TokenKind::Keyword(Keyword::Negedge), 1));
@@ -59,13 +59,13 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("notif0", (TokenKind::Keyword(Keyword::Notif0), 1));
     m.insert("notif1", (TokenKind::Keyword(Keyword::Notif1), 1));
     m.insert("or", (TokenKind::Keyword(Keyword::Or), 1));
-    m.insert("output", (TokenKind::Keyword(Keyword::Output), 1));
+    m.insert("output", (TokenKind::PortDir(PortDir::Output), 1));
     m.insert("parameter", (TokenKind::Keyword(Keyword::Parameter), 1));
     m.insert("pmos", (TokenKind::Keyword(Keyword::Pmos), 1));
     m.insert("posedge", (TokenKind::Keyword(Keyword::Posedge), 1));
     m.insert("primitive", (TokenKind::Keyword(Keyword::Primitive), 1));
-    m.insert("pull0", (TokenKind::Keyword(Keyword::Pull0), 1));
-    m.insert("pull1", (TokenKind::Keyword(Keyword::Pull1), 1));
+    m.insert("pull0", (TokenKind::Strength0(DriveStrength::Pull), 1));
+    m.insert("pull1", (TokenKind::Strength1(DriveStrength::Pull), 1));
     m.insert("pullup", (TokenKind::Keyword(Keyword::Pullup), 1));
     m.insert("pulldown", (TokenKind::Keyword(Keyword::Pulldown), 1));
     m.insert("rcmos", (TokenKind::Keyword(Keyword::Rcmos), 1));
@@ -80,11 +80,11 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("rtranif0", (TokenKind::Keyword(Keyword::Rtranif0), 1));
     m.insert("rtranif1", (TokenKind::Keyword(Keyword::Rtranif1), 1));
     m.insert("scalared", (TokenKind::Keyword(Keyword::Scalared), 1));
-    m.insert("small", (TokenKind::Keyword(Keyword::Small), 1));
+    m.insert("small", (TokenKind::ChargeStrength(ChargeStrength::Small), 1));
     m.insert("specify", (TokenKind::Keyword(Keyword::Specify), 1));
     m.insert("specparam", (TokenKind::Keyword(Keyword::Specparam), 1));
-    m.insert("strong0", (TokenKind::Keyword(Keyword::Strong0), 1));
-    m.insert("strong1", (TokenKind::Keyword(Keyword::Strong1), 1));
+    m.insert("strong0", (TokenKind::Strength0(DriveStrength::Strong), 1));
+    m.insert("strong1", (TokenKind::Strength1(DriveStrength::Strong), 1));
     m.insert("supply0", (TokenKind::NetTy(NetTy::Supply0), 1));
     m.insert("supply1", (TokenKind::NetTy(NetTy::Supply1), 1));
     m.insert("table", (TokenKind::Keyword(Keyword::Table), 1));
@@ -102,8 +102,8 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("vectored", (TokenKind::Keyword(Keyword::Vectored), 1));
     m.insert("wait", (TokenKind::Keyword(Keyword::Wait), 1));
     m.insert("wand", (TokenKind::NetTy(NetTy::Wand), 1));
-    m.insert("weak0", (TokenKind::Keyword(Keyword::Weak0), 1));
-    m.insert("weak1", (TokenKind::Keyword(Keyword::Weak1), 1));
+    m.insert("weak0", (TokenKind::Strength0(DriveStrength::Weak), 1));
+    m.insert("weak1", (TokenKind::Strength1(DriveStrength::Weak), 1));
     m.insert("while", (TokenKind::Keyword(Keyword::While), 1));
     m.insert("wire", (TokenKind::NetTy(NetTy::Wire), 1));
     m.insert("wor", (TokenKind::NetTy(NetTy::Wor), 1));
@@ -140,16 +140,16 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
 
     // SV 05
     m.insert("alias", (TokenKind::Keyword(Keyword::Alias), 5));
-    m.insert("always_comb", (TokenKind::Always(AlwaysKeyword::AlwaysComb), 5));
-    m.insert("always_ff", (TokenKind::Always(AlwaysKeyword::AlwaysFf), 5));
-    m.insert("always_latch", (TokenKind::Always(AlwaysKeyword::AlwaysLatch), 5));
+    m.insert("always_comb", (TokenKind::AlwaysKw(AlwaysKw::AlwaysComb), 5));
+    m.insert("always_ff", (TokenKind::AlwaysKw(AlwaysKw::AlwaysFf), 5));
+    m.insert("always_latch", (TokenKind::AlwaysKw(AlwaysKw::AlwaysLatch), 5));
     m.insert("assert", (TokenKind::Keyword(Keyword::Assert), 5));
     m.insert("assume", (TokenKind::Keyword(Keyword::Assume), 5));
     m.insert("before", (TokenKind::Keyword(Keyword::Before), 5));
     m.insert("bind", (TokenKind::Keyword(Keyword::Bind), 5));
     m.insert("bins", (TokenKind::Keyword(Keyword::Bins), 5));
     m.insert("binsof", (TokenKind::Keyword(Keyword::Binsof), 5));
-    m.insert("bit", (TokenKind::Keyword(Keyword::Bit), 5));
+    m.insert("bit", (TokenKind::IntVecTy(IntVecTy::Bit), 5));
     m.insert("break", (TokenKind::Keyword(Keyword::Break), 5));
     m.insert("byte", (TokenKind::IntAtomTy(IntAtomTy::Byte), 5));
     m.insert("chandle", (TokenKind::Keyword(Keyword::Chandle), 5));
@@ -193,7 +193,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("join_any", (TokenKind::Keyword(Keyword::JoinAny), 5));
     m.insert("join_none", (TokenKind::Keyword(Keyword::JoinNone), 5));
     m.insert("local", (TokenKind::Keyword(Keyword::Local), 5));
-    m.insert("logic", (TokenKind::Keyword(Keyword::Logic), 5));
+    m.insert("logic", (TokenKind::IntVecTy(IntVecTy::Logic), 5));
     m.insert("longint", (TokenKind::IntAtomTy(IntAtomTy::Longint), 5));
     m.insert("matches", (TokenKind::Keyword(Keyword::Matches), 5));
     m.insert("modport", (TokenKind::Keyword(Keyword::Modport), 5));
@@ -210,7 +210,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("randc", (TokenKind::Keyword(Keyword::Randc), 5));
     m.insert("randcase", (TokenKind::Keyword(Keyword::Randcase), 5));
     m.insert("randsequence", (TokenKind::Keyword(Keyword::Randsequence), 5));
-    m.insert("ref", (TokenKind::Keyword(Keyword::Ref), 5));
+    m.insert("ref", (TokenKind::PortDir(PortDir::Ref), 5));
     m.insert("return", (TokenKind::Keyword(Keyword::Return), 5));
     m.insert("sequence", (TokenKind::Keyword(Keyword::Sequence), 5));
     m.insert("shortint", (TokenKind::IntAtomTy(IntAtomTy::Shortint), 5));
