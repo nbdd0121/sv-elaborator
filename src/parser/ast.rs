@@ -166,6 +166,7 @@ pub enum Item {
     DataDecl(Box<DataDecl>),
 
     ContinuousAssign(Vec<Expr>),
+    Always(AlwaysKw, Box<Stmt>),
 
     HierInstantiation(Box<HierInstantiation>),
 
@@ -384,6 +385,26 @@ pub struct IfGen {
 pub struct GenBlock {
     pub name: Option<Box<Ident>>,
     pub items: Vec<Item>,
+}
+
+//
+// A.6.4 Statements
+//
+
+#[derive(Debug)]
+pub enum StmtKind {
+    Empty,
+}
+
+#[derive(Debug)]
+pub struct Stmt {
+    pub label: Option<Box<Ident>>,
+    pub attr: Option<Box<AttrInst>>,
+    pub value: StmtKind,
+}
+
+impl AstNode for Stmt {
+    fn name() -> &'static str { "statement" }
 }
 
 //

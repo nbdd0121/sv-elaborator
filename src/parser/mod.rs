@@ -639,6 +639,8 @@ impl Parser {
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            // always_construct
+            TokenKind::AlwaysKw(_) => Ok(Some(self.parse_always()?)),
             // generate_region
             TokenKind::Keyword(Keyword::Generate) => {
                 let kw = self.consume();
@@ -660,7 +662,7 @@ impl Parser {
             // elaboration_system_task
             TokenKind::SystemTask(_) => {
                 let tf = self.parse_sys_tf_call()?;
-                self.expect(TokenKind::Operator(Operator::Semicolon))?;
+                self.expect(TokenKind::Semicolon)?;
                 Ok(Some(Item::SysTfCall(Box::new(tf))))
             }
             // net_declaration
@@ -772,11 +774,11 @@ impl Parser {
         let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt)?;
         let param = self.parse_param_port_list()?;
         let port = self.parse_port_list()?;
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
         let items = self.parse_list(Self::parse_item_opt)?;
         self.expect(TokenKind::Keyword(end_kw))?;
 
-        if self.consume_if(TokenKind::Operator(Operator::Colon)).is_some() {
+        if self.consume_if(TokenKind::Colon).is_some() {
             let id = self.expect_id()?;
             if *id != *name {
                 self.report_span(
@@ -1137,7 +1139,7 @@ impl Parser {
             })?;
         }
 
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
         
         Ok(ParamDecl {
             kw,
@@ -1168,7 +1170,7 @@ impl Parser {
             })?;
         }
 
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
         
         Ok(DataDecl {
             attr,
@@ -1185,7 +1187,7 @@ impl Parser {
             return Ok(None);
         }
         let list = self.parse_comma_list(false, false, Self::parse_pkg_import_item_opt)?;
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
         Ok(Some(list))
     }
 
@@ -1513,7 +1515,7 @@ impl Parser {
             }
             let expr = this.parse_expr()?;
             match **this.peek() {
-                TokenKind::Operator(Operator::Colon) => {
+                TokenKind::Colon => {
                     this.consume();
                     Ok(DimKind::Range(Box::new(expr), Box::new(this.parse_expr()?)))
                 }
@@ -1651,7 +1653,7 @@ impl Parser {
             }))
         })?;
 
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
 
         Ok(Item::HierInstantiation(Box::new(
             HierInstantiation {
@@ -1755,9 +1757,9 @@ impl Parser {
                 let id = this.expect_id()?;
                 this.expect(TokenKind::Operator(Operator::Assign))?;
                 let init = this.parse_expr()?;
-                this.expect(TokenKind::Operator(Operator::Semicolon))?;
+                this.expect(TokenKind::Semicolon)?;
                 let cond = this.parse_expr()?;
-                this.expect(TokenKind::Operator(Operator::Semicolon))?;
+                this.expect(TokenKind::Semicolon)?;
                 let update = this.parse_expr()?;
                 Ok((genvar, id, init, cond, update))
             })?;
@@ -1800,7 +1802,7 @@ impl Parser {
     fn parse_gen_block(&mut self) -> Result<Item> {
         // A generate-block may begin with a label. It is treated as same as label after begin.
         let label = if let TokenKind::Id(_) = **self.peek() {
-            if let TokenKind::Operator(Operator::Colon) = **self.peek_n(1) {
+            if let TokenKind::Colon = **self.peek_n(1) {
                 // This is actuall
                 if let TokenKind::Keyword(Keyword::Begin) = **self.peek_n(2) {
                     let label = self.expect_id()?;
@@ -1815,7 +1817,7 @@ impl Parser {
             Some(v) => v,
         };
 
-        let name = if self.check(TokenKind::Operator(Operator::Colon)) {
+        let name = if self.check(TokenKind::Colon) {
             Some(self.expect_id()?)
         } else {
             None
@@ -1851,7 +1853,7 @@ impl Parser {
         
         self.expect(TokenKind::Keyword(Keyword::End))?;
 
-        if self.check(TokenKind::Operator(Operator::Colon)) {
+        if self.check(TokenKind::Colon) {
             let id = self.expect_id()?;
             match &name {
                 None => self.report_span(
@@ -1883,7 +1885,7 @@ impl Parser {
         // IMP: Parse drive_strength
         // IMP: Parse delay control
         let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr)?;
-        self.expect(TokenKind::Operator(Operator::Semicolon))?;
+        self.expect(TokenKind::Semicolon)?;
         Ok(Item::ContinuousAssign(assignments))
     }
 
@@ -1908,6 +1910,50 @@ impl Parser {
             Operator::AShrEq => true,
             _ => false,
         }
+    }
+
+    fn parse_always(&mut self) -> Result<Item> {
+        let kw = if let TokenKind::AlwaysKw(kw) = *self.consume() {
+            kw
+        } else {
+            unreachable!();
+        };
+        let stmt = self.parse_stmt()?;
+        Ok(Item::Always(kw, Box::new(stmt)))
+    }
+
+    //
+    // A.6.4 Statements
+    //
+
+    /// Parse a block item declaration, statement, or null statement.
+    fn parse_stmt_opt(&mut self) -> Result<Option<Stmt>> {
+        // These are common to all statements:
+        // an optional identifier and an attribute.
+        let label = if let TokenKind::Id(_) = **self.peek() {
+            if let TokenKind::Colon = **self.peek_n(1) {
+                let id = self.expect_id()?;
+                self.consume();
+                Some(Box::new(id))
+            } else { None }
+        } else { None };
+        let attr = self.parse_attr_inst_opt()?;
+
+        match **self.peek() {
+            TokenKind::Semicolon => {
+                self.consume();
+                Ok(Some(Stmt {
+                    label,
+                    attr,
+                    value: StmtKind::Empty,
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn parse_stmt(&mut self) -> Result<Stmt> {
+        self.parse_unwrap(Self::parse_stmt_opt)
     }
 
     //
@@ -2029,7 +2075,7 @@ impl Parser {
             TokenKind::Operator(Operator::Question) => {
                 self.consume();
                 let true_expr = Box::new(self.parse_expr()?);
-                self.expect(TokenKind::Operator(Operator::Colon))?;
+                self.expect(TokenKind::Colon)?;
                 let false_expr = Box::new(self.parse_expr()?);
                 let span = expr.span.merge(false_expr.span);
                 Ok(Some(Spanned::new(
@@ -2109,13 +2155,13 @@ impl Parser {
             Some(v) => v,
         };
 
-        if !self.check(TokenKind::Operator(Operator::Colon)) {
+        if !self.check(TokenKind::Colon) {
             return Ok(Some(expr))
         }
 
         scope!(self);
         let typ = parse!(box(expr));
-        self.expect(TokenKind::Operator(Operator::Colon))?;
+        self.expect(TokenKind::Colon)?;
         let max = parse!(box(expr));
         let span = expr.span.merge(max.span);
         Ok(Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span)))

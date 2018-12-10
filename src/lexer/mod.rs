@@ -787,11 +787,15 @@ impl Tokenizer {
             // Delimiters
             '(' => {
                 if self.nextch_if('*') {
-                    if self.attr {
-                        self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.pos);
+                    if self.nextch_if(')') {
+                        TokenKind::ParenedStar
+                    } else {
+                        if self.attr {
+                            self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.pos);
+                        }
+                        self.attr = true;
+                        TokenKind::OpenDelim(Delim::Attr)
                     }
-                    self.attr = true;
-                    TokenKind::OpenDelim(Delim::Attr)
                 } else {
                     TokenKind::OpenDelim(Delim::Paren)
                 }
@@ -1020,10 +1024,10 @@ impl Tokenizer {
                         self.nextch();
                         TokenKind::Operator(Operator::DistDiv)
                     }
-                    _ => TokenKind::Operator(Operator::Colon)
+                    _ => TokenKind::Colon,
                 }
             }
-            ';' => TokenKind::Operator(Operator::Semicolon),
+            ';' => TokenKind::Semicolon,
             '<' => {
                 match self.peekch() {
                     Some('=') => {
@@ -1089,10 +1093,16 @@ impl Tokenizer {
             }
             '?' => TokenKind::Operator(Operator::Question),
             '@' => {
-                if self.nextch_if('@') {
-                    TokenKind::Operator(Operator::AtAt)
-                } else {
-                    TokenKind::Operator(Operator::At)
+                match self.peekch() {
+                    Some('@') => {
+                        self.nextch();
+                        TokenKind::Operator(Operator::AtAt)
+                    }
+                    Some('*') => {
+                        self.nextch();
+                        TokenKind::Operator(Operator::AtStar)
+                    }
+                    _ => TokenKind::Operator(Operator::At),
                 }
             }
             _ => {

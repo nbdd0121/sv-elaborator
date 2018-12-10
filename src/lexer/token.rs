@@ -61,18 +61,16 @@ pub enum Operator {
     Comma,
     // "."
     Dot,
-    // ":"
-    Colon,
-    // ";"
-    Semicolon,
     // "<"
     Lt,
     // ">"
     Gt,
     // "?"
     Question,
-    // "@" 
+    // "@"
     At,
+    // "@*"
+    AtStar,
     // "'"
     Tick,
     // "$"
@@ -204,6 +202,16 @@ pub enum TokenKind {
     /// An opening delimiter
     OpenDelim(Delim),
     CloseDelim(Delim),
+
+    //
+    // Operator groups
+    //
+    /// ":"
+    Colon,
+    /// ";"
+    Semicolon,
+    /// "(*)"
+    ParenedStar,
 
     //
     // Keyword groups
