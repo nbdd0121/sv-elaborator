@@ -18,6 +18,58 @@ pub trait AstNode where Self: Sized {
 }
 
 //
+// Keyword enums
+//
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlwaysKeyword {
+    Always,
+    AlwaysComb,
+    AlwaysLatch,
+    AlwaysFf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signing {
+    Signed,
+    Unsigned,
+}
+
+/// Represent a built-in atomic integer types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntAtomTy {
+    Byte,
+    Shortint,
+    Int,
+    Longint,
+    Integer,
+    Time,
+}
+
+/// Represent a built-in non-integer type. The spec says that realtime is an alias to real.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NonIntTy {
+    Real,
+    Shortreal,
+}
+
+/// Represent a built-in net-type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetTy {
+    Supply0,
+    Supply1,
+    Tri,
+    Triand,
+    Trior,
+    Trireg,
+    Tri0,
+    Tri1,
+    Uwire,
+    Wire,
+    Wand,
+    Wor,
+}
+
+//
 // Unknown
 //
 
@@ -129,7 +181,7 @@ pub enum DataTypeKind {
     Type,
     Implicit(Signing, Vec<Dim>),
     IntVec(Keyword, Signing, Vec<Dim>),
-    IntAtom(Keyword, Signing),
+    IntAtom(IntAtomTy, Signing),
     NonIntType(Keyword),
     StructUnion, // TODO
     Enum, // TODO
@@ -146,33 +198,10 @@ pub enum DataTypeKind {
 /// Should be boxed when nested in other AST structure.
 pub type DataType = Spanned<DataTypeKind>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Signing {
-    Signed,
-    Unsigned,
-}
-
-/// Represent a built-in net-type
-#[derive(Debug)]
-pub enum NetType {
-    Supply0,
-    Supply1,
-    Tri,
-    Triand,
-    Trior,
-    Trireg,
-    Tri0,
-    Tri1,
-    Uwire,
-    Wire,
-    Wand,
-    Wor,
-}
-
 /// Represent a net_port_type (but without data type)
 #[derive(Debug)]
 pub enum NetPortType {
-    Builtin(NetType),
+    Builtin(NetTy),
     UserDefined(Box<Ident>),
     Interconnect,
     /// This is actually a variable port. We put it here for simplicity, as PortType

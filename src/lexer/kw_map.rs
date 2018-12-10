@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use super::{Keyword, TokenKind};
+use parser::ast::*;
 
 lazy_static!{
 pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     let mut m = HashMap::new();
 
     // Verilog 95
-    m.insert("always", (TokenKind::Keyword(Keyword::Always), 1));
+    m.insert("always", (TokenKind::Always(AlwaysKeyword::Always), 1));
     m.insert("and", (TokenKind::Keyword(Keyword::And), 1));
     m.insert("assign", (TokenKind::Keyword(Keyword::Assign), 1));
     m.insert("begin", (TokenKind::Keyword(Keyword::Begin), 1));
@@ -44,7 +45,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("initial", (TokenKind::Keyword(Keyword::Initial), 1));
     m.insert("inout", (TokenKind::Keyword(Keyword::Inout), 1));
     m.insert("input", (TokenKind::Keyword(Keyword::Input), 1));
-    m.insert("integer", (TokenKind::Keyword(Keyword::Integer), 1));
+    m.insert("integer", (TokenKind::IntAtomTy(IntAtomTy::Integer), 1));
     m.insert("join", (TokenKind::Keyword(Keyword::Join), 1));
     m.insert("large", (TokenKind::Keyword(Keyword::Large), 1));
     m.insert("macromodule", (TokenKind::Keyword(Keyword::Module), 1));
@@ -68,8 +69,8 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("pullup", (TokenKind::Keyword(Keyword::Pullup), 1));
     m.insert("pulldown", (TokenKind::Keyword(Keyword::Pulldown), 1));
     m.insert("rcmos", (TokenKind::Keyword(Keyword::Rcmos), 1));
-    m.insert("real", (TokenKind::Keyword(Keyword::Real), 1));
-    m.insert("realtime", (TokenKind::Keyword(Keyword::Real), 1));
+    m.insert("real", (TokenKind::NonIntTy(NonIntTy::Real), 1));
+    m.insert("realtime", (TokenKind::NonIntTy(NonIntTy::Real), 1));
     m.insert("reg", (TokenKind::Keyword(Keyword::Reg), 1));
     m.insert("release", (TokenKind::Keyword(Keyword::Release), 1));
     m.insert("repeat", (TokenKind::Keyword(Keyword::Repeat), 1));
@@ -84,28 +85,28 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("specparam", (TokenKind::Keyword(Keyword::Specparam), 1));
     m.insert("strong0", (TokenKind::Keyword(Keyword::Strong0), 1));
     m.insert("strong1", (TokenKind::Keyword(Keyword::Strong1), 1));
-    m.insert("supply0", (TokenKind::Keyword(Keyword::Supply0), 1));
-    m.insert("supply1", (TokenKind::Keyword(Keyword::Supply1), 1));
+    m.insert("supply0", (TokenKind::NetTy(NetTy::Supply0), 1));
+    m.insert("supply1", (TokenKind::NetTy(NetTy::Supply1), 1));
     m.insert("table", (TokenKind::Keyword(Keyword::Table), 1));
     m.insert("task", (TokenKind::Keyword(Keyword::Task), 1));
-    m.insert("time", (TokenKind::Keyword(Keyword::Time), 1));
+    m.insert("time", (TokenKind::IntAtomTy(IntAtomTy::Time), 1));
     m.insert("tran", (TokenKind::Keyword(Keyword::Tran), 1));
     m.insert("tranif0", (TokenKind::Keyword(Keyword::Tranif0), 1));
     m.insert("tranif1", (TokenKind::Keyword(Keyword::Tranif1), 1));
-    m.insert("tri", (TokenKind::Keyword(Keyword::Tri), 1));
-    m.insert("tri0", (TokenKind::Keyword(Keyword::Tri0), 1));
-    m.insert("tri1", (TokenKind::Keyword(Keyword::Tri1), 1));
-    m.insert("triand", (TokenKind::Keyword(Keyword::Triand), 1));
-    m.insert("trior", (TokenKind::Keyword(Keyword::Trior), 1));
-    m.insert("trireg", (TokenKind::Keyword(Keyword::Trireg), 1));
+    m.insert("tri", (TokenKind::NetTy(NetTy::Tri), 1));
+    m.insert("tri0", (TokenKind::NetTy(NetTy::Tri0), 1));
+    m.insert("tri1", (TokenKind::NetTy(NetTy::Tri1), 1));
+    m.insert("triand", (TokenKind::NetTy(NetTy::Triand), 1));
+    m.insert("trior", (TokenKind::NetTy(NetTy::Trior), 1));
+    m.insert("trireg", (TokenKind::NetTy(NetTy::Trireg), 1));
     m.insert("vectored", (TokenKind::Keyword(Keyword::Vectored), 1));
     m.insert("wait", (TokenKind::Keyword(Keyword::Wait), 1));
-    m.insert("wand", (TokenKind::Keyword(Keyword::Wand), 1));
+    m.insert("wand", (TokenKind::NetTy(NetTy::Wand), 1));
     m.insert("weak0", (TokenKind::Keyword(Keyword::Weak0), 1));
     m.insert("weak1", (TokenKind::Keyword(Keyword::Weak1), 1));
     m.insert("while", (TokenKind::Keyword(Keyword::While), 1));
-    m.insert("wire", (TokenKind::Keyword(Keyword::Wire), 1));
-    m.insert("wor", (TokenKind::Keyword(Keyword::Wor), 1));
+    m.insert("wire", (TokenKind::NetTy(NetTy::Wire), 1));
+    m.insert("wor", (TokenKind::NetTy(NetTy::Wor), 1));
     m.insert("xnor", (TokenKind::Keyword(Keyword::Xnor), 1));
     m.insert("xor", (TokenKind::Keyword(Keyword::Xor), 1));
 
@@ -119,8 +120,8 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("pulsestyle_ondetect", (TokenKind::Keyword(Keyword::PulsestyleOndetect), 2));
     m.insert("pulsestyle_onevent", (TokenKind::Keyword(Keyword::PulsestyleOnevent), 2));
     m.insert("showcancelled", (TokenKind::Keyword(Keyword::Showcancelled), 2));
-    m.insert("signed", (TokenKind::Keyword(Keyword::Signed), 2));
-    m.insert("unsigned", (TokenKind::Keyword(Keyword::Unsigned), 2));
+    m.insert("signed", (TokenKind::Signing(Signing::Signed), 2));
+    m.insert("unsigned", (TokenKind::Signing(Signing::Unsigned), 2));
 
     // Verilog 01
     m.insert("cell", (TokenKind::Keyword(Keyword::Cell), 3));
@@ -135,13 +136,13 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("use", (TokenKind::Keyword(Keyword::Use), 3));
 
     // Verilog 05
-    m.insert("uwire", (TokenKind::Keyword(Keyword::Uwire), 4));
+    m.insert("uwire", (TokenKind::NetTy(NetTy::Uwire), 4));
 
     // SV 05
     m.insert("alias", (TokenKind::Keyword(Keyword::Alias), 5));
-    m.insert("always_comb", (TokenKind::Keyword(Keyword::AlwaysComb), 5));
-    m.insert("always_ff", (TokenKind::Keyword(Keyword::AlwaysFf), 5));
-    m.insert("always_latch", (TokenKind::Keyword(Keyword::AlwaysLatch), 5));
+    m.insert("always_comb", (TokenKind::Always(AlwaysKeyword::AlwaysComb), 5));
+    m.insert("always_ff", (TokenKind::Always(AlwaysKeyword::AlwaysFf), 5));
+    m.insert("always_latch", (TokenKind::Always(AlwaysKeyword::AlwaysLatch), 5));
     m.insert("assert", (TokenKind::Keyword(Keyword::Assert), 5));
     m.insert("assume", (TokenKind::Keyword(Keyword::Assume), 5));
     m.insert("before", (TokenKind::Keyword(Keyword::Before), 5));
@@ -150,7 +151,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("binsof", (TokenKind::Keyword(Keyword::Binsof), 5));
     m.insert("bit", (TokenKind::Keyword(Keyword::Bit), 5));
     m.insert("break", (TokenKind::Keyword(Keyword::Break), 5));
-    m.insert("byte", (TokenKind::Keyword(Keyword::Byte), 5));
+    m.insert("byte", (TokenKind::IntAtomTy(IntAtomTy::Byte), 5));
     m.insert("chandle", (TokenKind::Keyword(Keyword::Chandle), 5));
     m.insert("class", (TokenKind::Keyword(Keyword::Class), 5));
     m.insert("clocking", (TokenKind::Keyword(Keyword::Clocking), 5));
@@ -186,14 +187,14 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("illegal_bins", (TokenKind::Keyword(Keyword::IllegalBins), 5));
     m.insert("import", (TokenKind::Keyword(Keyword::Import), 5));
     m.insert("inside", (TokenKind::Keyword(Keyword::Inside), 5));
-    m.insert("int", (TokenKind::Keyword(Keyword::Int), 5));
+    m.insert("int", (TokenKind::IntAtomTy(IntAtomTy::Int), 5));
     m.insert("interface", (TokenKind::Keyword(Keyword::Interface), 5));
     m.insert("intersect", (TokenKind::Keyword(Keyword::Intersect), 5));
     m.insert("join_any", (TokenKind::Keyword(Keyword::JoinAny), 5));
     m.insert("join_none", (TokenKind::Keyword(Keyword::JoinNone), 5));
     m.insert("local", (TokenKind::Keyword(Keyword::Local), 5));
     m.insert("logic", (TokenKind::Keyword(Keyword::Logic), 5));
-    m.insert("longint", (TokenKind::Keyword(Keyword::Longint), 5));
+    m.insert("longint", (TokenKind::IntAtomTy(IntAtomTy::Longint), 5));
     m.insert("matches", (TokenKind::Keyword(Keyword::Matches), 5));
     m.insert("modport", (TokenKind::Keyword(Keyword::Modport), 5));
     m.insert("new", (TokenKind::Keyword(Keyword::New), 5));
@@ -212,8 +213,8 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("ref", (TokenKind::Keyword(Keyword::Ref), 5));
     m.insert("return", (TokenKind::Keyword(Keyword::Return), 5));
     m.insert("sequence", (TokenKind::Keyword(Keyword::Sequence), 5));
-    m.insert("shortint", (TokenKind::Keyword(Keyword::Shortint), 5));
-    m.insert("shortreal", (TokenKind::Keyword(Keyword::Shortreal), 5));
+    m.insert("shortint", (TokenKind::IntAtomTy(IntAtomTy::Shortint), 5));
+    m.insert("shortreal", (TokenKind::NonIntTy(NonIntTy::Shortreal), 5));
     m.insert("solve", (TokenKind::Keyword(Keyword::Solve), 5));
     m.insert("static", (TokenKind::Keyword(Keyword::Static), 5));
     m.insert("string", (TokenKind::Keyword(Keyword::String), 5));

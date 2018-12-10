@@ -5,6 +5,8 @@ use super::super::source::Spanned;
 use std::fmt;
 use std::collections::VecDeque;
 
+use parser::ast::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delim {
     // Symbol delimiter
@@ -204,6 +206,15 @@ pub enum TokenKind {
     /// An opening delimiter
     OpenDelim(Delim),
     CloseDelim(Delim),
+
+    //
+    // Keyword groups
+    //
+    Always(AlwaysKeyword),
+    Signing(Signing),
+    IntAtomTy(IntAtomTy),
+    NonIntTy(NonIntTy),
+    NetTy(NetTy),
 
     /// Identifier
     Id(String),

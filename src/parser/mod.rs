@@ -668,13 +668,15 @@ impl Parser {
                 unimplemented!();
             }
             // also net_declaration
-            TokenKind::Keyword(kw) if Self::is_keyword_nettype(kw) => {
+            TokenKind::NetTy(_) => {
                 unimplemented!();
             }
             // data_declaration. Either begin with const/var or explicit data type.
             TokenKind::Keyword(Keyword::Const) |
             TokenKind::Keyword(Keyword::Var) |
-            TokenKind::Keyword(Keyword::Type) => {
+            TokenKind::Keyword(Keyword::Type) |
+            TokenKind::IntAtomTy(_) |
+            TokenKind::NonIntTy(_) => {
                 Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
             }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
@@ -1238,39 +1240,12 @@ impl Parser {
     // A.2.2.1 Net and variable types
     //
 
-    /// If this keyword is a net_type
-    fn is_keyword_nettype(kw: Keyword) -> bool {
-        match kw {
-            Keyword::Supply0 |
-            Keyword::Supply1 |
-            Keyword::Tri |
-            Keyword::Triand |
-            Keyword::Trior |
-            Keyword::Trireg |
-            Keyword::Tri0 |
-            Keyword::Tri1 |
-            Keyword::Uwire |
-            Keyword::Wire |
-            Keyword::Wand |
-            Keyword::Wor => true,
-            _ => false,
-        }
-    }
-
     /// If this keyword can begin a data_type definition
     fn is_keyword_typename(kw: Keyword) -> bool {
         match kw {
             Keyword::Bit |
             Keyword::Logic |
             Keyword::Reg |
-            Keyword::Byte |
-            Keyword::Shortint |
-            Keyword::Int |
-            Keyword::Longint |
-            Keyword::Integer |
-            Keyword::Time |
-            Keyword::Shortreal |
-            Keyword::Real |
             Keyword::Struct |
             Keyword::Union |
             Keyword::Enum |
@@ -1340,7 +1315,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Interconnect) => {
                 unimplemented!();
             }
-            TokenKind::Keyword(kw) if Self::is_keyword_nettype(kw) => {
+            TokenKind::NetTy(_) => {
                 unimplemented!();
             }
             // Possibily a custom-defined net-type.
@@ -1402,10 +1377,8 @@ impl Parser {
                 let dim = self.parse_list(Self::parse_pack_dim)?;
                 Ok(Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)))
             }
-            TokenKind::Keyword(Keyword::Signed) |
-            TokenKind::Keyword(Keyword::Unsigned) => {
-                let span = self.peek().span;
-                let sign = self.parse_signing();
+            TokenKind::Signing(sign) => {
+                let span = self.consume().span;
                 let dim = self.parse_list(Self::parse_pack_dim)?;
                 Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span)))
             }
@@ -1466,14 +1439,10 @@ impl Parser {
     /// signing ::= signed | unsigned
     /// ```
     fn parse_signing(&mut self) -> Signing {
-        match self.peek().value {
-            TokenKind::Keyword(Keyword::Signed) => {
+        match **self.peek() {
+            TokenKind::Signing(s) => {
                 self.consume();
-                Signing::Signed
-            }
-            TokenKind::Keyword(Keyword::Unsigned) => {
-                self.consume();
-                Signing::Unsigned
+                s
             }
             _ => Signing::Unsigned,
         }
@@ -2179,13 +2148,18 @@ impl Parser {
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
                 Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
-            TokenKind::Keyword(Keyword::Signed) | 
-            TokenKind::Keyword(Keyword::Unsigned) => {
-                let span = self.peek().span;
-                let sign = self.parse_signing();
-                self.expect(TokenKind::Operator(Operator::Tick))?;
-                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
-                Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
+            TokenKind::Signing(sign) => {
+                if let TokenKind::Operator(Operator::Tick) = **self.peek_n(1) {
+                    let span = self.consume().span;
+                    self.expect(TokenKind::Operator(Operator::Tick))?;
+                    let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
+                    Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
+                } else {
+                    match self.parse_primary_nocast()? {
+                        None => return Ok(None),
+                        Some(v) => v,
+                    }
+                }
             }
             _ => match self.parse_primary_nocast()? {
                 None => return Ok(None),
@@ -2287,12 +2261,14 @@ impl Parser {
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
             TokenKind::DelimGroup(Delim::Bracket, _) |
-            TokenKind::Keyword(Keyword::Type) => {
+            TokenKind::Keyword(Keyword::Type) |
+            TokenKind::IntAtomTy(_) |
+            TokenKind::NonIntTy(_) => {
                 let ty = Box::new(self.parse_kw_data_type()?.unwrap());
                 let span = ty.span;
                 Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
             }
-            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
+            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw)  => {
                 let ty = Box::new(self.parse_kw_data_type()?.unwrap());
                 let span = ty.span;
                 Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
