@@ -291,6 +291,18 @@ impl DiagMgr {
         }
     }
 
+    /// Clear exsting diagnostics
+    pub fn clear(&self) {
+        let mut m = self.mutable.borrow_mut();
+        m.diagnostics.clear();
+    }
+
+    /// Check if there is any fatal error.
+    pub fn has_fatal(&self) -> bool {
+        let m = self.mutable.borrow();
+        m.diagnostics.iter().any(|diag| diag.severity == Severity::Fatal)
+    }
+
     /// Check if there is any error.
     pub fn has_error(&self) -> bool {
         let m = self.mutable.borrow();

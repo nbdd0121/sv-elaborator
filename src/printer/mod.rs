@@ -269,6 +269,11 @@ impl PrettyPrint {
                 }
                 self.append(format!(";\n"));
             }
+            Item::Initial(stmt) => {
+                self.indent_append("initial ");
+                self.print_stmt(&stmt);
+                self.append("\n");
+            }
             Item::Always(kw, stmt) => {
                 self.indent_append(format!("{} ", kw));
                 self.print_stmt(&stmt);
@@ -455,6 +460,12 @@ impl PrettyPrint {
                 self.append(Self::get_hier_id(name));
             }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
+            ExprKind::TypeCast(ty, expr) => {
+                self.print_expr(ty);
+                self.append("'(");
+                self.print_expr(expr);
+                self.append(")");
+            }
             ExprKind::Unary(op, _attr, expr) => {
                 self.append(format!("{}", op));
                 self.print_expr(expr);
@@ -481,6 +492,13 @@ impl PrettyPrint {
             ExprKind::Select(lhs, sel) => {
                 self.print_expr(lhs);
                 self.print_dim(sel);
+            }
+            ExprKind::Cond(cond, t, f) => {
+                self.print_expr(cond);
+                self.append("?");
+                self.print_expr(t);
+                self.append(":");
+                self.print_expr(f);
             }
             _ => {
                 eprintln!("{:?}", obj);

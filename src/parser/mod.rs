@@ -367,16 +367,16 @@ impl Parser {
     }
 
     /// Parse until `None` is returned, and organize parsed items into a list.
-    fn parse_list<T, F: FnMut(&mut Self) -> Result<Option<T>>>(&mut self, mut f: F) -> Result<Vec<T>> {
+    fn parse_list<T, F: FnMut(&mut Self) -> Result<Option<T>>>(&mut self, mut f: F) -> Vec<T> {
         let mut vec = Vec::new();
         loop {
-            let result = f(self)?;
+            let result = f(self).unwrap();
             match result {
                 None => break,
                 Some(v) => vec.push(v),
             }
         }
-        Ok(vec)
+        vec
     }
 
     /// Parse a comma seperated list. We require `F` to return a `Option<T>` as it will make
@@ -651,7 +651,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Generate) => {
                 let kw = self.consume();
                 self.report_span(Severity::Warning, "there is no need for generate region", kw.span)?;
-                let list = self.parse_list(Self::parse_item_opt)?;
+                let list = self.parse_list(Self::parse_item_opt);
                 self.expect(TokenKind::Keyword(Keyword::Endgenerate))?;
                 Ok(Some(Item::GenRegion(list)))
             }
@@ -736,9 +736,9 @@ impl Parser {
     /// source_text ::= { item }
     /// ```
     /// TODO: We still need to check if these items can legally appear here.
-    pub fn parse_source(&mut self) -> Result<Vec<Item>> {
-        let list = self.parse_list(Self::parse_item_opt)?;
-        Ok(list)
+    pub fn parse_source(&mut self) -> Vec<Item> {
+        let list = self.parse_list(Self::parse_item_opt);
+        list
     }
 
     /// Parse a module, interface or program. We processed attributes in parse_item_opt, and
@@ -777,11 +777,11 @@ impl Parser {
         self.consume();
         let lifetime = self.parse_lifetime();
         let name = self.expect_id()?;
-        let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt)?;
+        let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt);
         let param = self.parse_param_port_list()?;
         let port = self.parse_port_list()?;
         self.expect(TokenKind::Semicolon)?;
-        let items = self.parse_list(Self::parse_item_opt)?;
+        let items = self.parse_list(Self::parse_item_opt);
         self.expect(TokenKind::Keyword(end_kw))?;
 
         if self.consume_if(TokenKind::Colon).is_some() {
@@ -1269,7 +1269,7 @@ impl Parser {
         
         match self.consume_if_id() {
             Some(name) => {
-                let mut dim = self.parse_list(Self::parse_dim_opt)?;
+                let mut dim = self.parse_list(Self::parse_dim_opt);
                 self.check_list(Self::check_unpacked_dim, &mut dim)?;
                 let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
                     None => None,
@@ -1368,12 +1368,12 @@ impl Parser {
                     IntVecTy::Logic
                 };
                 let sign = self.parse_signing();
-                let dim = self.parse_list(Self::parse_pack_dim)?;
+                let dim = self.parse_list(Self::parse_pack_dim);
                 Ok(Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)))
             }
             TokenKind::Signing(sign) => {
                 let span = self.consume().span;
-                let dim = self.parse_list(Self::parse_pack_dim)?;
+                let dim = self.parse_list(Self::parse_pack_dim);
                 Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span)))
             }
             TokenKind::Keyword(Keyword::Type) => {
@@ -1383,7 +1383,7 @@ impl Parser {
             }
             TokenKind::DelimGroup(Delim::Bracket, _) => {
                 let span = self.peek().span;
-                let dim = self.parse_list(Self::parse_pack_dim)?;
+                let dim = self.parse_list(Self::parse_pack_dim);
                 Ok(Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)))
             }
             _ => {
@@ -1452,7 +1452,7 @@ impl Parser {
             None => return Ok(None),
             Some(v) => v,
         };
-        let mut dim = self.parse_list(Self::parse_dim_opt)?;
+        let mut dim = self.parse_list(Self::parse_dim_opt);
 
         // If we see another ID here, it means that the ID we seen previously are probably a
         // type name that isn't declared. Raise a sensible warning here.
@@ -1463,7 +1463,7 @@ impl Parser {
                 ident.span
             )?;
             ident = id;
-            dim = self.parse_list(Self::parse_dim_opt)?;
+            dim = self.parse_list(Self::parse_dim_opt);
         }
 
         self.check_list(Self::check_unpacked_dim, &mut dim)?;
@@ -1579,6 +1579,11 @@ impl Parser {
             _ => Ok(Some(ret))
         }
     }
+
+    //
+    // A.2.9 Interface declarations
+    //
+
     
     //
     // A.4.1.1 Module instantiation
@@ -1649,7 +1654,7 @@ impl Parser {
                 Some(v) => v,
             };
 
-            let mut dim = this.parse_list(Self::parse_dim_opt)?;
+            let mut dim = this.parse_list(Self::parse_dim_opt);
             this.check_list(Self::check_unpacked_dim, &mut dim)?;
             let ports = this.parse_args(ArgOption::Port)?;
             Ok(Some(HierInst {
@@ -1855,7 +1860,7 @@ impl Parser {
         }
 
         let name = name.or(label);
-        let items = self.parse_list(Self::parse_item_opt)?;
+        let items = self.parse_list(Self::parse_item_opt);
         
         self.expect(TokenKind::Keyword(Keyword::End))?;
 
@@ -1962,7 +1967,7 @@ impl Parser {
             )?;
         }
 
-        let items = self.parse_list(Self::parse_stmt_opt)?;
+        let items = self.parse_list(Self::parse_stmt_opt);
         
         self.expect(TokenKind::Keyword(Keyword::End))?;
 
@@ -2038,7 +2043,7 @@ impl Parser {
             TokenKind::AtStar |
             TokenKind::At => self.parse_timing_ctrl_stmt()?,
             _ => {
-                let expr = self.parse_expr()?;
+                let expr = self.parse_unwrap(Self::parse_assign_expr)?;
                 self.expect(TokenKind::Semicolon)?;
                 StmtKind::Expr(Box::new(expr))
             }

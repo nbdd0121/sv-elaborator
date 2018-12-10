@@ -41,7 +41,13 @@ fn main() {
 
         let mut tokens = lexer::Tokenizer::new(src_mgr.clone(), diag_mgr.clone(), &src).all();
         let mut psr = parser::Parser::new(src_mgr.clone(), diag_mgr.clone(), tokens);
-        let list = psr.parse_source().unwrap();
+
+        let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            psr.parse_source()
+        })) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
         let mut printer = PrettyPrint::new();
         for i in list {

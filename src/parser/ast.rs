@@ -375,6 +375,12 @@ pub enum DimKind {
 pub type Dim = Spanned<DimKind>;
 
 //
+// A.2.9 Interface declarations
+//
+
+
+
+//
 // A.4.1.1 Module instantiations
 //
 
