@@ -215,9 +215,13 @@ pub enum TokenKind {
     IntVecTy(IntVecTy),
     NonIntTy(NonIntTy),
     NetTy(NetTy),
+    /// Exclude supply0, which will be parsed as NetTy
     Strength0(DriveStrength),
+    /// Exclude supply1, which will be parsed as NetTy
     Strength1(DriveStrength),
     ChargeStrength(ChargeStrength),
+    /// Exclude not, and, or, xor, which will be parsed as keyword,
+    Primitive(Primitive),
 
     /// Identifier
     Id(String),

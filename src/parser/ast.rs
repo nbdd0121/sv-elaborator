@@ -120,6 +120,36 @@ pub enum Signing {
     Unsigned,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Primitive {
+    Cmos,
+    Rcmos,
+    Bufif0,
+    Bufif1,
+    Notif0,
+    Notif1,
+    Nmos,
+    Pmos,
+    Rnmos,
+    Rpmos,
+    And,
+    Nand,
+    Or,
+    Nor,
+    Xor,
+    Xnor,
+    Buf,
+    Not,
+    Tranif0,
+    Tranif1,
+    Rtranif1,
+    Rtranif0,
+    Tran,
+    Rtran,
+    Pullup,
+    Pulldown,
+}
+
 //
 // Unknown
 //
