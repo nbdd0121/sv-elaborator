@@ -335,7 +335,7 @@ pub enum ExprKind {
     SignCast(Signing, Box<Expr>),
     TypeCast(Box<Expr>, Box<Expr>),
 
-    Unary(Operator, Box<Expr>),
+    Unary(Operator, Option<Box<AttrInst>>, Box<Expr>),
     Binary(Box<Expr>, Operator, Box<Expr>),
     PostfixIncDec(Box<Expr>, Operator),
 
@@ -347,6 +347,9 @@ pub enum ExprKind {
 
     /// Min-typ-max expression
     MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
+
+    /// Conditional expression
+    Cond(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 pub type Expr = Spanned<ExprKind>;

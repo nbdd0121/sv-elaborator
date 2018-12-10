@@ -441,7 +441,7 @@ impl PrettyPrint {
                 self.append(Self::get_hier_id(name));
             }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
-            ExprKind::Unary(op, expr) => {
+            ExprKind::Unary(op, _attr, expr) => {
                 self.append(format!("{}", op));
                 self.print_expr(expr);
             }

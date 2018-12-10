@@ -2037,7 +2037,7 @@ impl Parser {
     /// ```
     /// TODO: conditional & inside are not yet completed
     fn parse_expr_opt(&mut self) -> Result<Option<Expr>> {
-        match **self.peek() {
+        let expr = match **self.peek() {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
                 let span = self.peek().span;
@@ -2045,15 +2045,50 @@ impl Parser {
                 unreachable!();
             }
             _ => {
-                self.parse_bin_expr(0)
+                match self.parse_bin_expr(0)? {
+                    None => return Ok(None),
+                    Some(v) => v,
+                }
             }
+        };
+        match **self.peek() {
+            // inside_expression
+            TokenKind::Keyword(Keyword::Inside) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "inside_expression not yet supported", span)?;
+                unreachable!();
+            }
+            // cond_pattern
+            TokenKind::Keyword(Keyword::Matches) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "cond_pattern not yet supported", span)?;
+                unreachable!();
+            }
+            // expression_or_cond_pattern
+            TokenKind::Operator(Operator::TripleAnd) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span)?;
+                unreachable!();
+            }
+            // conditional_expression
+            TokenKind::Operator(Operator::Question) => {
+                self.consume();
+                let true_expr = Box::new(self.parse_expr()?);
+                self.expect(TokenKind::Operator(Operator::Colon))?;
+                let false_expr = Box::new(self.parse_expr()?);
+                let span = expr.span.merge(false_expr.span);
+                Ok(Some(Spanned::new(
+                    ExprKind::Cond(Box::new(expr), true_expr, false_expr), span
+                )))
+            }
+            _ => Ok(Some(expr)),
         }
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_unwrap(Self::parse_expr_opt)
     }
-
+    
     /// Parse binary expression using precedence climing method which saves stack space.
     /// TODO: Handle <= properly
     fn parse_bin_expr(&mut self, prec: i32) -> Result<Option<Expr>> {
@@ -2095,13 +2130,10 @@ impl Parser {
             // unary_operator { attribute_instance } primary
             TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
                 let span = self.consume().span;
-                if self.consume_if_delim(Delim::Attr).is_some() {
-                    let span = self.peek().span;
-                    self.report_span(Severity::Fatal, "attributes not yet supported", span)?;
-                }
+                let attr = self.parse_attr_inst_opt()?;
                 let expr = self.parse_unwrap(Self::parse_primary)?;
                 let span = span.merge(expr.span);
-                Ok(Some(Spanned::new(ExprKind::Unary(op, Box::new(expr)), span)))
+                Ok(Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span)))
             }
             _ => {
                 self.parse_primary()
