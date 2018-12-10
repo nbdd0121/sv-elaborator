@@ -4,7 +4,6 @@ use self::ast::*;
 use super::lexer::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
 use super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
 
-use std::result;
 use std::mem;
 use std::rc::Rc;
 use std::collections::VecDeque;
@@ -25,28 +24,26 @@ macro_rules! scope {
     ($t:expr) => {
         macro_rules! parse {
             ([expr]) => {
-                $t.parse_expr_opt()?
+                $t.parse_expr_opt()
             };
             (expr) => {
-                $t.parse_unwrap(Self::parse_expr_opt)?
+                $t.parse_unwrap(Self::parse_expr_opt)
             };
             (box(expr)) => {
-                Box::new($t.parse_unwrap(Self::parse_expr_opt)?)
+                Box::new($t.parse_unwrap(Self::parse_expr_opt))
             };
             ([$rule:ident]) => {
-                $t.rule()?
+                $t.rule()
             };
             ($rule:ident) => {
-                $t.parse_unwrap(Self::$rule)?
+                $t.parse_unwrap(Self::$rule)
             };
             (box($rule:ident)) => {
-                Box::new($t.parse_unwrap(Self::$rule)?)
+                Box::new($t.parse_unwrap(Self::$rule))
             };
         }
     }
 }
-
-type Result<T> = result::Result<T, ()>;
 
 //
 // Data types internal to parser
@@ -149,17 +146,17 @@ impl Parser {
 
     /// Parse a delimited group of tokens. After calling the callback, the token stream must
     /// be empty.
-    fn delim_group<T, F: FnMut(&mut Self) -> Result<T>>(
+    fn delim_group<T, F: FnMut(&mut Self) -> T>(
         &mut self, mut stream: Box<DelimGroup>, mut f: F
-    ) -> Result<T> {
+    ) -> T {
         let mut delim_eof = Spanned::new(TokenKind::Eof, stream.close.span);
         mem::swap(&mut self.lexer, &mut stream.tokens);
         mem::swap(&mut self.eof, &mut delim_eof);
-        let ret = f(self)?;
-        self.expect_eof()?;
+        let ret = f(self);
+        self.expect_eof();
         self.lexer = stream.tokens;
         self.eof = delim_eof;
-        Ok(ret)
+        ret
     }
 
     fn consume_if_delim(&mut self, expected: Delim) -> Option<Box<DelimGroup>> {
@@ -217,58 +214,57 @@ impl Parser {
         }
     }
 
-    fn expect_delim(&mut self, expected: Delim) -> Result<Box<DelimGroup>> {
+    fn expect_delim(&mut self, expected: Delim) -> Box<DelimGroup> {
         match self.consume_if_delim(expected) {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected open delimiter {:#?}", expected), span.clone())?;
+                self.report_span(Severity::Error, format!("expected open delimiter {:#?}", expected), span.clone());
                 // Error recovery
                 let fake_open = Spanned::new(TokenKind::Unknown, span);
                 let fake_close = Spanned::new(TokenKind::Unknown, span);
-                Ok(Box::new(DelimGroup {
+                Box::new(DelimGroup {
                     open: fake_open,
                     close: fake_close,
                     tokens: VecDeque::new(),
-                }))
+                })
             }
-            Some(v) => Ok(v),
+            Some(v) => v,
         }
     }
 
-    fn expect_eof(&mut self) -> Result<()> {
+    fn expect_eof(&mut self) {
         if let TokenKind::Eof = self.peek().value {} else {
             let span = self.peek().span;
-            self.report_span(Severity::Error, "unexpected extra token", span)?;
+            self.report_span(Severity::Error, "unexpected extra token", span);
         }
-        Ok(())
     }
 
-    fn expect_id(&mut self) -> Result<Ident> {
+    fn expect_id(&mut self) -> Ident {
         match self.consume_if_id() {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, "expected identifier", span.clone())?;
+                self.report_span(Severity::Error, "expected identifier", span.clone());
                 // Error recovery
-                Ok(Spanned::new("".to_owned(), span))
+                Spanned::new("".to_owned(), span)
             }
-            Some(v) => Ok(v),
+            Some(v) => v,
         }
     }
 
-    fn expect<T: Borrow<TokenKind>>(&mut self, token: T) -> Result<Token> {
+    fn expect<T: Borrow<TokenKind>>(&mut self, token: T) -> Token {
         let token = token.borrow();
         match self.consume_if(token) {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected token {:?}", token), span.clone())?;
+                self.report_span(Severity::Error, format!("expected token {:?}", token), span.clone());
                 // Error recovery
-                Ok(Spanned::new(TokenKind::Unknown, span))
+                Spanned::new(TokenKind::Unknown, span)
             }
-            Some(v) => Ok(v),
+            Some(v) => v,
         }
     }
 
-    fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) -> Result<()> {
+    fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) {
         self.report_diag(Diagnostic::new(
             severity,
             msg.into(),
@@ -276,8 +272,8 @@ impl Parser {
         ))
     }
 
-    fn report_diag(&self, diag: Diagnostic) -> Result<()> {
-        self.diag.report(diag)
+    fn report_diag(&self, diag: Diagnostic) {
+        self.diag.report(diag).unwrap()
     }
 
     //
@@ -285,7 +281,7 @@ impl Parser {
     //
 
     /// Unwrap `Option` with sensible error message
-    fn unwrap<T: AstNode>(&mut self, t: Option<T>) -> Result<T> {
+    fn unwrap<T: AstNode>(&mut self, t: Option<T>) -> T {
         match t {
             None => {
                 let span = self.peek().span;
@@ -295,82 +291,82 @@ impl Parser {
                             Severity::Fatal,
                             format!("{} support is not completed yet", T::name()),
                             span
-                        )?;
-                        Err(())
+                        );
+                        unreachable!()
                     }
                     Some(v) => {
                         self.report_span(
                             Severity::Error,
                             format!("expected {}", T::name()),
                             span
-                        )?;
-                        Ok(v)
+                        );
+                        v
                     }
                 }
             }
-            Some(v) => Ok(v),
+            Some(v) => v,
         }
     }
 
     /// Unwrap `Option` with sensible error message
-    fn parse_unwrap<T: AstNode, F: FnMut(&mut Self) -> Result<Option<T>>>(
+    fn parse_unwrap<T: AstNode, F: FnMut(&mut Self) -> Option<T>> (
         &mut self, mut f: F
-    ) -> Result<T> {
-        let result = f(self)?;
+    ) -> T {
+        let result = f(self);
         self.unwrap(result)
     }
 
     /// Expect the next token tree to be a delimited group, parse it with given function.
-    fn parse_delim<T, F: FnMut(&mut Self) -> Result<T>>(
+    fn parse_delim<T, F: FnMut(&mut Self) -> T>(
         &mut self, delim: Delim, f: F
-    ) -> Result<T> {
-        let delim = self.expect_delim(delim)?;
+    ) -> T {
+        let delim = self.expect_delim(delim);
         self.delim_group(delim, f)
     }
 
     /// Expect the next token tree to be a delimited group, parse it with given function.
-    fn parse_delim_spanned<T, F: FnMut(&mut Self) -> Result<T>>(
+    fn parse_delim_spanned<T, F: FnMut(&mut Self) -> T>(
         &mut self, delim: Delim, f: F
-    ) -> Result<Spanned<T>> {
+    ) -> Spanned<T> {
         let span = self.peek().span;
-        let delim = self.expect_delim(delim)?;
-        Ok(Spanned::new(self.delim_group(delim, f)?, span))
+        let delim = self.expect_delim(delim);
+        Spanned::new(self.delim_group(delim, f), span)
     }
 
 
     /// If the next token tree to be a delimited group, parse it with given function, otherwise
     /// return `None`.
-    fn parse_if_delim<T, F: FnMut(&mut Self) -> Result<T>>(
+    fn parse_if_delim<T, F: FnMut(&mut Self) -> T>(
         &mut self, delim: Delim, f: F
-    ) -> Result<Option<T>> {
+    ) -> Option<T> {
         match self.consume_if_delim(delim) {
-            None => Ok(None),
-            Some(v) => Ok(Some(self.delim_group(v, f)?))
+            None => None,
+            Some(v) => Some(self.delim_group(v, f)),
         }
     }
 
     /// If the next token tree to be a delimited group, parse it with given function, otherwise
     /// return `None`.
-    fn parse_if_delim_spanned<T, F: FnMut(&mut Self) -> Result<T>>(
+    fn parse_if_delim_spanned<T, F: FnMut(&mut Self) -> T>(
         &mut self, delim: Delim, f: F
-    ) -> Result<Option<Spanned<T>>> {
+    ) -> Option<Spanned<T>> {
         match **self.peek() {
             TokenKind::DelimGroup(d, _) if d == delim => (),
-            _ => return Ok(None),
+            _ => return None,
         }
         let token = self.consume();
         if let TokenKind::DelimGroup(_, grp) = token.value {
-            Ok(Some(Spanned::new(self.delim_group(grp, f)?, token.span)))
+            Some(Spanned::new(self.delim_group(grp, f), token.span))
         } else {
             unreachable!();
         }
     }
 
     /// Parse until `None` is returned, and organize parsed items into a list.
-    fn parse_list<T, F: FnMut(&mut Self) -> Result<Option<T>>>(&mut self, mut f: F) -> Vec<T> {
+    fn parse_list<T, F: FnMut(&mut Self) -> Option<T>>(&mut self, mut f: F) -> Vec<T> {
         let mut vec = Vec::new();
         loop {
-            let result = f(self).unwrap();
+            let result = f(self);
             match result {
                 None => break,
                 Some(v) => vec.push(v),
@@ -383,21 +379,21 @@ impl Parser {
     /// diagnostics easier by being able to catch trailing comma easily.
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
-    fn parse_comma_list<T, F: FnMut(&mut Self) -> Result<Option<T>>>(
+    fn parse_comma_list<T, F: FnMut(&mut Self) -> Option<T>>(
         &mut self, empty: bool, trail: bool, mut f: F
-    ) -> Result<Vec<T>> {
+    ) -> Vec<T> {
         let mut vec = Vec::new();
 
         // Parse first element
-        let result = f(self)?;
+        let result = f(self);
         match result {
             None => {
                 // If we failed and this is the first element, then we get an empty list
                 if !empty {
                     let span = self.peek().span.clone();
-                    self.report_span(Severity::Error, "empty list not allowed", span)?;
+                    self.report_span(Severity::Error, "empty list not allowed", span);
                 }
-                return Ok(vec)
+                return vec
             }
             Some(v) => vec.push(v),
         }
@@ -408,7 +404,7 @@ impl Parser {
                 None => break,
                 Some(v) => v,
             };
-            let result = f(self)?;
+            let result = f(self);
             match result {
                 None => {
                     if !trail {
@@ -417,7 +413,7 @@ impl Parser {
                             Severity::Error,
                             "trailing comma is not allowed; consider removing it",
                             comma.span
-                        )?;
+                        );
                     }
                     break;
                 }
@@ -425,24 +421,24 @@ impl Parser {
             }
         }
 
-        Ok(vec)
+        vec
     }
 
     /// Parse a comma seperated list, but the list will be built externally. Similarly to above
     /// expects boolean instead of Option<T>.
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
-    fn parse_comma_list_unit<F: FnMut(&mut Self) -> Result<bool>>(
+    fn parse_comma_list_unit<F: FnMut(&mut Self) -> bool>(
         &mut self, empty: bool, trail: bool, mut f: F
-    ) -> Result<()> {
+    ) {
         // Parse first element
-        if !f(self)? {
+        if !f(self) {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, "empty list not allowed", span)?;
+                self.report_span(Severity::Error, "empty list not allowed", span);
             }
-            return Ok(())
+            return
         }
 
         loop {
@@ -451,34 +447,32 @@ impl Parser {
                 None => break,
                 Some(v) => v,
             };
-            if !f(self)? {
+            if !f(self) {
                 if !trail {
                     // TODO: We could place a FixItHint here.
                     self.report_span(
                         Severity::Error,
                         "trailing comma is not allowed; consider removing it",
                         comma.span
-                    )?;
+                    );
                 }
                 break;
             }
         }
-
-        Ok(())
     }
 
     /// Parse a seperated list, but do not attempt to build a vector.
-    fn parse_sep_list_unit<F: FnMut(&mut Self) -> Result<bool>>(
+    fn parse_sep_list_unit<F: FnMut(&mut Self) -> bool>(
         &mut self, sep: Operator, empty: bool, trail: bool, mut f: F
-    ) -> Result<()> {
+    ) {
         // Parse first element
-        if !f(self)? {
+        if !f(self) {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span;
-                self.report_span(Severity::Error, "empty list not allowed", span)?;
+                self.report_span(Severity::Error, "empty list not allowed", span);
             }
-            return Ok(())
+            return
         }
 
         loop {
@@ -487,38 +481,25 @@ impl Parser {
                 None => break,
                 Some(v) => v,
             };
-            if !f(self)? {
+            if !f(self) {
                 if !trail {
                     // TODO: We could place a FixItHint here.
                     self.report_span(
                         Severity::Error,
                         format!("trailing {:#?} is not allowed; consider removing it", sep),
                         comma.span
-                    )?;
+                    );
                 }
                 break;
             }
         }
-
-        Ok(())
     }
 
     /// Check if the list contains invalid elements, and remove them.
-    fn check_list<T, F: FnMut(&mut Self, &T) -> Result<bool>>(
+    fn check_list<T, F: FnMut(&mut Self, &T) -> bool>(
         &mut self, mut f: F, list: &mut Vec<T>
-    ) -> Result<()> {
-        let mut okay = true;
-        list.retain(|x| {
-            if !okay { return true; }
-            match f(self, x) {
-                Ok(v) => v,
-                Err(_) => {
-                    okay = false;
-                    true
-                }
-            }
-        });
-        if okay { Ok(()) } else { Err(()) }
+    ) {
+        list.retain(|x| f(self, x));
     }
 
     /// Parse an item/declaration. Even though different scope allows different items, as most
@@ -596,80 +577,80 @@ impl Parser {
     /// extern [static] constraint
     /// extern primitive
     /// ```
-    fn parse_item_opt(&mut self) -> Result<Option<Item>> {
-        let attr = self.parse_attr_inst_opt()?;
+    fn parse_item_opt(&mut self) -> Option<Item> {
+        let attr = self.parse_attr_inst_opt();
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) |
             TokenKind::Keyword(Keyword::Endgenerate) |
-            TokenKind::Keyword(Keyword::End) => Ok(None),
+            TokenKind::Keyword(Keyword::End) => None,
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
                 let clone = self.peek().span.clone();
-                self.report_span(Severity::Fatal, "extern is not supported", clone)?;
+                self.report_span(Severity::Fatal, "extern is not supported", clone);
                 unreachable!()
             }
             TokenKind::Keyword(Keyword::Import) => {
                 // IMP: This can also be DPI import
-                Ok(Some(Item::PkgImport(self.parse_pkg_import_decl()?)))
+                Some(Item::PkgImport(self.parse_pkg_import_decl()))
             }
             TokenKind::Keyword(Keyword::Parameter) |
             TokenKind::Keyword(Keyword::Localparam) => {
-                Ok(Some(Item::ParamDecl(Box::new(self.parse_param_decl()?))))
+                Some(Item::ParamDecl(Box::new(self.parse_param_decl())))
             }
             // module_declaration
             TokenKind::Keyword(Keyword::Module) => {
-                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Module, Keyword::Endmodule)?))))
+                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Module, Keyword::Endmodule))))
             }
             // udp_declaration
             TokenKind::Keyword(Keyword::Primitive) => {
-                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Primitive, Keyword::Endprimitive)?))))
+                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Primitive, Keyword::Endprimitive))))
             }
             // interface_declaration
             TokenKind::Keyword(Keyword::Interface) => {
-                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Interface, Keyword::Endinterface)?))))
+                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Interface, Keyword::Endinterface))))
             }
             // program_declaration
             TokenKind::Keyword(Keyword::Program) => {
-                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Program, Keyword::Endprogram)?))))
+                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Program, Keyword::Endprogram))))
             }
             // package_declaration
             TokenKind::Keyword(Keyword::Package) => {
-                Ok(Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Package, Keyword::Endpackage)?))))
+                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Package, Keyword::Endpackage))))
             }
             // continuous_assign
-            TokenKind::Keyword(Keyword::Assign) => Ok(Some(self.parse_continuous_assign()?)),
+            TokenKind::Keyword(Keyword::Assign) => Some(self.parse_continuous_assign()),
             // initial_construct
             TokenKind::Keyword(Keyword::Initial) => {
                 self.consume();
-                let stmt = self.parse_stmt()?;
-                Ok(Some(Item::Initial(Box::new(stmt))))
+                let stmt = self.parse_stmt();
+                Some(Item::Initial(Box::new(stmt)))
             }
             // always_construct
-            TokenKind::AlwaysKw(_) => Ok(Some(self.parse_always()?)),
+            TokenKind::AlwaysKw(_) => Some(self.parse_always()),
             // generate_region
             TokenKind::Keyword(Keyword::Generate) => {
                 let kw = self.consume();
-                self.report_span(Severity::Warning, "there is no need for generate region", kw.span)?;
+                self.report_span(Severity::Warning, "there is no need for generate region", kw.span);
                 let list = self.parse_list(Self::parse_item_opt);
-                self.expect(TokenKind::Keyword(Keyword::Endgenerate))?;
-                Ok(Some(Item::GenRegion(list)))
+                self.expect(TokenKind::Keyword(Keyword::Endgenerate));
+                Some(Item::GenRegion(list))
             }
             // loop_generate_construct
-            TokenKind::Keyword(Keyword::For) => Ok(Some(self.parse_loop_gen(attr)?)),
+            TokenKind::Keyword(Keyword::For) => Some(self.parse_loop_gen(attr)),
             // if_generate_construct
-            TokenKind::Keyword(Keyword::If) => Ok(Some(self.parse_if_gen(attr)?)),
+            TokenKind::Keyword(Keyword::If) => Some(self.parse_if_gen(attr)),
             // case_generate_construct
             TokenKind::Keyword(Keyword::Case) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "case_generate_construct is not supported", span)?;
+                self.report_span(Severity::Fatal, "case_generate_construct is not supported", span);
                 unreachable!()
             }
             // elaboration_system_task
             TokenKind::SystemTask(_) => {
-                let tf = self.parse_sys_tf_call()?;
-                self.expect(TokenKind::Semicolon)?;
-                Ok(Some(Item::SysTfCall(Box::new(tf))))
+                let tf = self.parse_sys_tf_call();
+                self.expect(TokenKind::Semicolon);
+                Some(Item::SysTfCall(Box::new(tf)))
             }
             // net_declaration
             TokenKind::Keyword(Keyword::Interconnect) => {
@@ -687,31 +668,31 @@ impl Parser {
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) => {
-                Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
+                Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
             }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
-                Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?))))
+                Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
             }
             TokenKind::Id(_) => {
                 match self.disambiguate_item() {
-                    ItemDAB::HierInst => Ok(Some(self.parse_instantiation(attr)?)),
-                    ItemDAB::DataDecl => Ok(Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)?)))),
+                    ItemDAB::HierInst => Some(self.parse_instantiation(attr)),
+                    ItemDAB::DataDecl => Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)))),
                     _ => {
                         let clone = self.peek().span.clone();
-                        self.report_span(Severity::Fatal, "not implemented", clone)?;
+                        self.report_span(Severity::Fatal, "not implemented", clone);
                         unreachable!()
                     }
                 }
             }
             _ => {
                 let clone = self.peek().span.clone();
-                self.report_span(Severity::Fatal, "not implemented", clone)?;
+                self.report_span(Severity::Fatal, "not implemented", clone);
                 unreachable!()
             }
         }
     }
 
-    fn parse_item(&mut self) -> Result<Item> {
+    fn parse_item(&mut self) -> Item {
         self.parse_unwrap(Self::parse_item_opt)
     }
 
@@ -773,29 +754,29 @@ impl Parser {
     ///   module_header { item } endmodule [ : module_identifier ]
     /// ```
     /// TODO: We will need to check if items can legally appear in here.
-    fn parse_design_unit(&mut self, attr: Option<Box<AttrInst>>, kw: Keyword, end_kw: Keyword) -> Result<DesignDecl> {
+    fn parse_design_unit(&mut self, attr: Option<Box<AttrInst>>, kw: Keyword, end_kw: Keyword) -> DesignDecl {
         self.consume();
         let lifetime = self.parse_lifetime();
-        let name = self.expect_id()?;
+        let name = self.expect_id();
         let pkg_import = self.parse_list(Self::parse_pkg_import_decl_opt);
-        let param = self.parse_param_port_list()?;
-        let port = self.parse_port_list()?;
-        self.expect(TokenKind::Semicolon)?;
+        let param = self.parse_param_port_list();
+        let port = self.parse_port_list();
+        self.expect(TokenKind::Semicolon);
         let items = self.parse_list(Self::parse_item_opt);
-        self.expect(TokenKind::Keyword(end_kw))?;
+        self.expect(TokenKind::Keyword(end_kw));
 
         if self.consume_if(TokenKind::Colon).is_some() {
-            let id = self.expect_id()?;
+            let id = self.expect_id();
             if *id != *name {
                 self.report_span(
                     Severity::Error,
                     format!("identifer annotation at end does match declaration, should be '{}'", name),
                     id.span
-                )?;
+                );
             }
         }
 
-        Ok(DesignDecl {
+        DesignDecl {
             attr,
             kw,
             lifetime,
@@ -804,7 +785,7 @@ impl Parser {
             param,
             port: port.unwrap_or_else(|| Vec::new()),
             items: items,
-        })
+        }
     }
 
     //
@@ -833,9 +814,9 @@ impl Parser {
     /// | # ( )
     /// parameter_port_declaration ::=
     ///   [ parameter | localparam ] [ data_type_or_implicit | type ] param_assignment
-    fn parse_param_port_list(&mut self) -> Result<Option<Vec<ParamDecl>>> {
+    fn parse_param_port_list(&mut self) -> Option<Vec<ParamDecl>> {
         if self.consume_if(TokenKind::Hash).is_none() {
-            return Ok(None)
+            return None
         }
 
         self.parse_delim(Delim::Paren, |this| {
@@ -851,7 +832,7 @@ impl Parser {
             this.parse_comma_list_unit(true, false, |this| {
                 // If a new keyword is seen update it.
                 match **this.peek() {
-                    TokenKind::Eof => return Ok(false),
+                    TokenKind::Eof => return false,
                     TokenKind::Keyword(e) if e == Keyword::Parameter || e == Keyword::Localparam => {
                         this.consume();
                         let old_decl = mem::replace(&mut param_decl, ParamDecl {
@@ -867,7 +848,7 @@ impl Parser {
                 };
 
                 // If data type is specified, update kw and ty.
-                let (ty, assign) = this.parse_data_type_decl_assign()?;
+                let (ty, assign) = this.parse_data_type_decl_assign();
                 if let Some(v) = ty {
                     let kw = param_decl.kw;
                     let old_decl = mem::replace(&mut param_decl, ParamDecl {
@@ -880,13 +861,13 @@ impl Parser {
                     }
                 };
                 param_decl.list.push(assign);
-                Ok(true)
-            })?;
+                true
+            });
 
             if !param_decl.list.is_empty() {
                 vec.push(param_decl);
             }
-            Ok(Some(vec))
+            Some(vec)
         })
     }
 
@@ -913,16 +894,16 @@ impl Parser {
     /// | [ variable_port_header ] port_identifier { variable_dimension } [ = constant_expression ]
     /// | [ port_direction ] . port_identifier ( [ expression ] )
     /// ```
-    fn parse_port_list(&mut self) -> Result<Option<Vec<PortDecl>>> {
+    fn parse_port_list(&mut self) -> Option<Vec<PortDecl>> {
         self.parse_if_delim(Delim::Paren, |this| {
             if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
-                this.report_span(Severity::Fatal, "(.*) port declaration is not supported", v.span)?;
+                this.report_span(Severity::Fatal, "(.*) port declaration is not supported", v.span);
                 unreachable!();
             }
 
             // If there are no ports, it doesn't matter about which style we're using.
             if this.consume_if_eof().is_some() {
-                return Ok(Vec::new())
+                return Vec::new()
             }
 
             let mut ansi = true;
@@ -931,7 +912,7 @@ impl Parser {
 
             this.parse_comma_list_unit(true, false, |this| {
                 if this.consume_if_eof().is_some() {
-                    return Ok(false)
+                    return false
                 }
 
                 let dirsp = this.peek().span.clone();
@@ -942,7 +923,7 @@ impl Parser {
                     match this.peek().value {
                         TokenKind::DelimGroup(Delim::Brace, _) => {
                             ansi = false;
-                            return Ok(false)
+                            return false
                         }
                         _ => (),
                     }
@@ -950,10 +931,10 @@ impl Parser {
 
                 // Explicit port declaration
                 if let Some(_) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
-                    let name = Box::new(this.expect_id()?);
+                    let name = Box::new(this.expect_id());
                     let expr = Box::new(this.parse_unwrap(|this| {
                         this.parse_delim(Delim::Paren, Self::parse_expr_opt)
-                    })?);
+                    }));
 
                     // If not specified, default to inout
                     let dir = dir.unwrap_or_else(|| {
@@ -967,7 +948,7 @@ impl Parser {
                     if let Some(v) = mem::replace(&mut prev, Some(decl)) {
                         vec.push(v);
                     }
-                    return Ok(true)
+                    return true
                 }
 
                 // First try parse this as an interface port. Note that `interface_name id` is not
@@ -979,7 +960,7 @@ impl Parser {
                     // Okay, this is definitely an interface port
                     this.consume();
                     if this.consume_if(TokenKind::Operator(Operator::Dot)).is_some() {
-                        let modport = this.expect_id()?;
+                        let modport = this.expect_id();
                         Some((None, Some(Box::new(modport))))
                     } else {
                         Some((None, None))
@@ -987,15 +968,15 @@ impl Parser {
                 } else if let TokenKind::Id(_) = **this.peek() {
                     // If we see the dot, then this is definitely is a interface
                     if let TokenKind::Operator(Operator::Dot) = **this.peek_n(1) {
-                        let intf = this.expect_id()?;
+                        let intf = this.expect_id();
                         this.consume();
-                        let modport = this.expect_id()?;
+                        let modport = this.expect_id();
                         Some((Some(Box::new(intf)), Some(Box::new(modport))))
                     } else if dir.is_none() {
                         if let TokenKind::Id(_) = **this.peek_n(1) {
                             // This is of form "id id", we consider it as interface port if there is
                             // no direction.
-                            let intf = this.expect_id()?;
+                            let intf = this.expect_id();
                             Some((Some(Box::new(intf)), None))
                         } else {
                             None
@@ -1015,13 +996,13 @@ impl Parser {
                             Severity::Error,
                             "interface declaration should not be specified together with direction",
                             dirsp
-                        )?;
+                        );
                     }
-                    let decl = PortDecl::Interface(a, b, vec![this.parse_decl_assign()?]);
+                    let decl = PortDecl::Interface(a, b, vec![this.parse_decl_assign()]);
                     if let Some(v) = mem::replace(&mut prev, Some(decl)) {
                         vec.push(v);
                     }
-                    return Ok(true);
+                    return true;
                 }
 
                 // Parse net-type
@@ -1032,12 +1013,12 @@ impl Parser {
                     None
                 };
 
-                let (dtype, assign) = this.parse_data_type_decl_assign()?;
+                let (dtype, assign) = this.parse_data_type_decl_assign();
 
                 // If they are all none, it means this is an ANSI port.
                 if dir.is_none() && net.is_none() && dtype.is_none() && prev.is_none() {
                     ansi = false;
-                    return Ok(false);
+                    return false;
                 }
 
                 // Nothing specified, inherit everything
@@ -1046,7 +1027,7 @@ impl Parser {
                         PortDecl::Data(_, _, _, ref mut l) |
                         PortDecl::Interface(_, _, ref mut l) => {
                             l.push(assign);
-                            return Ok(true);
+                            return true;
                         }
                         // Well, if previously it is an explicit port we fall through
                         _ => (),
@@ -1088,19 +1069,19 @@ impl Parser {
                     vec.push(v);
                 }
 
-                return Ok(true)
-            })?;
+                return true
+            });
 
             if !ansi {
                 let span = this.peek().span.clone();
-                this.report_span(Severity::Fatal, "non-ANSI port declaration is not yet supported", span)?;
+                this.report_span(Severity::Fatal, "non-ANSI port declaration is not yet supported", span);
                 unreachable!();
             }
 
             if let Some(v) = prev {
                 vec.push(v);
             }
-            Ok(vec)
+            vec
         })
     }
 
@@ -1124,96 +1105,96 @@ impl Parser {
     //
 
     /// Parse a parameter declaration. See also `parse_param_port_list`.
-    fn parse_param_decl(&mut self) -> Result<ParamDecl> {
+    fn parse_param_decl(&mut self) -> ParamDecl {
         let kw = if let TokenKind::Keyword(kw) = *self.consume() {
             kw
         } else {
             unreachable!();
         };
 
-        let (ty, assign) = self.parse_data_type_decl_assign()?;
+        let (ty, assign) = self.parse_data_type_decl_assign();
         let mut list = vec![assign];
         if self.check(TokenKind::Comma) {
             self.parse_comma_list_unit(false, false, |this| {
-                match this.parse_decl_assign_opt()? {
-                    None => Ok(false),
+                match this.parse_decl_assign_opt() {
+                    None => false,
                     Some(v) => {
                         list.push(v);
-                        Ok(true)
+                        true
                     }
                 }
-            })?;
+            });
         }
 
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(TokenKind::Semicolon);
         
-        Ok(ParamDecl {
+        ParamDecl {
             kw,
             ty: ty.map(Box::new),
             list
-        })
+        }
     }
 
     //
     // A.2.1.3 Type declarations
     //
 
-    fn parse_data_decl(&mut self, attr: Option<Box<AttrInst>>) -> Result<DataDecl> {
+    fn parse_data_decl(&mut self, attr: Option<Box<AttrInst>>) -> DataDecl {
         let has_const = self.check(TokenKind::Keyword(Keyword::Const));
         let _has_var = self.check(TokenKind::Keyword(Keyword::Var));
         let lifetime = self.parse_lifetime();
-        let (ty, assign) = self.parse_data_type_decl_assign()?;
+        let (ty, assign) = self.parse_data_type_decl_assign();
         let mut list = vec![assign];
         if self.check(TokenKind::Comma) {
             self.parse_comma_list_unit(false, false, |this| {
-                match this.parse_decl_assign_opt()? {
-                    None => Ok(false),
+                match this.parse_decl_assign_opt() {
+                    None => false,
                     Some(v) => {
                         list.push(v);
-                        Ok(true)
+                        true
                     }
                 }
-            })?;
+            });
         }
 
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(TokenKind::Semicolon);
         
-        Ok(DataDecl {
+        DataDecl {
             attr,
             has_const,
             lifetime,
             ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
             list
-        })
+        }
     }
 
     /// Parse a package import declaration
-    fn parse_pkg_import_decl_opt(&mut self) -> Result<Option<Vec<PkgImportItem>>> {
+    fn parse_pkg_import_decl_opt(&mut self) -> Option<Vec<PkgImportItem>> {
         if self.consume_if(TokenKind::Keyword(Keyword::Import)).is_none() {
-            return Ok(None);
+            return None;
         }
-        let list = self.parse_comma_list(false, false, Self::parse_pkg_import_item_opt)?;
-        self.expect(TokenKind::Semicolon)?;
-        Ok(Some(list))
+        let list = self.parse_comma_list(false, false, Self::parse_pkg_import_item_opt);
+        self.expect(TokenKind::Semicolon);
+        Some(list)
     }
 
-    fn parse_pkg_import_decl(&mut self) -> Result<Vec<PkgImportItem>> {
-        Ok(self.parse_pkg_import_decl_opt()?.unwrap())
+    fn parse_pkg_import_decl(&mut self) -> Vec<PkgImportItem> {
+        self.parse_pkg_import_decl_opt().unwrap()
     }
 
     /// Parse a package import item
-    fn parse_pkg_import_item_opt(&mut self) -> Result<Option<PkgImportItem>> {
+    fn parse_pkg_import_item_opt(&mut self) -> Option<PkgImportItem> {
         let pkg = match self.consume_if_id() {
-            None => return Ok(None),
+            None => return None,
             Some(v) => v,
         };
-        self.expect(TokenKind::Operator(Operator::ScopeSep))?;
+        self.expect(TokenKind::Operator(Operator::ScopeSep));
         let id = if self.check(TokenKind::Operator(Operator::Mul)) {
             None
         } else {
-            Some(self.expect_id()?)
+            Some(self.expect_id())
         };
-        Ok(Some(PkgImportItem(pkg, id)))
+        Some(PkgImportItem(pkg, id))
     }
 
     /// Parse a lifeime, defaulted to static
@@ -1255,14 +1236,14 @@ impl Parser {
     }
 
     /// Parse a data type (or implicit) followed a decl_assign.
-    fn parse_data_type_decl_assign(&mut self) -> Result<(Option<DataType>, DeclAssign)> {
-        let expr = self.parse_expr()?;
+    fn parse_data_type_decl_assign(&mut self) -> (Option<DataType>, DeclAssign) {
+        let expr = self.parse_expr();
         let span = expr.span;
-        let dtype = match self.conv_expr_to_type(expr)? {
+        let dtype = match self.conv_expr_to_type(expr) {
             None => {
-                self.report_span(Severity::Error, "expected data type or identifier", span)?;
+                self.report_span(Severity::Fatal, "expected data type or identifier", span);
                 // TODO: Do error recovery here.
-                return Err(())
+                unreachable!()
             }
             Some(v) => v,
         };
@@ -1270,34 +1251,34 @@ impl Parser {
         match self.consume_if_id() {
             Some(name) => {
                 let mut dim = self.parse_list(Self::parse_dim_opt);
-                self.check_list(Self::check_unpacked_dim, &mut dim)?;
+                self.check_list(Self::check_unpacked_dim, &mut dim);
                 let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
                     None => None,
-                    Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
+                    Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                 };
-                Ok((Some(dtype), DeclAssign {
+                (Some(dtype), DeclAssign {
                     name,
                     dim,
                     init
-                }))
+                })
             }
             None => {
-                match self.conv_type_to_id(dtype)? {
+                match self.conv_type_to_id(dtype) {
                     Some((name, dim)) => {
                         let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
                             None => None,
-                            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
+                            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                         };
-                        Ok((None, DeclAssign {
+                        (None, DeclAssign {
                             name,
                             dim,
                             init
-                        }))
+                        })
                     }
                     None => {
-                        self.report_span(Severity::Error, "data type should be followed by an identifier", span)?;
+                        self.report_span(Severity::Fatal, "data type should be followed by an identifier", span);
                         // TODO: Error recovery
-                        Err(())
+                        unreachable!()
                     }
                 }
             }
@@ -1305,7 +1286,7 @@ impl Parser {
     }
 
     /// Parse a net declaration or data declaration.
-    fn parse_net_decl_assign(&mut self) -> Result<()> {
+    fn parse_net_decl_assign(&mut self) {
         match **self.peek() {
             TokenKind::Keyword(Keyword::Interconnect) => {
                 unimplemented!();
@@ -1356,7 +1337,7 @@ impl Parser {
     /// | class_type
     /// ```
     /// TODO: Better span in this function
-    fn parse_kw_data_type(&mut self) -> Result<Option<DataType>> {
+    fn parse_kw_data_type(&mut self) -> Option<DataType> {
         match **self.peek() {
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) => {
@@ -1369,40 +1350,40 @@ impl Parser {
                 };
                 let sign = self.parse_signing();
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Ok(Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)))
+                Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span))
             }
             TokenKind::Signing(sign) => {
                 let span = self.consume().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Ok(Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span)))
+                Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span))
             }
             TokenKind::Keyword(Keyword::Type) => {
                 let token = self.consume();
                 // TODO: Might be parenthesis
-                Ok(Some(Spanned::new(DataTypeKind::Type, token.span)))
+                Some(Spanned::new(DataTypeKind::Type, token.span))
             }
             TokenKind::DelimGroup(Delim::Bracket, _) => {
                 let span = self.peek().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Ok(Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)))
+                Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span))
             }
             _ => {
-                Ok(None)
+                None
             }
         }
     }
 
     /// Convert an expression to a type. Useful when we try to parse thing as expression first due
     /// to ambiguity, then realised that it is actually a type.
-    fn conv_expr_to_type(&mut self, expr: Expr) -> Result<Option<DataType>> {
+    fn conv_expr_to_type(&mut self, expr: Expr) -> Option<DataType> {
         match expr.value {
-            ExprKind::Type(ty) => Ok(Some(*ty)),
+            ExprKind::Type(ty) => Some(*ty),
             ExprKind::HierName(scope, name) => {
-                Ok(Some(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span)))
+                Some(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span))
             }
             ExprKind::Select(ty, dim) => {
-                let mut ty = match self.conv_expr_to_type(*ty)? {
-                    None => return Ok(None),
+                let mut ty = match self.conv_expr_to_type(*ty) {
+                    None => return None,
                     Some(v) => v,
                 };
                 match *ty {
@@ -1410,21 +1391,21 @@ impl Parser {
                     // If this is a keyword typename, the dimension should already be handled.
                     _ => unreachable!(),
                 };
-                Ok(Some(ty))
+                Some(ty)
             }
-            _ => Ok(None),
+            _ => None,
         }
     }
 
     /// We made a observation that every identifier (with unpacked dimension) looks like an data
     /// type. This function tries to convert a data_type to an identifier (and a dimension list).
-    fn conv_type_to_id(&mut self, ty: DataType) -> Result<Option<(Ident, Vec<Dim>)>> {
+    fn conv_type_to_id(&mut self, ty: DataType) -> Option<(Ident, Vec<Dim>)> {
         match ty.value {
             // TODO: what about dimension
             DataTypeKind::HierName(None, HierId::Name(None, id), dim) => {
-                Ok(Some((*id, dim)))
+                Some((*id, dim))
             }
-            _ => Ok(None),
+            _ => None,
         }
     }
 
@@ -1447,9 +1428,9 @@ impl Parser {
     // A.2.4 Declaration assignments
     //
 
-    fn parse_decl_assign_opt(&mut self) -> Result<Option<DeclAssign>> {
+    fn parse_decl_assign_opt(&mut self) -> Option<DeclAssign> {
         let mut ident = match self.consume_if_id() {
-            None => return Ok(None),
+            None => return None,
             Some(v) => v,
         };
         let mut dim = self.parse_list(Self::parse_dim_opt);
@@ -1461,24 +1442,24 @@ impl Parser {
                 Severity::Error,
                 "this looks like a data type but it is not declared",
                 ident.span
-            )?;
+            );
             ident = id;
             dim = self.parse_list(Self::parse_dim_opt);
         }
 
-        self.check_list(Self::check_unpacked_dim, &mut dim)?;
+        self.check_list(Self::check_unpacked_dim, &mut dim);
         let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
             None => None,
-            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt)?)),
+            Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
         };
-        Ok(Some(DeclAssign {
+        Some(DeclAssign {
             name: ident,
             dim,
             init
-        }))
+        })
     }
 
-    fn parse_decl_assign(&mut self) -> Result<DeclAssign> {
+    fn parse_decl_assign(&mut self) -> DeclAssign {
         self.parse_unwrap(Self::parse_decl_assign_opt)
     }
 
@@ -1505,43 +1486,43 @@ impl Parser {
     /// indexed_range ::=
     ///   expression +: constant_expression | expression -: constant_expression
     /// ```
-    fn parse_dim_opt(&mut self) -> Result<Option<Dim>> {
+    fn parse_dim_opt(&mut self) -> Option<Dim> {
         self.parse_if_delim_spanned(Delim::Bracket, |this| {
             match **this.peek() {
                 TokenKind::Eof => {
-                    return Ok(DimKind::Unsized)
+                    return DimKind::Unsized
                 }
                 TokenKind::Operator(Operator::Mul) => {
                     if let TokenKind::Eof = **this.peek_n(1) {
                         this.consume();
-                        return Ok(DimKind::AssocWild)
+                        return DimKind::AssocWild
                     }
                 }
                 _ => (),
             }
-            let expr = this.parse_expr()?;
+            let expr = this.parse_expr();
             match **this.peek() {
                 TokenKind::Colon => {
                     this.consume();
-                    Ok(DimKind::Range(Box::new(expr), Box::new(this.parse_expr()?)))
+                    DimKind::Range(Box::new(expr), Box::new(this.parse_expr()))
                 }
                 TokenKind::Operator(Operator::PlusColon) => {
                     this.consume();
-                    Ok(DimKind::PlusRange(Box::new(expr), Box::new(this.parse_expr()?)))
+                    DimKind::PlusRange(Box::new(expr), Box::new(this.parse_expr()))
                 }
                 TokenKind::Operator(Operator::MinusColon) => {
                     this.consume();
-                    Ok(DimKind::MinusRange(Box::new(expr), Box::new(this.parse_expr()?)))
+                    DimKind::MinusRange(Box::new(expr), Box::new(this.parse_expr()))
                 }
                 _ => {
-                    Ok(DimKind::Value(Box::new(expr)))
+                    DimKind::Value(Box::new(expr))
                 }
             }
         })
     }
 
     /// Check if a dimension is a legal unpacked dimension
-    fn check_unpacked_dim(&mut self, dim: &Dim) -> Result<bool> {
+    fn check_unpacked_dim(&mut self, dim: &Dim) -> bool {
         match **dim {
             DimKind::AssocWild |
             DimKind::PlusRange(..) |
@@ -1551,17 +1532,17 @@ impl Parser {
                     Severity::Error,
                     "this type of range is not allowed in unpacked dimension context",
                     dim.span
-                )?;
-                Ok(false)
+                );
+                false
             }
-            _ => Ok(true)
+            _ => true
         }
     }
 
     /// Parse a packed dimension
-    fn parse_pack_dim(&mut self) -> Result<Option<Dim>> {
-        let ret = match self.parse_dim_opt()? {
-            None => return Ok(None),
+    fn parse_pack_dim(&mut self) -> Option<Dim> {
+        let ret = match self.parse_dim_opt() {
+            None => return None,
             Some(v) => v,
         };
         match *ret {
@@ -1573,10 +1554,10 @@ impl Parser {
                     Severity::Error,
                     "this type of range is not allowed in packed dimension context",
                     ret.span
-                )?;
-                Ok(None)
+                );
+                None
             }
-            _ => Ok(Some(ret))
+            _ => Some(ret)
         }
     }
 
@@ -1638,42 +1619,42 @@ impl Parser {
     ///   identifier [ parameter_value_assignment ] hierarchical_instance
     ///   { , hierarchical_instance } ;
     /// ```
-    fn parse_instantiation(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
-        let mod_name = self.expect_id()?;
+    fn parse_instantiation(&mut self, attr: Option<Box<AttrInst>>) -> Item {
+        let mod_name = self.expect_id();
 
         // Parse parameter value assignment
         let param = if self.check(TokenKind::Hash) {
-            Some(self.parse_args(ArgOption::Param)?)
+            Some(self.parse_args(ArgOption::Param))
         } else {
             None
         };
 
         let list = self.parse_comma_list(false, false, |this| {
             let name = match this.consume_if_id() {
-                None => return Ok(None),
+                None => return None,
                 Some(v) => v,
             };
 
             let mut dim = this.parse_list(Self::parse_dim_opt);
-            this.check_list(Self::check_unpacked_dim, &mut dim)?;
-            let ports = this.parse_args(ArgOption::Port)?;
-            Ok(Some(HierInst {
+            this.check_list(Self::check_unpacked_dim, &mut dim);
+            let ports = this.parse_args(ArgOption::Port);
+            Some(HierInst {
                 name,
                 dim,
                 ports,
-            }))
-        })?;
+            })
+        });
 
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(TokenKind::Semicolon);
 
-        Ok(Item::HierInstantiation(Box::new(
+        Item::HierInstantiation(Box::new(
             HierInstantiation {
                 attr,
                 param,
                 name: mod_name,
                 inst: list,
             }
-        )))
+        ))
     }
 
     /// Combined parser of parameter value assignment, port connections, and method argument list.
@@ -1690,18 +1671,18 @@ impl Parser {
     ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
     /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
     /// ```
-    fn parse_args_opt(&mut self, option: ArgOption) -> Result<Option<Vec<Arg>>> {
+    fn parse_args_opt(&mut self, option: ArgOption) -> Option<Vec<Arg>> {
         let mut named_seen = false;
         let mut ordered_seen = false;
         self.parse_if_delim(Delim::Paren, |this| {
             this.parse_comma_list(true, false, |this| {
-                let attr = this.parse_attr_inst_opt()?;
+                let attr = this.parse_attr_inst_opt();
                 if option != ArgOption::Port && attr.is_some() {
                     this.report_span(
                         Severity::Error,
                         "attribute instances on argument is not allowed",
                         attr.as_ref().unwrap().span
-                    )?;
+                    );
                 }
                 if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
                     if option != ArgOption::Port {
@@ -1709,44 +1690,44 @@ impl Parser {
                             Severity::Error,
                             ".* not allowed as argument",
                             v.span
-                        )?;
+                        );
                     }
                     named_seen = true;
-                    Ok(Some(Arg::NamedWildcard(attr)))
+                    Some(Arg::NamedWildcard(attr))
                 } else if let Some(v) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
-                    let name = this.expect_id()?;
-                    let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt)?;
+                    let name = this.expect_id();
+                    let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
                     if ordered_seen && option != ArgOption::Arg {
                         this.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(expr.span)
-                        )?;
+                        );
                     }
                     named_seen = true;
-                    Ok(Some(Arg::Named(attr, Box::new(name), expr.value.map(Box::new))))
+                    Some(Arg::Named(attr, Box::new(name), expr.value.map(Box::new)))
                 } else {
-                    let expr = this.parse_expr_opt()?.map(Box::new);
+                    let expr = this.parse_expr_opt().map(Box::new);
                     if named_seen {
                         if let Some(expr) = &expr {
                             this.report_span(
                                 Severity::Error,
                                 "ordered argument cannot appear after named argument",
                                 expr.span
-                            )?;
+                            );
                         } else {
                             // Return None so error message will be about trailing comma.
-                            return Ok(None)
+                            return None
                         }
                     }
                     ordered_seen = true;
-                    Ok(Some(Arg::Ordered(attr, expr)))
+                    Some(Arg::Ordered(attr, expr))
                 }
             })
         })
     }
 
-    fn parse_args(&mut self, option: ArgOption) -> Result<Vec<Arg>> {
+    fn parse_args(&mut self, option: ArgOption) -> Vec<Arg> {
         self.parse_unwrap(|this| this.parse_args_opt(option))
     }
 
@@ -1759,23 +1740,23 @@ impl Parser {
     /// loop_generate_construct ::=
     ///   for ( genvar_initialization ; genvar_expression ; genvar_iteration ) generate_block
     /// ```
-    fn parse_loop_gen(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
+    fn parse_loop_gen(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         // Eat the for keyword
         self.consume();
         let (genvar, id, init, cond, update) = 
             self.parse_delim(Delim::Paren, |this| {
                 let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
-                let id = this.expect_id()?;
-                this.expect(TokenKind::Operator(Operator::Assign))?;
-                let init = this.parse_expr()?;
-                this.expect(TokenKind::Semicolon)?;
-                let cond = this.parse_expr()?;
-                this.expect(TokenKind::Semicolon)?;
-                let update = this.parse_expr()?;
-                Ok((genvar, id, init, cond, update))
-            })?;
-        let block = self.parse_gen_block()?;
-        Ok(Item::LoopGen(Box::new(LoopGen {
+                let id = this.expect_id();
+                this.expect(TokenKind::Operator(Operator::Assign));
+                let init = this.parse_expr();
+                this.expect(TokenKind::Semicolon);
+                let cond = this.parse_expr();
+                this.expect(TokenKind::Semicolon);
+                let update = this.parse_expr();
+                (genvar, id, init, cond, update)
+            });
+        let block = self.parse_gen_block();
+        Item::LoopGen(Box::new(LoopGen {
             attr,
             genvar,
             id,
@@ -1783,7 +1764,7 @@ impl Parser {
             cond,
             update,
             block,
-        })))
+        }))
     }
 
     /// Parse a if_generate_construct
@@ -1791,32 +1772,32 @@ impl Parser {
     /// if_generate_construct ::=
     ///   if ( constant_expression ) generate_block [ else generate_block ]
     /// ```
-    fn parse_if_gen(&mut self, attr: Option<Box<AttrInst>>) -> Result<Item> {
+    fn parse_if_gen(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         // Eat the if keyword
         self.consume();
-        let cond = self.parse_delim(Delim::Paren, Self::parse_expr)?;
-        let true_block = self.parse_gen_block()?;
+        let cond = self.parse_delim(Delim::Paren, Self::parse_expr);
+        let true_block = self.parse_gen_block();
         let false_block = if self.check(TokenKind::Keyword(Keyword::Else)) {
-            Some(Box::new(self.parse_gen_block()?))
+            Some(Box::new(self.parse_gen_block()))
         } else {
             None
         };
 
-        Ok(Item::IfGen(Box::new(IfGen {
+        Item::IfGen(Box::new(IfGen {
             attr,
             cond,
             true_block,
             false_block,
-        })))
+        }))
     }
 
-    fn parse_gen_block(&mut self) -> Result<Item> {
+    fn parse_gen_block(&mut self) -> Item {
         // A generate-block may begin with a label. It is treated as same as label after begin.
         let label = if let TokenKind::Id(_) = **self.peek() {
             if let TokenKind::Colon = **self.peek_n(1) {
                 // This is actuall
                 if let TokenKind::Keyword(Keyword::Begin) = **self.peek_n(2) {
-                    let label = self.expect_id()?;
+                    let label = self.expect_id();
                     self.consume();
                     Some(label)
                 } else { None }
@@ -1829,7 +1810,7 @@ impl Parser {
         };
 
         let name = if self.check(TokenKind::Colon) {
-            Some(self.expect_id()?)
+            Some(self.expect_id())
         } else {
             None
         };
@@ -1841,13 +1822,13 @@ impl Parser {
                     Severity::Error,
                     "block identifiers before and after 'begin' are not identical",
                     n.span
-                )?;
+                );
             } else {
                 self.report_span(
                     Severity::Warning,
                     "duplicate block identifiers before and after 'begin'",
                     n.span
-                )?;
+                );
             }
         } else if let (Some(l), None) = (&label, &name) {
             self.report_diag(
@@ -1856,48 +1837,48 @@ impl Parser {
                     "it is suggested to place block identifier after 'begin'",
                     l.span.merge(begin.span)
                 ).fix_primary(format!("begin: {}", l))
-            )?;
+            );
         }
 
         let name = name.or(label);
         let items = self.parse_list(Self::parse_item_opt);
         
-        self.expect(TokenKind::Keyword(Keyword::End))?;
+        self.expect(TokenKind::Keyword(Keyword::End));
 
         if self.check(TokenKind::Colon) {
-            let id = self.expect_id()?;
+            let id = self.expect_id();
             match &name {
                 None => self.report_span(
                     Severity::Error,
                     "identifer annotation at end does match declaration, should be empty",
                     id.span
-                )?,
+                ),
                 Some(v) => if **v != *id {
                     self.report_span(
                         Severity::Error,
                         format!("identifer annotation at end does match declaration, should be '{}'", v),
                         id.span
-                    )?
+                    )
                 }
             }
         }
 
-        Ok(Item::GenBlock(Box::new(GenBlock {
+        Item::GenBlock(Box::new(GenBlock {
             name: name.map(Box::new),
             items,
-        })))
+        }))
     }
 
     //
     // A.6.1 Continuous assignment and net alias statements
     //
-    fn parse_continuous_assign(&mut self) -> Result<Item> {
+    fn parse_continuous_assign(&mut self) -> Item {
         self.consume();
         // IMP: Parse drive_strength
         // IMP: Parse delay control
-        let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr)?;
-        self.expect(TokenKind::Semicolon)?;
-        Ok(Item::ContinuousAssign(assignments))
+        let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr);
+        self.expect(TokenKind::Semicolon);
+        Item::ContinuousAssign(assignments)
     }
 
     //
@@ -1923,23 +1904,23 @@ impl Parser {
         }
     }
 
-    fn parse_always(&mut self) -> Result<Item> {
+    fn parse_always(&mut self) -> Item {
         let kw = if let TokenKind::AlwaysKw(kw) = *self.consume() {
             kw
         } else {
             unreachable!();
         };
-        let stmt = self.parse_stmt()?;
-        Ok(Item::Always(kw, Box::new(stmt)))
+        let stmt = self.parse_stmt();
+        Item::Always(kw, Box::new(stmt))
     }
 
     //
     // A.6.3 Parallel and sequential blocks
     //
-    fn parse_seq_block(&mut self, label: &mut Option<Ident>) -> Result<StmtKind> {
+    fn parse_seq_block(&mut self, label: &mut Option<Ident>) -> StmtKind {
         let begin = self.consume();
         if self.check(TokenKind::Colon) {
-            let id = self.expect_id()?;
+            let id = self.expect_id();
             if let Some(v) = label {
                 if *id != **v {
                     // IMP: Add a span about previous name
@@ -1947,13 +1928,13 @@ impl Parser {
                         Severity::Error,
                         "block identifiers before and after 'begin' are not identical",
                         id.span
-                    )?;
+                    );
                 } else {
                     self.report_span(
                         Severity::Warning,
                         "duplicate block identifiers before and after 'begin'",
                         id.span
-                    )?;
+                    );
                 }
             }
             *label = Some(id);
@@ -1964,32 +1945,32 @@ impl Parser {
                     "it is suggested to place block identifier after 'begin'",
                     v.span.merge(begin.span)
                 ).fix_primary(format!("begin: {}", v))
-            )?;
+            );
         }
 
         let items = self.parse_list(Self::parse_stmt_opt);
         
-        self.expect(TokenKind::Keyword(Keyword::End))?;
+        self.expect(TokenKind::Keyword(Keyword::End));
 
         if self.check(TokenKind::Colon) {
-            let id = self.expect_id()?;
+            let id = self.expect_id();
             match label {
                 None => self.report_span(
                     Severity::Error,
                     "identifer annotation at end does match declaration, should be empty",
                     id.span
-                )?,
+                ),
                 Some(v) => if **v != *id {
                     self.report_span(
                         Severity::Error,
                         format!("identifer annotation at end does match declaration, should be '{}'", v),
                         id.span
-                    )?
+                    )
                 }
             }
         }
 
-        Ok(StmtKind::SeqBlock(items))
+        StmtKind::SeqBlock(items)
     }
 
     //
@@ -1997,20 +1978,20 @@ impl Parser {
     //
 
     /// Parse a block item declaration, statement, or null statement.
-    fn parse_stmt_opt(&mut self) -> Result<Option<Stmt>> {
+    fn parse_stmt_opt(&mut self) -> Option<Stmt> {
         // These are common to all statements:
         // an optional identifier and an attribute.
         let mut label = if let TokenKind::Id(_) = **self.peek() {
             if let TokenKind::Colon = **self.peek_n(1) {
-                let id = self.expect_id()?;
+                let id = self.expect_id();
                 self.consume();
                 Some(id)
             } else { None }
         } else { None };
-        let attr = self.parse_attr_inst_opt()?;
+        let attr = self.parse_attr_inst_opt();
 
         let kind = match **self.peek() {
-            TokenKind::Keyword(Keyword::End) => return Ok(None),
+            TokenKind::Keyword(Keyword::End) => return None,
             // null_statement
             TokenKind::Semicolon => {
                 self.consume();
@@ -2020,43 +2001,43 @@ impl Parser {
             TokenKind::UniqPrio(uniq) => {
                 let prio = self.consume();
                 match **self.peek() {
-                    TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(Some(uniq))?,
+                    TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(Some(uniq)),
                     // TODO: case
                     _ => {
                         self.report_span(
                             Severity::Error,
                             "expected if or case statement after unique, unique0 or priority",
                             prio.span
-                        )?;
+                        );
                         // Error recovery
                         StmtKind::Empty
                     }
                 }
             }
             // conditional_statement
-            TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(None)?,
+            TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(None),
             // seq_block
-            TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label)?,
+            TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label),
             // procedural_timing_control_statement
             TokenKind::Hash |
             TokenKind::CycleDelay |
             TokenKind::AtStar |
-            TokenKind::At => self.parse_timing_ctrl_stmt()?,
+            TokenKind::At => self.parse_timing_ctrl_stmt(),
             _ => {
-                let expr = self.parse_unwrap(Self::parse_assign_expr)?;
-                self.expect(TokenKind::Semicolon)?;
+                let expr = self.parse_unwrap(Self::parse_assign_expr);
+                self.expect(TokenKind::Semicolon);
                 StmtKind::Expr(Box::new(expr))
             }
         };
 
-        Ok(Some(Stmt {
+        Some(Stmt {
             label: label.map(Box::new),
             attr,
             value: kind,
-        }))
+        })
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt> {
+    fn parse_stmt(&mut self) -> Stmt {
         self.parse_unwrap(Self::parse_stmt_opt)
     }
 
@@ -2064,38 +2045,38 @@ impl Parser {
     // A.6.5 Timing control statements
     //
 
-    fn parse_timing_ctrl_stmt(&mut self) -> Result<StmtKind> {
-        let ctrl = self.parse_timing_ctrl()?;
-        let stmt = self.parse_stmt()?;
-        Ok(StmtKind::TimingCtrl(ctrl, Box::new(stmt)))
+    fn parse_timing_ctrl_stmt(&mut self) -> StmtKind {
+        let ctrl = self.parse_timing_ctrl();
+        let stmt = self.parse_stmt();
+        StmtKind::TimingCtrl(ctrl, Box::new(stmt))
     }
 
-    fn parse_timing_ctrl(&mut self) -> Result<TimingCtrl> {
+    fn parse_timing_ctrl(&mut self) -> TimingCtrl {
         match **self.peek() {
             TokenKind::Hash => unimplemented!(),
             TokenKind::CycleDelay => unimplemented!(),
             TokenKind::AtStar => {
                 self.consume();
-                Ok(TimingCtrl::ImplicitEventCtrl)
+                TimingCtrl::ImplicitEventCtrl
             }
             TokenKind::At => {
                 self.consume();
                 match **self.peek() {
                     TokenKind::ParenedStar => {
                         self.consume();
-                        Ok(TimingCtrl::ImplicitEventCtrl)
+                        TimingCtrl::ImplicitEventCtrl
                     }
                     TokenKind::DelimGroup(Delim::Paren, _) => {
-                        Ok(TimingCtrl::ExprEventCtrl(
-                            Box::new(self.parse_delim(Delim::Paren, Self::parse_event_expr)?)
-                        ))
+                        TimingCtrl::ExprEventCtrl(
+                            Box::new(self.parse_delim(Delim::Paren, Self::parse_event_expr))
+                        )
                     }
                     _ => {
-                        let scope = self.parse_scope()?;
-                        let id = self.parse_unwrap(Self::parse_hier_id)?;
-                        Ok(TimingCtrl::NameEventCtrl(
+                        let scope = self.parse_scope();
+                        let id = self.parse_unwrap(Self::parse_hier_id);
+                        TimingCtrl::NameEventCtrl(
                             scope, id
-                        ))
+                        )
                     }
                 }
             }
@@ -2103,9 +2084,9 @@ impl Parser {
         }
     }
 
-    fn parse_event_expr_item(&mut self) -> Result<EventExpr> {
-        if let Some(v) = self.parse_if_delim(Delim::Paren, Self::parse_event_expr)? {
-            return Ok(EventExpr::Paren(Box::new(v)))
+    fn parse_event_expr_item(&mut self) -> EventExpr {
+        if let Some(v) = self.parse_if_delim(Delim::Paren, Self::parse_event_expr) {
+            return EventExpr::Paren(Box::new(v))
         }
         let edge = if let TokenKind::Edge(edge) = **self.peek() {
             self.consume();
@@ -2113,52 +2094,52 @@ impl Parser {
         } else {
             None
         };
-        let expr = Box::new(self.parse_expr()?);
+        let expr = Box::new(self.parse_expr());
         let iff = if self.check(TokenKind::Keyword(Keyword::Iff)) {
-            Some(Box::new(self.parse_expr()?))
+            Some(Box::new(self.parse_expr()))
         } else {
             None
         };
-        Ok(EventExpr::Item(Box::new(EventExprItem {
+        EventExpr::Item(Box::new(EventExprItem {
             edge,
             expr,
             iff,
-        })))
+        }))
     }
 
-    fn parse_event_expr(&mut self) -> Result<EventExpr> {
-        let mut item = vec![self.parse_event_expr_item()?];
+    fn parse_event_expr(&mut self) -> EventExpr {
+        let mut item = vec![self.parse_event_expr_item()];
         while self.check(TokenKind::Comma) || self.check(TokenKind::Keyword(Keyword::Or)) {
-            item.push(self.parse_event_expr_item()?);
+            item.push(self.parse_event_expr_item());
         }
         if item.len() > 1 {
-            Ok(EventExpr::List(item))
+            EventExpr::List(item)
         } else {
-            Ok(item.pop().unwrap())
+            item.pop().unwrap()
         }
     }
 
     //
     // A.6.6 Conditional statements
     //
-    fn parse_if_stmt(&mut self, uniq: Option<UniqPrio>) -> Result<StmtKind> {
+    fn parse_if_stmt(&mut self, uniq: Option<UniqPrio>) -> StmtKind {
         self.consume();
-        let cond = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr)?);
-        let true_stmt = Box::new(self.parse_stmt()?);
+        let cond = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr));
+        let true_stmt = Box::new(self.parse_stmt());
         let false_stmt = if self.check(TokenKind::Keyword(Keyword::Else)) {
             // TODO: Else if clause cannot begin with UniqPrio
-            Some(Box::new(self.parse_stmt()?))
+            Some(Box::new(self.parse_stmt()))
         } else {
             None
         };
-        Ok(StmtKind::If(uniq, cond, true_stmt, false_stmt))
+        StmtKind::If(uniq, cond, true_stmt, false_stmt)
     }
 
     //
     // A.8.2 Subroutine calls
     //
 
-    fn parse_sys_tf_call(&mut self) -> Result<SysTfCall> {
+    fn parse_sys_tf_call(&mut self) -> SysTfCall {
         let task = {
             let token = self.consume();
             match token.value {
@@ -2166,11 +2147,11 @@ impl Parser {
                 _ => unreachable!(),
             }
         };
-        let args = self.parse_args_opt(ArgOption::Arg)?;
-        Ok(SysTfCall {
+        let args = self.parse_args_opt(ArgOption::Arg);
+        SysTfCall {
             task,
             args,
-        })
+        }
     }
 
     //
@@ -2185,11 +2166,11 @@ impl Parser {
     ///   expression
     /// | expression assignment_operator expression
     /// ```
-    fn parse_assign_expr(&mut self) -> Result<Option<Expr>> {
+    fn parse_assign_expr(&mut self) -> Option<Expr> {
         scope!(self);
 
         let expr = match parse!([expr]) {
-            None => return Ok(None),
+            None => return None,
             Some(v) => v,
         };
 
@@ -2198,9 +2179,9 @@ impl Parser {
                 self.consume();
                 let rhs = parse!(expr);
                 let span = expr.span.merge(rhs.span);
-                Ok(Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span)))
+                Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span))
             }
-            _ => Ok(Some(expr))
+            _ => Some(expr)
         }
     }
 
@@ -2235,17 +2216,17 @@ impl Parser {
     /// | inc_or_dec_expression
     /// ```
     /// TODO: conditional & inside are not yet completed
-    fn parse_expr_opt(&mut self) -> Result<Option<Expr>> {
+    fn parse_expr_opt(&mut self) -> Option<Expr> {
         let expr = match **self.peek() {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span)?;
+                self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span);
                 unreachable!();
             }
             _ => {
-                match self.parse_bin_expr(0)? {
-                    None => return Ok(None),
+                match self.parse_bin_expr(0) {
+                    None => return None,
                     Some(v) => v,
                 }
             }
@@ -2254,45 +2235,45 @@ impl Parser {
             // inside_expression
             TokenKind::Keyword(Keyword::Inside) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "inside_expression not yet supported", span)?;
+                self.report_span(Severity::Fatal, "inside_expression not yet supported", span);
                 unreachable!();
             }
             // cond_pattern
             TokenKind::Keyword(Keyword::Matches) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "cond_pattern not yet supported", span)?;
+                self.report_span(Severity::Fatal, "cond_pattern not yet supported", span);
                 unreachable!();
             }
             // expression_or_cond_pattern
             TokenKind::Operator(Operator::TripleAnd) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span)?;
+                self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span);
                 unreachable!();
             }
             // conditional_expression
             TokenKind::Operator(Operator::Question) => {
                 self.consume();
-                let true_expr = Box::new(self.parse_expr()?);
-                self.expect(TokenKind::Colon)?;
-                let false_expr = Box::new(self.parse_expr()?);
+                let true_expr = Box::new(self.parse_expr());
+                self.expect(TokenKind::Colon);
+                let false_expr = Box::new(self.parse_expr());
                 let span = expr.span.merge(false_expr.span);
-                Ok(Some(Spanned::new(
+                Some(Spanned::new(
                     ExprKind::Cond(Box::new(expr), true_expr, false_expr), span
-                )))
+                ))
             }
-            _ => Ok(Some(expr)),
+            _ => Some(expr),
         }
     }
 
-    fn parse_expr(&mut self) -> Result<Expr> {
+    fn parse_expr(&mut self) -> Expr {
         self.parse_unwrap(Self::parse_expr_opt)
     }
     
     /// Parse binary expression using precedence climing method which saves stack space.
     /// TODO: Handle <= properly
-    fn parse_bin_expr(&mut self, prec: i32) -> Result<Option<Expr>> {
-        let mut expr = match self.parse_unary_expr()? {
-            None => return Ok(None),
+    fn parse_bin_expr(&mut self, prec: i32) -> Option<Expr> {
+        let mut expr = match self.parse_unary_expr() {
+            None => return None,
             Some(v) => v,
         };
 
@@ -2312,27 +2293,27 @@ impl Parser {
 
             if self.consume_if_delim(Delim::Attr).is_some() {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "attributes not yet supported", span)?;
+                self.report_span(Severity::Fatal, "attributes not yet supported", span);
             }
 
-            let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec))?;
+            let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec));
             let span = expr.span.merge(rhs.span);
             expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, Box::new(rhs)), span);
         }
 
-        Ok(Some(expr))
+        Some(expr)
     }
 
-    fn parse_unary_expr(&mut self) -> Result<Option<Expr>> {
+    fn parse_unary_expr(&mut self) -> Option<Expr> {
         match **self.peek() {
             // inc_or_dec_operator { attribute_instance } variable_lvalue
             // unary_operator { attribute_instance } primary
             TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
                 let span = self.consume().span;
-                let attr = self.parse_attr_inst_opt()?;
-                let expr = self.parse_unwrap(Self::parse_primary)?;
+                let attr = self.parse_attr_inst_opt();
+                let expr = self.parse_unwrap(Self::parse_primary);
                 let span = span.merge(expr.span);
-                Ok(Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span)))
+                Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span))
             }
             _ => {
                 self.parse_primary()
@@ -2347,22 +2328,22 @@ impl Parser {
     /// mintypmax_expression ::=
     ///   expression | expression : expression : expression
     /// ```
-    fn parse_mintypmax_expr(&mut self) -> Result<Option<Expr>> {
-        let expr = match self.parse_expr_opt()? {
-            None => return Ok(None),
+    fn parse_mintypmax_expr(&mut self) -> Option<Expr> {
+        let expr = match self.parse_expr_opt() {
+            None => return None,
             Some(v) => v,
         };
 
         if !self.check(TokenKind::Colon) {
-            return Ok(Some(expr))
+            return Some(expr)
         }
 
         scope!(self);
         let typ = parse!(box(expr));
-        self.expect(TokenKind::Colon)?;
+        self.expect(TokenKind::Colon);
         let max = parse!(box(expr));
         let span = expr.span.merge(max.span);
-        Ok(Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span)))
+        Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span))
     }
 
     //
@@ -2370,29 +2351,29 @@ impl Parser {
     //
 
     /// Parse primary expression (or data_type) with cast.
-    fn parse_primary(&mut self) -> Result<Option<Expr>> {
+    fn parse_primary(&mut self) -> Option<Expr> {
         let mut expr = match **self.peek() {
             TokenKind::Keyword(Keyword::Const) => {
                 let span = self.consume().span;
-                self.expect(TokenKind::Operator(Operator::Tick))?;
-                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
+                self.expect(TokenKind::Operator(Operator::Tick));
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
                 Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
             TokenKind::Signing(sign) => {
                 if let TokenKind::Operator(Operator::Tick) = **self.peek_n(1) {
                     let span = self.consume().span;
-                    self.expect(TokenKind::Operator(Operator::Tick))?;
-                    let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
+                    self.expect(TokenKind::Operator(Operator::Tick));
+                    let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
                     Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
                 } else {
-                    match self.parse_primary_nocast()? {
-                        None => return Ok(None),
+                    match self.parse_primary_nocast() {
+                        None => return None,
                         Some(v) => v,
                     }
                 }
             }
-            _ => match self.parse_primary_nocast()? {
-                None => return Ok(None),
+            _ => match self.parse_primary_nocast() {
+                None => return None,
                 Some(v) => v,
             }
         };
@@ -2401,11 +2382,11 @@ impl Parser {
                 break
             }
 
-            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt))?;
+            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
             let span = expr.span.merge(nexpr.span);
             expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.value)), span)
         }
-        Ok(Some(expr))
+        Some(expr)
     }
 
     /// Parse primary expression (or data_type), except for cast. Cast is special as it can take
@@ -2431,10 +2412,10 @@ impl Parser {
     /// | null
     /// | data_type
     /// ```
-    fn parse_primary_nocast(&mut self) -> Result<Option<Expr>> {
+    fn parse_primary_nocast(&mut self) -> Option<Expr> {
         match **self.peek() {
             // Case where this isn't an expression
-            TokenKind::Eof => Ok(None),
+            TokenKind::Eof => None,
             // primary_literal
             // $
             // null
@@ -2447,7 +2428,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Null) => {
                 let tok = self.consume();
                 let sp = tok.span;
-                Ok(Some(Spanned::new(ExprKind::Literal(tok), sp)))
+                Some(Spanned::new(ExprKind::Literal(tok), sp))
             }
             // empty_queue
             // concatenation [ [ range_expression ] ]
@@ -2455,28 +2436,28 @@ impl Parser {
             // streaming_concatenation
             TokenKind::DelimGroup(Delim::Brace, _) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "concat is not finished yet", span)?;
+                self.report_span(Severity::Fatal, "concat is not finished yet", span);
                 unreachable!();
             }
             // assignment_pattern_expression
             TokenKind::DelimGroup(Delim::TickBrace, _) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "assign pattern is not finished yet", span)?;
+                self.report_span(Severity::Fatal, "assign pattern is not finished yet", span);
                 unreachable!();
             }
             // ( mintypmax_expression )
             TokenKind::DelimGroup(Delim::Paren, _) => {
-                Ok(Some(self.parse_delim_spanned(Delim::Paren, |this| {
+                Some(self.parse_delim_spanned(Delim::Paren, |this| {
                     scope!(this);
-                    Ok(ExprKind::Paren(parse!(box(parse_mintypmax_expr))))
-                })?))
+                    ExprKind::Paren(parse!(box(parse_mintypmax_expr)))
+                }))
             }
             // system_tf_call
             TokenKind::SystemTask(_) => {
-                let tf = self.parse_sys_tf_call()?;
+                let tf = self.parse_sys_tf_call();
                 // IMP: better span
                 let span = tf.task.span.start.span_to(self.peek().span.start);
-                Ok(Some(Spanned::new(ExprKind::SysTfCall(Box::new(tf)), span)))
+                Some(Spanned::new(ExprKind::SysTfCall(Box::new(tf)), span))
             }
             // The left-over possibilities are:
             // [ class_qualifier | package_scope ] hierarchical_identifier select
@@ -2496,29 +2477,29 @@ impl Parser {
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) => {
-                let ty = Box::new(self.parse_kw_data_type()?.unwrap());
+                let ty = Box::new(self.parse_kw_data_type().unwrap());
                 let span = ty.span;
-                Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
+                Some(Spanned::new(ExprKind::Type(ty), span))
             }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw)  => {
-                let ty = Box::new(self.parse_kw_data_type()?.unwrap());
+                let ty = Box::new(self.parse_kw_data_type().unwrap());
                 let span = ty.span;
-                Ok(Some(Spanned::new(ExprKind::Type(ty), span)))
+                Some(Spanned::new(ExprKind::Type(ty), span))
             }
             // Otherwise, parse as name
             _ => {
                 let begin_span = self.peek().span;
-                let scope = self.parse_scope()?;
-                let mut id = self.parse_hier_id()?;
+                let scope = self.parse_scope();
+                let mut id = self.parse_hier_id();
 
                 // Not a primary expressison
                 if scope.is_none() && id.is_none() {
-                    Ok(None)
+                    None
                 } else {
                     // If we've seen the scopes then we must need to see the id
                     if scope.is_some() && id.is_none() {
                         let span = self.peek().span;
-                        self.report_span(Severity::Error, "expected identifiers after scope", span)?;
+                        self.report_span(Severity::Error, "expected identifiers after scope", span);
                         // Error recovery
                         id = Some(HierId::Name(None, Box::new(Spanned::new_unspanned("".to_owned()))))
                     }
@@ -2530,30 +2511,30 @@ impl Parser {
                         // If next is '{, then this is actually an assignment pattern
                         TokenKind::DelimGroup(Delim::TickBrace, _) => {
                             let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "assign pattern is not finished yet", span)?;
+                            self.report_span(Severity::Fatal, "assign pattern is not finished yet", span);
                             unreachable!();
                         }
                         // This can be either function call or inc/dec expression
                         TokenKind::DelimGroup(Delim::Attr, _) => {
                             let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "inc/dec or function call not finished yet", span)?;
+                            self.report_span(Severity::Fatal, "inc/dec or function call not finished yet", span);
                             unreachable!();
                         }
                         // Function call
                         TokenKind::DelimGroup(Delim::Paren, _) => {
                             let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "function call not finished yet", span)?;
+                            self.report_span(Severity::Fatal, "function call not finished yet", span);
                             unreachable!();
                         }
                         // Inc/Dec
                         TokenKind::Operator(e @ Operator::Inc) |
                         TokenKind::Operator(e @ Operator::Dec) => {
                             let span = span.merge(self.consume().span);
-                            Ok(Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), e), span)))
+                            Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), e), span))
                         }
                         // Bit select
-                        TokenKind::DelimGroup(Delim::Bracket, _) => Ok(Some(self.parse_select(expr)?)),
-                        _ => Ok(Some(expr))
+                        TokenKind::DelimGroup(Delim::Bracket, _) => Some(self.parse_select(expr)),
+                        _ => Some(expr)
                     }
                 }
             }
@@ -2564,23 +2545,23 @@ impl Parser {
     /// select ::=
     ///   [ { . member_identifier bit_select } . member_identifier ] bit_select
     /// | [ [ part_select_range ] ]
-    fn parse_select(&mut self, mut expr: Expr) -> Result<Expr> {
+    fn parse_select(&mut self, mut expr: Expr) -> Expr {
         loop {
             match **self.peek() {
                 // Bit select
                 TokenKind::DelimGroup(Delim::Bracket, _) => {
-                    let sel = self.parse_dim_opt()?.unwrap();
+                    let sel = self.parse_dim_opt().unwrap();
                     // TODO better end span
                     let span = expr.span.end.span_to(self.peek().span.start);
                     expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);
                 }
                 TokenKind::Operator(Operator::Dot) => {
                     self.consume();
-                    let id = self.expect_id()?;
+                    let id = self.expect_id();
                     let span = expr.span.merge(id.span);
                     expr = Spanned::new(ExprKind::Member(Box::new(expr), id), span);
                 }
-                _ => return Ok(expr)
+                _ => return expr
             }
         }
     }
@@ -2643,29 +2624,29 @@ impl Parser {
     //
     // A.9.1 Attributes
     //
-    fn parse_attr_inst_opt(&mut self) -> Result<Option<Box<AttrInst>>> {
+    fn parse_attr_inst_opt(&mut self) -> Option<Box<AttrInst>> {
         let attr = self.parse_if_delim_spanned(Delim::Attr, |this| {
-            Ok(AttrInstStruct(
+            AttrInstStruct(
                 this.parse_comma_list(false, false, |this| {
                     scope!(this);
                     match this.consume_if_id() {
-                        None => Ok(None),
+                        None => None,
                         Some(name) => {
                             let expr = if this.check(TokenKind::Operator(Operator::Assign)) {
                                 Some(parse!(box(expr)))
                             } else {
                                 None
                             };
-                            Ok(Some(AttrSpec {
+                            Some(AttrSpec {
                                 name,
                                 expr
-                            }))
+                            })
                         }
                     }
-                })?
-            ))
-        })?;
-        Ok(attr.map(Box::new))
+                })
+            )
+        });
+        attr.map(Box::new)
     }
 
     //
@@ -2676,27 +2657,27 @@ impl Parser {
     /// ```bnf
     /// [ local :: | $unit :: ] [ identifier [ parameter_value_assignment ] :: ]
     /// ``` 
-    fn parse_scope(&mut self) -> Result<Option<Scope>> {
+    fn parse_scope(&mut self) -> Option<Scope> {
         let mut scope = None;
         loop {
             match **self.peek() {
                 TokenKind::Keyword(Keyword::Local) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span)?;
+                        self.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span);
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep));
                 }
                 TokenKind::Keyword(Keyword::Unit) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span)?;
+                        self.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span);
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep));
                 }
                 TokenKind::Id(_) => {
                     // Lookahead to check if this is actually a scope
@@ -2714,30 +2695,30 @@ impl Parser {
                         }
                         _ => break,
                     };
-                    let ident = self.expect_id()?;
+                    let ident = self.expect_id();
                     if self.consume_if(TokenKind::Hash).is_some() {
                         // TODO: Add parameter support
-                        self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span)?;
+                        self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span);
                         unreachable!();
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep))?;
+                    self.expect(TokenKind::Operator(Operator::ScopeSep));
                     scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
                 }
                 _ => break,
             }
         }
-        Ok(scope)
+        scope
     }
 
     /// Parse hierachical identifier
-    fn parse_hier_id(&mut self) -> Result<Option<HierId>> {
+    fn parse_hier_id(&mut self) -> Option<HierId> {
         let mut id = None;
         self.parse_sep_list_unit(Operator::Dot, true, false, |this| {
             match **this.peek() {
                 TokenKind::Keyword(Keyword::This) => {
                     let tok = this.consume();
                     if let Some(_) = id {
-                        this.report_span(Severity::Error, "this can only be the outermost identifier", tok.span)?;
+                        this.report_span(Severity::Error, "this can only be the outermost identifier", tok.span);
                     } else {
                         id = Some(HierId::This)
                     }
@@ -2747,14 +2728,14 @@ impl Parser {
                     match id {
                         None | Some(HierId::This) => id = Some(HierId::Super),
                         Some(_) => {
-                            this.report_span(Severity::Error, "super can only be the outermost identifier", tok.span)?;
+                            this.report_span(Severity::Error, "super can only be the outermost identifier", tok.span);
                         }
                     }
                 }
                 TokenKind::Keyword(Keyword::Root) => {
                     let tok = this.consume();
                     if let Some(_) = id {
-                        this.report_span(Severity::Error, "$root can only be the outermost identifier", tok.span)?;
+                        this.report_span(Severity::Error, "$root can only be the outermost identifier", tok.span);
                     } else {
                         id = Some(HierId::Root)
                     }
@@ -2763,13 +2744,13 @@ impl Parser {
                     id = Some(HierId::Name(
                         // Hack to move id out temporarily
                         mem::replace(&mut id, None).map(Box::new),
-                        Box::new(this.expect_id()?)
+                        Box::new(this.expect_id())
                     ))
                 }
-                _ => return Ok(false)
+                _ => return false
             }
-            Ok(true)
-        })?;
-        Ok(id)
+            true
+        });
+        id
     }
 }
