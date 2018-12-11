@@ -2340,7 +2340,6 @@ impl Parser {
         }
     }
 
-
     /// Parse mintypmax expression
     ///
     /// ```bnf
@@ -2448,9 +2447,39 @@ impl Parser {
             // multiple_concatenation [ [ range_expression ] ]
             // streaming_concatenation
             TokenKind::DelimGroup(Delim::Brace, _) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "concat is not finished yet", span);
-                unreachable!();
+                Some(self.parse_delim_spanned(Delim::Brace, |this| {
+                    match **this.peek() {
+                        TokenKind::Eof => ExprKind::EmptyQueue,
+                        TokenKind::Operator(Operator::LShr) |
+                        TokenKind::Operator(Operator::LShl) => {
+                            let span = this.peek().span;
+                            this.report_span(Severity::Fatal, "streaming concat is not yet supported", span);
+                            unreachable!();
+                        }
+                        _ => {
+                            let expr = this.parse_expr();
+                            if let TokenKind::DelimGroup(Delim::Brace, _) = **this.peek() {
+                                // This is a multiple concatenation
+                                let concat = this.parse_unwrap(Self::parse_primary_nocast);
+                                ExprKind::MultConcat(Box::new(expr), Box::new(concat))
+                            } else {
+                                let mut list = vec![expr];
+                                if this.check(TokenKind::Comma) {
+                                    this.parse_comma_list_unit(false, false, |this| {
+                                        match this.parse_expr_opt() {
+                                            None => false,
+                                            Some(v) => {
+                                                list.push(v);
+                                                true
+                                            }
+                                        }
+                                    });
+                                }
+                                ExprKind::Concat(list)
+                            }
+                        }
+                    }
+                }))
             }
             // assignment_pattern_expression
             TokenKind::DelimGroup(Delim::TickBrace, _) => {

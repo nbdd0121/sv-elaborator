@@ -534,6 +534,15 @@ pub enum ExprKind {
     /// A hierachical name
     HierName(Option<Scope>, HierId),
 
+    /// Empty queue initializer ("{}")
+    EmptyQueue,
+
+    /// Concatenation
+    Concat(Vec<Expr>),
+
+    /// Multiple concatenation
+    MultConcat(Box<Expr>, Box<Expr>),
+
     /// Element select
     Select(Box<Expr>, Dim),
 

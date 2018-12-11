@@ -473,6 +473,17 @@ impl PrettyPrint {
                 }
                 self.append(Self::get_hier_id(name));
             }
+            ExprKind::Concat(list) => {
+                self.append("{");
+                self.print_comma_list(list, |this, v| this.print_expr(v));
+                self.append("}");
+            }
+            ExprKind::MultConcat(mult, concat) => {
+                self.append("{");
+                self.print_expr(mult);
+                self.print_expr(concat);
+                self.append("}");
+            }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
             ExprKind::TypeCast(ty, expr) => {
                 self.print_expr(ty);
@@ -509,9 +520,9 @@ impl PrettyPrint {
             }
             ExprKind::Cond(cond, _attr, t, f) => {
                 self.print_expr(cond);
-                self.append("?");
+                self.append(" ? ");
                 self.print_expr(t);
-                self.append(":");
+                self.append(" : ");
                 self.print_expr(f);
             }
             _ => {
