@@ -485,12 +485,12 @@ impl PrettyPrint {
                 self.print_expr(expr);
             }
             ExprKind::Assign(lhr, op, rhs) |
-            ExprKind::Binary(lhr, op, rhs) => {
+            ExprKind::Binary(lhr, op, _, rhs) => {
                 self.print_expr(lhr);
                 self.append(format!(" {} ", op));
                 self.print_expr(rhs);
             }
-            ExprKind::PostfixIncDec(expr, op) => {
+            ExprKind::PostfixIncDec(expr, _attr, op) => {
                 self.print_expr(expr);
                 self.append(format!("{}", op));
             }
@@ -507,7 +507,7 @@ impl PrettyPrint {
                 self.print_expr(lhs);
                 self.print_dim(sel);
             }
-            ExprKind::Cond(cond, t, f) => {
+            ExprKind::Cond(cond, _attr, t, f) => {
                 self.print_expr(cond);
                 self.append("?");
                 self.print_expr(t);

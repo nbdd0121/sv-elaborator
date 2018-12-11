@@ -17,35 +17,6 @@ pub struct Parser {
 }
 
 //
-// Macros for coding more handily
-//
-
-macro_rules! scope {
-    ($t:expr) => {
-        macro_rules! parse {
-            ([expr]) => {
-                $t.parse_expr_opt()
-            };
-            (expr) => {
-                $t.parse_unwrap(Self::parse_expr_opt)
-            };
-            (box(expr)) => {
-                Box::new($t.parse_unwrap(Self::parse_expr_opt))
-            };
-            ([$rule:ident]) => {
-                $t.rule()
-            };
-            ($rule:ident) => {
-                $t.parse_unwrap(Self::$rule)
-            };
-            (box($rule:ident)) => {
-                Box::new($t.parse_unwrap(Self::$rule))
-            };
-        }
-    }
-}
-
-//
 // Data types internal to parser
 //
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2167,9 +2138,7 @@ impl Parser {
     /// | expression assignment_operator expression
     /// ```
     fn parse_assign_expr(&mut self) -> Option<Expr> {
-        scope!(self);
-
-        let expr = match parse!([expr]) {
+        let expr = match self.parse_expr_opt() {
             None => return None,
             Some(v) => v,
         };
@@ -2177,7 +2146,7 @@ impl Parser {
         match **self.peek() {
             TokenKind::Operator(op) if Self::is_assign_op(op) => {
                 self.consume();
-                let rhs = parse!(expr);
+                let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
                 Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span))
             }
@@ -2186,6 +2155,10 @@ impl Parser {
     }
 
     /// Parse an expression (or data_type)
+    ///
+    /// In addition to "expression" and "data_type_or_implicit" defined in spec, we additionally
+    /// parse "delay_or_event_control", "dynamic_array_new" and "class_new" in procedural
+    /// assignment context. We also parse "cond_predicate".
     ///
     /// According to the spec:
     /// ```bnf
@@ -2203,20 +2176,73 @@ impl Parser {
     /// Our rearrangement:
     /// ```bnf
     /// expression ::=
-    ///   binary_expression
-    /// | conditional_expression
-    /// | inside_expression
-    /// | tagged_union_expression
+    ///   condition_expression
+    /// | expression [ -> | <-> ] expression
+    /// condition_expression ::=
+    ///   cond_predicate
+    /// | cond_predicate ? { attribute_instance } expression : expression
+    /// cond_predicate ::=
+    ///   cond_pattern
+    /// | cond_predicate &&& cond_pattern
+    /// cond_pattern ::=
+    ///   tagged_union_expression [ matches pattern ]
+    /// | binary_expression [ matches pattern ]
     /// binary_expression ::=
     ///   unary_expression
     /// | binary_expression binary_operator { attribute_instance } expression
+    /// | inside_expression
+    /// | dist_expression
     /// unary_expression ::=
     ///   primary
     /// | unary_operator { attribute_instance } primary
     /// | inc_or_dec_expression
     /// ```
-    /// TODO: conditional & inside are not yet completed
     fn parse_expr_opt(&mut self) -> Option<Expr> {
+        let lhs = self.parse_cond_expr_opt()?;
+        match **self.peek() {
+            TokenKind::Operator(Operator::Implies) |
+            TokenKind::Operator(Operator::Equiv) => {
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "-> and <-> not yet supported", span);
+                unreachable!();
+            }
+            _ => Some(lhs),
+        }
+    }
+
+    fn parse_expr(&mut self) -> Expr {
+        self.parse_unwrap(Self::parse_expr_opt)
+    }
+
+    fn parse_cond_expr_opt(&mut self) -> Option<Expr> {
+        let expr = self.parse_cond_pred_opt()?;
+        if self.check(TokenKind::Operator(Operator::Question)) {
+            self.consume();
+            let attr = self.parse_attr_inst_opt();
+            let true_expr = Box::new(self.parse_expr());
+            self.expect(TokenKind::Colon);
+            let false_expr = Box::new(self.parse_expr());
+            let span = expr.span.merge(false_expr.span);
+            Some(Spanned::new(
+                ExprKind::Cond(Box::new(expr), attr, true_expr, false_expr), span
+            ))
+        } else {
+            Some(expr)
+        }
+    }
+
+    fn parse_cond_pred_opt(&mut self) -> Option<Expr> {
+        let expr = self.parse_cond_pattern_opt()?;
+        if self.check(TokenKind::Operator(Operator::TripleAnd)) {
+            let span = self.peek().span;
+            self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span);
+            unreachable!();
+        } else {
+            Some(expr)
+        }
+    }
+
+    fn parse_cond_pattern_opt(&mut self) -> Option<Expr> {
         let expr = match **self.peek() {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
@@ -2224,53 +2250,18 @@ impl Parser {
                 self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span);
                 unreachable!();
             }
-            _ => {
-                match self.parse_bin_expr(0) {
-                    None => return None,
-                    Some(v) => v,
-                }
-            }
+            _ => self.parse_bin_expr(0)?,
         };
-        match **self.peek() {
-            // inside_expression
-            TokenKind::Keyword(Keyword::Inside) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "inside_expression not yet supported", span);
-                unreachable!();
-            }
-            // cond_pattern
-            TokenKind::Keyword(Keyword::Matches) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "cond_pattern not yet supported", span);
-                unreachable!();
-            }
-            // expression_or_cond_pattern
-            TokenKind::Operator(Operator::TripleAnd) => {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span);
-                unreachable!();
-            }
-            // conditional_expression
-            TokenKind::Operator(Operator::Question) => {
-                self.consume();
-                let true_expr = Box::new(self.parse_expr());
-                self.expect(TokenKind::Colon);
-                let false_expr = Box::new(self.parse_expr());
-                let span = expr.span.merge(false_expr.span);
-                Some(Spanned::new(
-                    ExprKind::Cond(Box::new(expr), true_expr, false_expr), span
-                ))
-            }
-            _ => Some(expr),
+        if self.check(TokenKind::Keyword(Keyword::Matches)) {
+            let span = self.peek().span;
+            self.report_span(Severity::Fatal, "cond_pattern not yet supported", span);
+            unreachable!();
+        } else {
+            Some(expr)
         }
-    }
-
-    fn parse_expr(&mut self) -> Expr {
-        self.parse_unwrap(Self::parse_expr_opt)
     }
     
     /// Parse binary expression using precedence climing method which saves stack space.
-    /// TODO: Handle <= properly
     fn parse_bin_expr(&mut self, prec: i32) -> Option<Expr> {
         let mut expr = match self.parse_unary_expr() {
             None => return None,
@@ -2278,6 +2269,7 @@ impl Parser {
         };
 
         loop {
+
             let (op, new_prec) = match **self.peek() {
                 TokenKind::Operator(op) => {
                     match Self::get_bin_op_prec(op) {
@@ -2286,19 +2278,21 @@ impl Parser {
                         _ => break,
                     }
                 }
+                TokenKind::Keyword(Keyword::Inside) |
+                TokenKind::Keyword(Keyword::Dist) if 7 > prec => {
+                    // 7 is the precedence of comparison operator.
+                    let span = self.peek().span;
+                    self.report_span(Severity::Fatal, "inside & dist not yet supported", span);
+                    unreachable!();
+                }
                 _ => break,
             };
 
             self.consume();
-
-            if self.consume_if_delim(Delim::Attr).is_some() {
-                let span = self.peek().span;
-                self.report_span(Severity::Fatal, "attributes not yet supported", span);
-            }
-
+            let attr = self.parse_attr_inst_opt();
             let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec));
             let span = expr.span.merge(rhs.span);
-            expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, Box::new(rhs)), span);
+            expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, attr, Box::new(rhs)), span);
         }
 
         Some(expr)
@@ -2316,7 +2310,28 @@ impl Parser {
                 Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span))
             }
             _ => {
-                self.parse_primary()
+                let expr = self.parse_primary()?;
+                match **self.peek() {
+                    // Inc/dec with attributes
+                    TokenKind::DelimGroup(Delim::Attr, _) => {
+                        match **self.peek_n(1) {
+                            TokenKind::Operator(e @ Operator::Inc) |
+                            TokenKind::Operator(e @ Operator::Dec) => {
+                                let attr = self.parse_attr_inst_opt();
+                                let span = expr.span.merge(self.consume().span);
+                                Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), attr, e), span))
+                            }
+                            _ => Some(expr),
+                        }
+                    }
+                    // Inc/dec without attributes
+                    TokenKind::Operator(e @ Operator::Inc) |
+                    TokenKind::Operator(e @ Operator::Dec) => {
+                        let span = expr.span.merge(self.consume().span);
+                        Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), None, e), span))
+                    }
+                    _ => Some(expr),
+                }
             }
         }
     }
@@ -2329,19 +2344,13 @@ impl Parser {
     ///   expression | expression : expression : expression
     /// ```
     fn parse_mintypmax_expr(&mut self) -> Option<Expr> {
-        let expr = match self.parse_expr_opt() {
-            None => return None,
-            Some(v) => v,
-        };
-
+        let expr = self.parse_expr_opt()?;
         if !self.check(TokenKind::Colon) {
             return Some(expr)
         }
-
-        scope!(self);
-        let typ = parse!(box(expr));
+        let typ = Box::new(self.parse_expr());
         self.expect(TokenKind::Colon);
-        let max = parse!(box(expr));
+        let max = Box::new(self.parse_expr());
         let span = expr.span.merge(max.span);
         Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span))
     }
@@ -2448,8 +2457,7 @@ impl Parser {
             // ( mintypmax_expression )
             TokenKind::DelimGroup(Delim::Paren, _) => {
                 Some(self.parse_delim_spanned(Delim::Paren, |this| {
-                    scope!(this);
-                    ExprKind::Paren(parse!(box(parse_mintypmax_expr)))
+                    ExprKind::Paren(Box::new(this.parse_unwrap(Self::parse_mintypmax_expr)))
                 }))
             }
             // system_tf_call
@@ -2514,23 +2522,21 @@ impl Parser {
                             self.report_span(Severity::Fatal, "assign pattern is not finished yet", span);
                             unreachable!();
                         }
-                        // This can be either function call or inc/dec expression
+                        // This can be either function call or inc/dec expression, peek ahead
                         TokenKind::DelimGroup(Delim::Attr, _) => {
-                            let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "inc/dec or function call not finished yet", span);
-                            unreachable!();
+                            if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(1) {
+                                let span = self.peek().span;
+                                self.report_span(Severity::Fatal, "function call not finished yet", span);
+                                unreachable!();
+                            } else {
+                                Some(expr)
+                            }
                         }
                         // Function call
                         TokenKind::DelimGroup(Delim::Paren, _) => {
                             let span = self.peek().span;
                             self.report_span(Severity::Fatal, "function call not finished yet", span);
                             unreachable!();
-                        }
-                        // Inc/Dec
-                        TokenKind::Operator(e @ Operator::Inc) |
-                        TokenKind::Operator(e @ Operator::Dec) => {
-                            let span = span.merge(self.consume().span);
-                            Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), e), span))
                         }
                         // Bit select
                         TokenKind::DelimGroup(Delim::Bracket, _) => Some(self.parse_select(expr)),
@@ -2628,12 +2634,11 @@ impl Parser {
         let attr = self.parse_if_delim_spanned(Delim::Attr, |this| {
             AttrInstStruct(
                 this.parse_comma_list(false, false, |this| {
-                    scope!(this);
                     match this.consume_if_id() {
                         None => None,
                         Some(name) => {
                             let expr = if this.check(TokenKind::Operator(Operator::Assign)) {
-                                Some(parse!(box(expr)))
+                                Some(Box::new(this.parse_expr()))
                             } else {
                                 None
                             };

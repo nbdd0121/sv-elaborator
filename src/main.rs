@@ -16,7 +16,7 @@ mod printer;
 use std::fs::File;
 use std::io::prelude::*;
 
-use source::{SrcMgr, Source, DiagMgr};
+use source::{SrcMgr, Source, DiagMgr, Severity};
 use printer::PrettyPrint;
 
 // use lexer::TokenKind;
@@ -29,6 +29,17 @@ fn main() {
 
     let src_mgr = Rc::new(SrcMgr::new());
     let diag_mgr = Rc::new(DiagMgr::new(src_mgr.clone()));
+
+    // Register a new panic handler. If the panic is caused by throwing fatal error, we mute
+    // Rust's built-in error message and stack trace.
+    {
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if info.payload().downcast_ref::<Severity>().is_none() {
+                hook(info)
+            }
+        }));
+    }
 
     'outer: for filename in files_to_test {
         let mut infile = File::open(filename).unwrap();
