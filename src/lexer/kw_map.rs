@@ -14,9 +14,9 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("buf", (TokenKind::Primitive(Primitive::Buf), 1));
     m.insert("bufif0", (TokenKind::Primitive(Primitive::Bufif0), 1));
     m.insert("bufif1", (TokenKind::Primitive(Primitive::Bufif1), 1));
-    m.insert("case", (TokenKind::Keyword(Keyword::Case), 1));
-    m.insert("casex", (TokenKind::Keyword(Keyword::Casex), 1));
-    m.insert("casez", (TokenKind::Keyword(Keyword::Casez), 1));
+    m.insert("case", (TokenKind::CaseKw(CaseKw::Case), 1));
+    m.insert("casex", (TokenKind::CaseKw(CaseKw::Casex), 1));
+    m.insert("casez", (TokenKind::CaseKw(CaseKw::Casez), 1));
     m.insert("cmos", (TokenKind::Primitive(Primitive::Cmos), 1));
     m.insert("deassign", (TokenKind::Keyword(Keyword::Deassign), 1));
     m.insert("default", (TokenKind::Keyword(Keyword::Default), 1));

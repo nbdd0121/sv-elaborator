@@ -612,7 +612,7 @@ impl Parser {
             // if_generate_construct
             TokenKind::Keyword(Keyword::If) => Some(self.parse_if_gen(attr)),
             // case_generate_construct
-            TokenKind::Keyword(Keyword::Case) => {
+            TokenKind::CaseKw(CaseKw::Case) => {
                 let span = self.peek().span;
                 self.report_span(Severity::Fatal, "case_generate_construct is not supported", span);
                 unreachable!()
@@ -638,7 +638,8 @@ impl Parser {
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::NonIntTy(_) => {
+            TokenKind::NonIntTy(_) |
+            TokenKind::Keyword(Keyword::Void) => {
                 Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
             }
             TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
@@ -1327,6 +1328,10 @@ impl Parser {
                 let span = self.consume().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
                 Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span))
+            }
+            TokenKind::Keyword(Keyword::Void) => {
+                let token = self.consume();
+                Some(Spanned::new(DataTypeKind::Void, token.span))
             }
             TokenKind::Keyword(Keyword::Type) => {
                 let token = self.consume();
@@ -2483,7 +2488,8 @@ impl Parser {
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::NonIntTy(_) => {
+            TokenKind::NonIntTy(_) |
+            TokenKind::Keyword(Keyword::Void) => {
                 let ty = Box::new(self.parse_kw_data_type().unwrap());
                 let span = ty.span;
                 Some(Spanned::new(ExprKind::Type(ty), span))

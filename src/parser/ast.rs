@@ -166,6 +166,23 @@ impl fmt::Display for UniqPrio {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseKw {
+    Case,
+    Casez,
+    Casex,
+}
+
+impl fmt::Display for CaseKw {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            CaseKw::Case => "case",
+            CaseKw::Casez => "casez",
+            CaseKw::Casex => "casex",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Primitive {
     Cmos,
     Rcmos,
@@ -302,6 +319,8 @@ pub enum DataTypeKind {
     HierName(Option<Scope>, HierId, Vec<Dim>),
     /// Type reference of form type'(expr_or_data_type)
     TypeRef(Box<Expr>),
+    /// Void type
+    Void,
 }
 
 /// Should be boxed when nested in other AST structure.

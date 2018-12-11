@@ -234,6 +234,7 @@ pub enum TokenKind {
     ChargeStrength(ChargeStrength),
     Edge(Edge),
     UniqPrio(UniqPrio),
+    CaseKw(CaseKw),
     /// Exclude not, and, or, xor, which will be parsed as keyword,
     Primitive(Primitive),
 
