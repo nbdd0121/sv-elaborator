@@ -1007,7 +1007,7 @@ impl Tokenizer {
                 if self.nextch_if('*') {
                     TokenKind::Operator(Operator::WildPattern)
                 } else {
-                    TokenKind::Operator(Operator::Dot)
+                    TokenKind::Dot
                 }
             }
             ':' => {

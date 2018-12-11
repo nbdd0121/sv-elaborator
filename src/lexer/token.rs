@@ -55,8 +55,6 @@ pub enum Operator {
     LNot,
     // "~",
     Not,
-    // "."
-    Dot,
     // "<"
     Lt,
     // ">"
@@ -201,6 +199,8 @@ pub enum TokenKind {
     At,
     /// "#"
     Hash,
+    /// "."
+    Dot,
     /// ","
     Comma,
     /// ":"

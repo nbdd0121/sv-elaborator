@@ -247,6 +247,12 @@ impl Parser {
         self.diag.report(diag)
     }
 
+    fn unimplemented(&mut self) -> ! {
+        let span = self.peek().span;
+        self.report_span(Severity::Fatal, "not yet implemented", span);
+        unreachable!();
+    }
+
     //
     // Utility functions
     //
@@ -434,7 +440,7 @@ impl Parser {
 
     /// Parse a seperated list, but do not attempt to build a vector.
     fn parse_sep_list_unit<F: FnMut(&mut Self) -> bool>(
-        &mut self, sep: Operator, empty: bool, trail: bool, mut f: F
+        &mut self, sep: TokenKind, empty: bool, trail: bool, mut f: F
     ) {
         // Parse first element
         if !f(self) {
@@ -448,7 +454,7 @@ impl Parser {
 
         loop {
             // Consume comma if there is some, break otherwise
-            let comma = match self.consume_if(TokenKind::Operator(sep)) {
+            let comma = match self.consume_if(sep.clone()) {
                 None => break,
                 Some(v) => v,
             };
@@ -553,6 +559,10 @@ impl Parser {
         match self.peek().value {
             TokenKind::Eof |
             TokenKind::Keyword(Keyword::Endmodule) |
+            TokenKind::Keyword(Keyword::Endprimitive) |
+            TokenKind::Keyword(Keyword::Endinterface) |
+            TokenKind::Keyword(Keyword::Endprogram) |
+            TokenKind::Keyword(Keyword::Endpackage) |
             TokenKind::Keyword(Keyword::Endgenerate) |
             TokenKind::Keyword(Keyword::End) => None,
             // Externs are parsed together (even though they're not currently supported yet)
@@ -622,6 +632,10 @@ impl Parser {
                 let tf = self.parse_sys_tf_call();
                 self.expect(TokenKind::Semicolon);
                 Some(Item::SysTfCall(Box::new(tf)))
+            }
+            // modport_declaration
+            TokenKind::Keyword(Keyword::Modport) => {
+                Some(self.parse_modport_decl())
             }
             // net_declaration
             TokenKind::Keyword(Keyword::Interconnect) => {
@@ -902,7 +916,7 @@ impl Parser {
                 }
 
                 // Explicit port declaration
-                if let Some(_) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
+                if let Some(_) = this.consume_if(TokenKind::Dot) {
                     let name = Box::new(this.expect_id());
                     let expr = Box::new(this.parse_unwrap(|this| {
                         this.parse_delim(Delim::Paren, Self::parse_expr_opt)
@@ -931,7 +945,7 @@ impl Parser {
                 let is_intf = if let TokenKind::Keyword(Keyword::Interface) = **this.peek() {
                     // Okay, this is definitely an interface port
                     this.consume();
-                    if this.consume_if(TokenKind::Operator(Operator::Dot)).is_some() {
+                    if this.consume_if(TokenKind::Dot).is_some() {
                         let modport = this.expect_id();
                         Some((None, Some(Box::new(modport))))
                     } else {
@@ -939,7 +953,7 @@ impl Parser {
                     }
                 } else if let TokenKind::Id(_) = **this.peek() {
                     // If we see the dot, then this is definitely is a interface
-                    if let TokenKind::Operator(Operator::Dot) = **this.peek_n(1) {
+                    if let TokenKind::Dot = **this.peek_n(1) {
                         let intf = this.expect_id();
                         this.consume();
                         let modport = this.expect_id();
@@ -1540,7 +1554,62 @@ impl Parser {
     //
     // A.2.9 Interface declarations
     //
-
+    
+    fn parse_modport_decl(&mut self) -> Item {
+        self.consume();
+        let vec = self.parse_comma_list(false, false, |this| {
+            let id = this.consume_if_id()?;
+            let list = this.parse_delim(Delim::Paren, |this| {
+                this.parse_comma_list(true, false, |this| {
+                    // Parse optional prefixing attribute first.
+                    let attr = this.parse_attr_inst_opt();
+                    match **this.peek() {
+                        TokenKind::Keyword(Keyword::Clocking) => {
+                            // modport_clocking_declaration
+                            this.consume();
+                            let id = this.expect_id();
+                            Some(ModportPortDecl::Clocking(attr, Box::new(id)))
+                        }
+                        TokenKind::Keyword(Keyword::Import) |
+                        TokenKind::Keyword(Keyword::Export) => {
+                            // modport_tf_ports_declaration
+                            this.unimplemented()
+                        }
+                        TokenKind::PortDir(dir) => {
+                            this.consume();
+                            let mut vec = Vec::new();
+                            loop {
+                                if this.check(TokenKind::Dot) {
+                                    let id = this.expect_id();
+                                    let expr = this.parse_delim(Delim::Paren, Self::parse_expr);
+                                    vec.push(ModportSimplePort::Explicit(id, Box::new(expr)))
+                                } else {
+                                    let id = this.expect_id();
+                                    vec.push(ModportSimplePort::Named(id))
+                                }
+                                if let TokenKind::Comma = **this.peek() {
+                                    match **this.peek_n(1) {
+                                        // Consume comma and continue
+                                        TokenKind::Dot | TokenKind::Id(_) => {
+                                            this.consume();
+                                            continue;
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                                break;
+                            }
+                            Some(ModportPortDecl::Simple(attr, dir, vec))
+                        }
+                        _ => None,
+                    }
+                })
+            });
+            Some((id, list))
+        });
+        self.expect(TokenKind::Semicolon);
+        Item::ModportDecl(vec)
+    }
     
     //
     // A.4.1.1 Module instantiation
@@ -1551,7 +1620,7 @@ impl Parser {
         let mut peek = 1;
         let mut has_hash = false;
         // This is an interface port
-        if let TokenKind::Operator(Operator::Dot) = **self.peek_n(1) {
+        if let TokenKind::Dot = **self.peek_n(1) {
             return ItemDAB::IntfPort
         }
         // Skip over parameter assignment if any
@@ -1560,7 +1629,7 @@ impl Parser {
             if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(2) {
                 peek = 3;
             } else {
-                // Hash a hash but no parenthesis, then the hash should be delay control.
+                // Hash but no parenthesis, then the hash should be delay control.
                 // This is therefore a net_declaration
                 return ItemDAB::NetDecl
             }
@@ -1670,7 +1739,7 @@ impl Parser {
                     }
                     named_seen = true;
                     Some(Arg::NamedWildcard(attr))
-                } else if let Some(v) = this.consume_if(TokenKind::Operator(Operator::Dot)) {
+                } else if let Some(v) = this.consume_if(TokenKind::Dot) {
                     let name = this.expect_id();
                     let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
                     if ordered_seen && option != ArgOption::Arg {
@@ -2595,7 +2664,7 @@ impl Parser {
                     let span = expr.span.end.span_to(self.peek().span.start);
                     expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);
                 }
-                TokenKind::Operator(Operator::Dot) => {
+                TokenKind::Dot => {
                     self.consume();
                     let id = self.expect_id();
                     let span = expr.span.merge(id.span);
@@ -2752,7 +2821,7 @@ impl Parser {
     /// Parse hierachical identifier
     fn parse_hier_id(&mut self) -> Option<HierId> {
         let mut id = None;
-        self.parse_sep_list_unit(Operator::Dot, true, false, |this| {
+        self.parse_sep_list_unit(TokenKind::Dot, true, false, |this| {
             match **this.peek() {
                 TokenKind::Keyword(Keyword::This) => {
                     let tok = this.consume();

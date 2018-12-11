@@ -385,6 +385,34 @@ impl PrettyPrint {
                 }
                 self.append(";");
             }
+            Item::ModportDecl(decl) => {
+                self.append("modport ");
+                self.print_comma_list(decl, |this, decl| {
+                    this.append(format!("{} (\n", decl.0));
+                    this.indent(4);
+                    this.print_comma_list_newline(&decl.1, |this, item| {
+                        match item {
+                            ModportPortDecl::Simple(_attr, dir, list) => {
+                                this.append(format!("{} ", dir));
+                                this.print_comma_list(list, |this, item| {
+                                    match item {
+                                        ModportSimplePort::Named(name) => this.append(format!("{}", name)),
+                                        ModportSimplePort::Explicit(name, expr) => {
+                                            this.append(format!(".{}(", name));
+                                            this.print_expr(expr);
+                                            this.append(")");
+                                        }
+                                    }
+                                });
+                            }
+                            _ => unimplemented!(),
+                        }
+                    });
+                    this.indent(-4);
+                    this.indent_append(")");
+                });
+                self.append(";");
+            }
             _ => {
                 eprintln!("{:?}", obj);
                 unimplemented!()

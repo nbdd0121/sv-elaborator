@@ -238,6 +238,8 @@ pub enum Item {
     IfGen(Box<IfGen>),
     GenBlock(Box<GenBlock>),
     SysTfCall(Box<SysTfCall>),
+
+    ModportDecl(Vec<(Ident, Vec<ModportPortDecl>)>),
 }
 
 impl AstNode for Item {
@@ -397,7 +399,19 @@ pub type Dim = Spanned<DimKind>;
 // A.2.9 Interface declarations
 //
 
+/// The type of modport port
+#[derive(Debug)]
+pub enum ModportPortDecl {
+    Simple(Option<Box<AttrInst>>, PortDir, Vec<ModportSimplePort>),
+    Clocking(Option<Box<AttrInst>>, Box<Ident>),
+    // TODO: modport_tf_port
+}
 
+#[derive(Debug)]
+pub enum ModportSimplePort {
+    Named(Ident),
+    Explicit(Ident, Box<Expr>),
+}
 
 //
 // A.4.1.1 Module instantiations
