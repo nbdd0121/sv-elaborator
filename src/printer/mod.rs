@@ -385,7 +385,7 @@ impl PrettyPrint {
                 }
                 self.append(";");
             }
-            Item::ModportDecl(decl) => {
+            Item::ModportDecl(_attr, decl) => {
                 self.append("modport ");
                 self.print_comma_list(decl, |this, decl| {
                     this.append(format!("{} (\n", decl.0));

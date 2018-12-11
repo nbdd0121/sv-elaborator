@@ -227,6 +227,12 @@ pub enum Item {
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
 
+    /// Standard typedef
+    Typedef(Option<Box<AttrInst>>, Box<DataType>, Box<Ident>, Vec<Dim>),
+
+    /// Typedef that imports data types from interface
+    TypedefIntf(Option<Box<AttrInst>>, Box<Expr>, Box<Ident>, Box<Ident>),
+
     ContinuousAssign(Vec<Expr>),
     Initial(Box<Stmt>),
     Always(AlwaysKw, Box<Stmt>),
@@ -239,7 +245,7 @@ pub enum Item {
     GenBlock(Box<GenBlock>),
     SysTfCall(Box<SysTfCall>),
 
-    ModportDecl(Vec<(Ident, Vec<ModportPortDecl>)>),
+    ModportDecl(Option<Box<AttrInst>>, Vec<(Ident, Vec<ModportPortDecl>)>),
 }
 
 impl AstNode for Item {
@@ -327,6 +333,12 @@ pub enum DataTypeKind {
 
 /// Should be boxed when nested in other AST structure.
 pub type DataType = Spanned<DataTypeKind>;
+
+impl AstNode for DataType {
+    fn name() -> &'static str {
+        "data type"
+    }
+}
 
 /// Represent a net_port_type (but without data type)
 #[derive(Debug)]

@@ -635,7 +635,7 @@ impl Parser {
             }
             // modport_declaration
             TokenKind::Keyword(Keyword::Modport) => {
-                Some(self.parse_modport_decl())
+                Some(self.parse_modport_decl(attr))
             }
             // net_declaration
             TokenKind::Keyword(Keyword::Interconnect) => {
@@ -645,18 +645,24 @@ impl Parser {
             TokenKind::NetTy(_) => {
                 unimplemented!();
             }
+            // typedef
+            TokenKind::Keyword(Keyword::Typedef) => Some(self.parse_typedef(attr)),
             // data_declaration. Either begin with const/var or explicit data type.
             TokenKind::Keyword(Keyword::Const) |
             TokenKind::Keyword(Keyword::Var) |
-            TokenKind::Keyword(Keyword::Type) |
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) |
+            TokenKind::Keyword(Keyword::Struct) |
+            TokenKind::Keyword(Keyword::Union) |
+            TokenKind::Keyword(Keyword::Enum) |
+            TokenKind::Keyword(Keyword::String) |
+            TokenKind::Keyword(Keyword::Chandle) |
+            TokenKind::Keyword(Keyword::Virtual) |
+            TokenKind::Keyword(Keyword::Event) |
+            TokenKind::Keyword(Keyword::Type) |
             TokenKind::Keyword(Keyword::Void) => {
-                Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
-            }
-            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw) => {
                 Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
             }
             TokenKind::Id(_) => {
@@ -819,7 +825,8 @@ impl Parser {
                 // If a new keyword is seen update it.
                 match **this.peek() {
                     TokenKind::Eof => return false,
-                    TokenKind::Keyword(e) if e == Keyword::Parameter || e == Keyword::Localparam => {
+                    TokenKind::Keyword(e @ Keyword::Parameter) |
+                    TokenKind::Keyword(e @ Keyword::Localparam) => {
                         this.consume();
                         let old_decl = mem::replace(&mut param_decl, ParamDecl {
                             kw: e,
@@ -1154,6 +1161,59 @@ impl Parser {
         }
     }
 
+    fn parse_typedef(&mut self, attr: Option<Box<AttrInst>>) -> Item {
+        self.consume();
+        // First try to parse it as a forward typedef.
+        match **self.peek() {
+            TokenKind::Keyword(Keyword::Interface) => {
+                let mut peek = 1;
+                if let TokenKind::Keyword(Keyword::Class) = **self.peek_n(1) {
+                    peek += 1;
+                }
+                if let TokenKind::Id(_) = **self.peek_n(peek) {
+                    if let TokenKind::Semicolon = **self.peek_n(peek + 1) {
+                        // This is a forward typedef
+                        self.unimplemented();
+                    }
+                }
+            }
+            TokenKind::Keyword(Keyword::Enum) |
+            TokenKind::Keyword(Keyword::Struct) |
+            TokenKind::Keyword(Keyword::Union) |
+            TokenKind::Keyword(Keyword::Class) => {
+                if let TokenKind::Id(_) = **self.peek_n(1) {
+                    if let TokenKind::Semicolon = **self.peek_n(2) {
+                        // This is a forward typedef
+                        self.unimplemented();
+                    }
+                }
+            }
+            _ => (),
+        }
+        // We parse the data type as expression and we need to distinguish between interface type
+        // import vs normal typedef.
+        let expr = self.parse_expr();
+        // This is a type import
+        if let ExprKind::Member(intf, ty) = expr.value {
+            let id = self.expect_id();
+            self.expect(TokenKind::Semicolon);
+            Item::TypedefIntf(attr, intf, Box::new(ty), Box::new(id))
+        } else {
+            let span = expr.span;
+            let ty = match self.conv_expr_to_type(expr) {
+                None => {
+                    self.report_span(Severity::Fatal, "expected data type", span);
+                    // TODO: Error recovery
+                    unreachable!();
+                },
+                Some(v) => v,
+            };
+            let id = self.expect_id();
+            let dim = self.parse_list(Self::parse_dim_opt);
+            Item::Typedef(attr, Box::new(ty), Box::new(id), dim)
+        }
+    }
+
     /// Parse a package import declaration
     fn parse_pkg_import_decl_opt(&mut self) -> Option<Vec<PkgImportItem>> {
         if self.consume_if(TokenKind::Keyword(Keyword::Import)).is_none() {
@@ -1204,22 +1264,6 @@ impl Parser {
     //
     // A.2.2.1 Net and variable types
     //
-
-    /// If this keyword can begin a data_type definition
-    fn is_keyword_typename(kw: Keyword) -> bool {
-        match kw {
-            Keyword::Struct |
-            Keyword::Union |
-            Keyword::Enum |
-            Keyword::String |
-            Keyword::Chandle |
-            Keyword::Virtual |
-            Keyword::Interface |
-            Keyword::Event |
-            Keyword::Type => true,
-            _ => false,
-        }
-    }
 
     /// Parse a data type (or implicit) followed a decl_assign.
     fn parse_data_type_decl_assign(&mut self) -> (Option<DataType>, DeclAssign) {
@@ -1323,7 +1367,7 @@ impl Parser {
     /// | class_type
     /// ```
     /// TODO: Better span in this function
-    fn parse_kw_data_type(&mut self) -> Option<DataType> {
+    fn parse_kw_data_type(&mut self) -> DataType {
         match **self.peek() {
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) => {
@@ -1336,29 +1380,29 @@ impl Parser {
                 };
                 let sign = self.parse_signing();
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Some(Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span))
+                Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)
             }
             TokenKind::Signing(sign) => {
                 let span = self.consume().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Some(Spanned::new(DataTypeKind::Implicit(sign, dim), span))
+                Spanned::new(DataTypeKind::Implicit(sign, dim), span)
             }
             TokenKind::Keyword(Keyword::Void) => {
                 let token = self.consume();
-                Some(Spanned::new(DataTypeKind::Void, token.span))
+                Spanned::new(DataTypeKind::Void, token.span)
             }
             TokenKind::Keyword(Keyword::Type) => {
                 let token = self.consume();
                 // TODO: Might be parenthesis
-                Some(Spanned::new(DataTypeKind::Type, token.span))
+                Spanned::new(DataTypeKind::Type, token.span)
             }
             TokenKind::DelimGroup(Delim::Bracket, _) => {
                 let span = self.peek().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
-                Some(Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span))
+                Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)
             }
             _ => {
-                None
+                self.unimplemented();
             }
         }
     }
@@ -1555,7 +1599,7 @@ impl Parser {
     // A.2.9 Interface declarations
     //
     
-    fn parse_modport_decl(&mut self) -> Item {
+    fn parse_modport_decl(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         self.consume();
         let vec = self.parse_comma_list(false, false, |this| {
             let id = this.consume_if_id()?;
@@ -1608,7 +1652,7 @@ impl Parser {
             Some((id, list))
         });
         self.expect(TokenKind::Semicolon);
-        Item::ModportDecl(vec)
+        Item::ModportDecl(attr, vec)
     }
     
     //
@@ -2582,18 +2626,20 @@ impl Parser {
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
             TokenKind::DelimGroup(Delim::Bracket, _) |
-            TokenKind::Keyword(Keyword::Type) |
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
             TokenKind::NonIntTy(_) |
+            TokenKind::Keyword(Keyword::Struct) |
+            TokenKind::Keyword(Keyword::Union) |
+            TokenKind::Keyword(Keyword::Enum) |
+            TokenKind::Keyword(Keyword::String) |
+            TokenKind::Keyword(Keyword::Chandle) |
+            TokenKind::Keyword(Keyword::Virtual) |
+            TokenKind::Keyword(Keyword::Event) |
+            TokenKind::Keyword(Keyword::Type) |
             TokenKind::Keyword(Keyword::Void) => {
-                let ty = Box::new(self.parse_kw_data_type().unwrap());
-                let span = ty.span;
-                Some(Spanned::new(ExprKind::Type(ty), span))
-            }
-            TokenKind::Keyword(kw) if Self::is_keyword_typename(kw)  => {
-                let ty = Box::new(self.parse_kw_data_type().unwrap());
+                let ty = Box::new(self.parse_kw_data_type());
                 let span = ty.span;
                 Some(Spanned::new(ExprKind::Type(ty), span))
             }
