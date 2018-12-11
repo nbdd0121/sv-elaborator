@@ -26,7 +26,7 @@ impl PrettyPrint {
         }
     }
 
-    fn append<T: Into<String>>(&mut self, str: T) {
+    pub fn append<T: Into<String>>(&mut self, str: T) {
         self.output.push_str(&str.into());
     }
 
@@ -176,12 +176,24 @@ impl PrettyPrint {
     }
 
     fn print_module_decl(&mut self, obj: &DesignDecl) {
-        self.indent_append(format!("{}", obj.kw));
+        self.append(format!("{}", obj.kw));
         self.indent(4);
         if obj.lifetime == Lifetime::Automatic {
             self.append(format!(" automatic"));
         }
         self.append(format!(" {}", obj.name));
+        for items in &obj.pkg_import {
+            self.append("\nimport ");
+            self.print_comma_list(items, |this, PkgImportItem(pkg, item)| {
+                this.append(format!("{}", pkg));
+                this.append("::");
+                match item {
+                    None => this.append("*"),
+                    Some(v) => this.append(format!("{}", v)),
+                }
+            });
+            self.append(";");
+        }
         if let Some(ref v) = obj.param {
             self.append(format!(" #(\n"));
             for (item, _, last) in v.iter().identify_first_last() {
@@ -200,17 +212,15 @@ impl PrettyPrint {
         }
         self.append(format!(";\n"));
         for item in &obj.items {
+            self.indent_append("");
             self.print_item(item);
+            self.append("\n");
         }
-        self.append(format!("end{}\n", obj.kw));
         self.indent(-4);
+        self.append(format!("end{}", obj.kw));
     }
 
     fn print_hier_instantiation(&mut self, obj: &HierInstantiation) {
-        self.indent_append("");
-        if let Some(_) = obj.attr {
-            unimplemented!();
-        }
         self.append(format!("{}", obj.name));
         if let Some(v) = &obj.param {
             self.append(" #(\n");
@@ -237,7 +247,7 @@ impl PrettyPrint {
             self.indent(-4);
             self.indent_append(")");
         }
-        self.append(";\n");
+        self.append(";");
     }
 
     fn print_arg(&mut self, obj: &Arg) {
@@ -258,38 +268,50 @@ impl PrettyPrint {
     pub fn print_item(&mut self, obj: &Item) {
         match obj {
             Item::DesignDecl(v) => self.print_module_decl(v),
+            Item::PkgImport(items) => {
+                self.append("import ");
+                self.print_comma_list(items, |this, PkgImportItem(pkg, item)| {
+                    this.append(format!("{}", pkg));
+                    this.append("::");
+                    match item {
+                        None => this.append("*"),
+                        Some(v) => this.append(format!("{}", v)),
+                    }
+                });
+                self.append(";");
+            }
             Item::HierInstantiation(v) => self.print_hier_instantiation(v),
             Item::ContinuousAssign(list) => {
-                self.indent_append("assign ");
+                self.append("assign ");
                 for (item, _, last) in list.iter().identify_first_last() {
                     self.print_expr(item);
                     if !last {
-                        self.append(format!(", "));
+                        self.append(", ");
                     }
                 }
-                self.append(format!(";\n"));
+                self.append(";");
             }
             Item::Initial(stmt) => {
-                self.indent_append("initial ");
+                self.append("initial ");
                 self.print_stmt(&stmt);
-                self.append("\n");
             }
             Item::Always(kw, stmt) => {
-                self.indent_append(format!("{} ", kw));
+                self.append(format!("{} ", kw));
                 self.print_stmt(&stmt);
-                self.append("\n");
             }
             Item::GenRegion(list) => {
-                self.indent_append("generate\n");
+                self.append("generate\n");
                 self.indent(4);
                 for item in list {
+                    self.indent_append("");
                     self.print_item(item);
+                    self.append("\n");
                 }
                 self.indent(-4);
-                self.indent_append("endgenerate\n");
+                self.indent_append("endgenerate");
             }
             Item::LoopGen(gen) => {
-                self.indent_append("for (");
+                self.append("for (");
                 if gen.genvar {
                     self.append("genvar ");
                 }
@@ -299,47 +321,40 @@ impl PrettyPrint {
                 self.print_expr(&gen.cond);
                 self.append("; ");
                 self.print_expr(&gen.update);
-                self.append(")\n");
-                self.indent(4);
+                self.append(") ");
                 self.print_item(&gen.block);
-                self.indent(-4);
             }
             Item::IfGen(gen) => {
-                self.indent_append("if (");
+                self.append("if (");
                 self.print_expr(&gen.cond);
-                self.append(")\n");
-                self.indent(4);
+                self.append(") ");
                 self.print_item(&gen.true_block);
-                self.indent(-4);
                 if let Some(v) = &gen.false_block {
-                    self.indent_append("else\n");
-                    self.indent(4);
+                    self.append(" else ");
                     self.print_item(&v);
-                    self.indent(-4);
                 }
             }
             Item::GenBlock(gen) => {
-                self.indent(-4);
-                self.indent_append("begin");
+                self.append("begin");
                 if let Some(v) = &gen.name {
                     self.append(format!(": {}", v));
                 }
                 self.append("\n");
                 self.indent(4);
                 for item in &gen.items {
+                    self.indent_append("");
                     self.print_item(item);
+                    self.append("\n");
                 }
                 self.indent(-4);
-                self.indent_append("end\n");
-                self.indent(4);
+                self.indent_append("end");
             }
             Item::SysTfCall(tf) => {
-                self.indent_append("");
                 self.print_sys_tf_call(tf);
-                self.append(";\n");
+                self.append(";");
             }
             Item::ParamDecl(decl) => {
-                self.indent_append(format!("{} ", if decl.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
+                self.append(format!("{} ", if decl.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
                 if let Some(ty) = &decl.ty {
                     self.print_type(ty);
                     self.append(" ");
@@ -350,10 +365,10 @@ impl PrettyPrint {
                         self.append(format!(", "));
                     }
                 }
-                self.append(";\n");
+                self.append(";");
             }
             Item::DataDecl(decl) => {
-                self.indent_append("");
+                self.append("");
                 if decl.has_const {
                     self.append("const ");
                 }
@@ -368,7 +383,7 @@ impl PrettyPrint {
                         self.append(format!(", "));
                     }
                 }
-                self.append(";\n");
+                self.append(";");
             }
             _ => {
                 eprintln!("{:?}", obj);
