@@ -2157,8 +2157,8 @@ impl Parser {
     /// Parse an expression (or data_type)
     ///
     /// In addition to "expression" and "data_type_or_implicit" defined in spec, we additionally
-    /// parse "delay_or_event_control", "dynamic_array_new" and "class_new" in procedural
-    /// assignment context. We also parse "cond_predicate".
+    /// parse "delay_or_event_control", "dynamic_array_new" and "class_new" (not yet stubbed) in
+    /// procedural assignment context. We also parse "cond_predicate".
     ///
     /// According to the spec:
     /// ```bnf
@@ -2217,7 +2217,6 @@ impl Parser {
     fn parse_cond_expr_opt(&mut self) -> Option<Expr> {
         let expr = self.parse_cond_pred_opt()?;
         if self.check(TokenKind::Operator(Operator::Question)) {
-            self.consume();
             let attr = self.parse_attr_inst_opt();
             let true_expr = Box::new(self.parse_expr());
             self.expect(TokenKind::Colon);
