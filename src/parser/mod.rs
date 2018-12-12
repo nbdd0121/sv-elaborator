@@ -1194,11 +1194,25 @@ impl Parser {
         // import vs normal typedef.
         let expr = self.parse_expr();
         // This is a type import
-        if let ExprKind::Member(intf, ty) = expr.value {
+        match expr.value {
+            ExprKind::Member(intf, ty) => {
             let id = self.expect_id();
             self.expect(TokenKind::Semicolon);
             Item::TypedefIntf(attr, intf, Box::new(ty), Box::new(id))
-        } else {
+            }
+            ExprKind::HierName(None, HierId::Name(Some(intf), ty)) => {
+                let id = self.expect_id();
+                self.expect(TokenKind::Semicolon);
+                // TODO: Better span
+                let span = expr.span.start.span_to(Pos(ty.span.start.0 - 1));
+                Item::TypedefIntf(
+                    attr,
+                    Box::new(Spanned::new(ExprKind::HierName(None, *intf), span)),
+                    ty,
+                    Box::new(id)
+                )
+            }
+            _ => {
             let span = expr.span;
             let ty = match self.conv_expr_to_type(expr) {
                 None => {
@@ -1210,8 +1224,10 @@ impl Parser {
             };
             let id = self.expect_id();
             let dim = self.parse_list(Self::parse_dim_opt);
+                self.expect(TokenKind::Semicolon);
             Item::Typedef(attr, Box::new(ty), Box::new(id), dim)
         }
+    }
     }
 
     /// Parse a package import declaration
