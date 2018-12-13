@@ -1,6 +1,7 @@
-use super::super::source::{Span, Spanned};
+use super::super::source::Span;
 use super::super::syntax::tokens::{Token, Keyword};
 use std::fmt;
+use std::ops::{Deref, DerefMut};
 
 //
 // General purpose helpers
@@ -16,6 +17,56 @@ pub trait AstNode where Self: Sized {
         None
     }
 }
+
+/// Represent an object with span information
+#[derive(Clone, Copy)]
+pub struct Spanned<T> {
+    pub value: T,
+    pub span: Span,
+}
+
+impl<T> Spanned<T> {
+    pub fn new(value: T, span: Span) -> Spanned<T> {
+        Spanned {
+            value: value,
+            span: span,
+        }
+    }
+
+    pub fn new_unspanned(value: T) -> Spanned<T> {
+        Spanned {
+            value: value,
+            span: Span::none(),
+        }
+    }
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for Spanned<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
 
 //
 // Keyword enums

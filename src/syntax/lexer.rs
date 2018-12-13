@@ -2,7 +2,7 @@ use super::tokens::*;
 use super::ast::*;
 
 use super::kw_map::HASHMAP;
-use super::super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Spanned};
+use super::super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos};
 use super::super::number::{LogicValue, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};

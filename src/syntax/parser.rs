@@ -1,6 +1,6 @@
 use super::ast::*;
 use super::tokens::*;
-use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
+use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span};
 
 use std::mem;
 use std::rc::Rc;

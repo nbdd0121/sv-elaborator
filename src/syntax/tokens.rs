@@ -1,7 +1,6 @@
 #![warn(dead_code)]
 
 use super::super::number::{LogicValue, LogicNumber};
-use super::super::source::Spanned;
 
 use std::fmt;
 use std::collections::VecDeque;
