@@ -571,6 +571,18 @@ pub enum TimingCtrl {
 }
 
 //
+// A.6.7.1 Patterns
+//
+
+/// Represent an assignment pattern.
+#[derive(Debug)]
+pub enum AssignPattern {
+    Simple(Vec<Expr>),
+    Keyed(Vec<(Expr, Expr)>),
+    Mult(Box<Expr>, Vec<Expr>),
+}
+
+//
 // A.8.2 Subroutine call
 //
 
@@ -603,6 +615,9 @@ pub enum ExprKind {
 
     /// Multiple concatenation
     MultConcat(Box<Expr>, Box<Expr>),
+
+    /// Assignment pattern expression
+    AssignPattern(Option<Box<DataType>>, AssignPattern),
 
     /// Element select
     Select(Box<Expr>, Dim),

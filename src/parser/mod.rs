@@ -2327,6 +2327,69 @@ impl Parser {
     }
 
     //
+    // A.6.7.1 Patterns
+    //
+
+    fn parse_assign_pattern(&mut self) -> AssignPattern {
+        self.parse_delim(Delim::TickBrace, |this| {
+            let expr = match this.parse_expr_opt() {
+                None => {
+                    let span = this.peek().span;
+                    this.report_span(
+                        Severity::Error,
+                        "assignment pattern cannot be empty",
+                        span
+                    );
+                    // Error recovery: return a empty list
+                    return AssignPattern::Simple(Vec::new())
+                }
+                Some(v) => v,
+            };
+            match **this.peek() {
+                TokenKind::Comma => {
+                    // Simple pattern
+                    let mut list = vec![expr];
+                    while this.check(TokenKind::Comma) {
+                        list.push(this.parse_expr());
+                    }
+                    AssignPattern::Simple(list)
+                }
+                TokenKind::Colon => {
+                    // Keyed pattern
+                    this.consume();
+                    let val = this.parse_expr();
+                    let mut list = vec![(expr, val)];
+                    while this.check(TokenKind::Comma) {
+                        let key = this.parse_expr();
+                        this.expect(TokenKind::Colon);
+                        let expr = this.parse_expr();
+                        list.push((key, expr));
+                    }
+                    AssignPattern::Keyed(list)
+                }
+                TokenKind::DelimGroup(Delim::Paren, _) => {
+                    let repeated = this.parse_expr();
+                    let list = match repeated.value {
+                        ExprKind::Concat(list) => list,
+                        _ => {
+                            this.report_span(
+                                Severity::Error,
+                                "expected a simple list of expressions",
+                                repeated.span
+                            );
+                            vec![repeated]
+                        }
+                    };
+                    AssignPattern::Mult(Box::new(expr), list)
+                }
+                // Otherwise just return a pattern with one element.
+                // If there are extra tokens, parse_delim will catch them for us.
+                _ => AssignPattern::Simple(vec![expr]),
+            }
+        })
+    }
+
+    //
     // A.8.2 Subroutine calls
     //
 
@@ -2699,8 +2762,8 @@ impl Parser {
             // assignment_pattern_expression
             TokenKind::DelimGroup(Delim::TickBrace, _) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "assign pattern is not finished yet", span);
-                unreachable!();
+                let pat = self.parse_assign_pattern();
+                Some(Spanned::new(ExprKind::AssignPattern(None, pat), span))
             }
             // ( mintypmax_expression )
             TokenKind::DelimGroup(Delim::Paren, _) => {
@@ -2769,9 +2832,17 @@ impl Parser {
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
                         TokenKind::DelimGroup(Delim::TickBrace, _) => {
-                            let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "assign pattern is not finished yet", span);
-                            unreachable!();
+                            let ty = match self.conv_expr_to_type(expr) {
+                                None => {
+                                    self.report_span(Severity::Fatal, "expected data type", span);
+                                    // TODO: Error recovery
+                                    unreachable!();
+                                },
+                                Some(v) => v,
+                            };
+                            let span = span.merge(self.peek().span);
+                            let pat = self.parse_assign_pattern();
+                            Some(Spanned::new(ExprKind::AssignPattern(Some(Box::new(ty)), pat), span))
                         }
                         // This can be either function call or inc/dec expression, peek ahead
                         TokenKind::DelimGroup(Delim::Attr, _) => {

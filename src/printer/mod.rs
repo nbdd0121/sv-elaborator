@@ -385,6 +385,11 @@ impl PrettyPrint {
                 }
                 self.append(";");
             }
+            Item::TypedefIntf(_attr, intf, ty, id) => {
+                self.append("typedef ");
+                self.print_expr(intf);
+                self.append(format!(".{} {};", ty, id));
+            }
             Item::Typedef(_attr, ty, id, dim) => {
                 self.append("typedef ");
                 self.print_type(&ty);
@@ -553,6 +558,31 @@ impl PrettyPrint {
                 self.append("{");
                 self.print_expr(mult);
                 self.print_expr(concat);
+                self.append("}");
+            }
+            ExprKind::AssignPattern(ty, pat) => {
+                if let Some(v) = ty {
+                    self.print_type(v);
+                }
+                self.append("'{");
+                match pat {
+                    AssignPattern::Simple(list) => {
+                        self.print_comma_list(list, Self::print_expr);
+                    }
+                    AssignPattern::Keyed(list) => {
+                        self.print_comma_list(list, |this, (k, v)| {
+                            this.print_expr(k);
+                            this.append(": ");
+                            this.print_expr(v);
+                        });
+                    }
+                    AssignPattern::Mult(mul, list) => {
+                        self.print_expr(mul);
+                        self.append("{");
+                        self.print_comma_list(list, Self::print_expr);
+                        self.append("}");
+                    }
+                }
                 self.append("}");
             }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
