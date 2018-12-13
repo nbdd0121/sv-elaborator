@@ -1105,22 +1105,8 @@ impl Parser {
             unreachable!();
         };
 
-        let (ty, assign) = self.parse_data_type_decl_assign();
-        let mut list = vec![assign];
-        if self.check(TokenKind::Comma) {
-            self.parse_comma_list_unit(false, false, |this| {
-                match this.parse_decl_assign_opt() {
-                    None => false,
-                    Some(v) => {
-                        list.push(v);
-                        true
-                    }
-                }
-            });
-        }
-
+        let (ty, list) = self.parse_data_type_decl_assign_list();
         self.expect(TokenKind::Semicolon);
-        
         ParamDecl {
             kw,
             ty: ty.map(Box::new),
@@ -1136,22 +1122,8 @@ impl Parser {
         let has_const = self.check(TokenKind::Keyword(Keyword::Const));
         let _has_var = self.check(TokenKind::Keyword(Keyword::Var));
         let lifetime = self.parse_lifetime();
-        let (ty, assign) = self.parse_data_type_decl_assign();
-        let mut list = vec![assign];
-        if self.check(TokenKind::Comma) {
-            self.parse_comma_list_unit(false, false, |this| {
-                match this.parse_decl_assign_opt() {
-                    None => false,
-                    Some(v) => {
-                        list.push(v);
-                        true
-                    }
-                }
-            });
-        }
-
+        let (ty, list) = self.parse_data_type_decl_assign_list();
         self.expect(TokenKind::Semicolon);
-        
         DataDecl {
             attr,
             has_const,
@@ -1196,9 +1168,9 @@ impl Parser {
         // This is a type import
         match expr.value {
             ExprKind::Member(intf, ty) => {
-            let id = self.expect_id();
-            self.expect(TokenKind::Semicolon);
-            Item::TypedefIntf(attr, intf, Box::new(ty), Box::new(id))
+                let id = self.expect_id();
+                self.expect(TokenKind::Semicolon);
+                Item::TypedefIntf(attr, intf, Box::new(ty), Box::new(id))
             }
             ExprKind::HierName(None, HierId::Name(Some(intf), ty)) => {
                 let id = self.expect_id();
@@ -1213,21 +1185,21 @@ impl Parser {
                 )
             }
             _ => {
-            let span = expr.span;
-            let ty = match self.conv_expr_to_type(expr) {
-                None => {
-                    self.report_span(Severity::Fatal, "expected data type", span);
-                    // TODO: Error recovery
-                    unreachable!();
-                },
-                Some(v) => v,
-            };
-            let id = self.expect_id();
-            let dim = self.parse_list(Self::parse_dim_opt);
+                let span = expr.span;
+                let ty = match self.conv_expr_to_type(expr) {
+                    None => {
+                        self.report_span(Severity::Fatal, "expected data type", span);
+                        // TODO: Error recovery
+                        unreachable!();
+                    },
+                    Some(v) => v,
+                };
+                let id = self.expect_id();
+                let dim = self.parse_list(Self::parse_dim_opt);
                 self.expect(TokenKind::Semicolon);
-            Item::Typedef(attr, Box::new(ty), Box::new(id), dim)
+                Item::Typedef(attr, Box::new(ty), Box::new(id), dim)
+            }
         }
-    }
     }
 
     /// Parse a package import declaration
@@ -1331,6 +1303,24 @@ impl Parser {
         }
     }
 
+    /// Parse a data type (or implicit) followed a decl_assign_list.
+    fn parse_data_type_decl_assign_list(&mut self) -> (Option<DataType>, Vec<DeclAssign>) {
+        let (ty, assign) = self.parse_data_type_decl_assign();
+        let mut list = vec![assign];
+        if self.check(TokenKind::Comma) {
+            self.parse_comma_list_unit(false, false, |this| {
+                match this.parse_decl_assign_opt() {
+                    None => false,
+                    Some(v) => {
+                        list.push(v);
+                        true
+                    }
+                }
+            });
+        }
+        (ty, list)
+    }
+
     /// Parse a net declaration or data declaration.
     fn parse_net_decl_assign(&mut self) {
         match **self.peek() {
@@ -1374,6 +1364,7 @@ impl Parser {
     /// | virtual [ interface ] interface_identifier [ parameter_value_assignment ] [ . modport_identifier ]
     /// | event
     /// | type_reference
+    /// | void
     /// | [ signing ] { packed_dimension }
     /// ```
     ///
@@ -1382,7 +1373,6 @@ impl Parser {
     /// | [ class_scope | package_scope ] type_identifier { packed_dimension }
     /// | class_type
     /// ```
-    /// TODO: Better span in this function
     fn parse_kw_data_type(&mut self) -> DataType {
         match **self.peek() {
             TokenKind::IntVecTy(_) |
@@ -1396,31 +1386,127 @@ impl Parser {
                 };
                 let sign = self.parse_signing();
                 let dim = self.parse_list(Self::parse_pack_dim);
+                // TODO: Span
                 Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)
             }
-            TokenKind::Signing(sign) => {
+            TokenKind::IntAtomTy(ty) => {
+                let mut span = self.consume().span;
+                let sign = if let TokenKind::Signing(sign) = **self.peek() {
+                    span = span.merge(self.consume().span);
+                    sign
+                } else {
+                    Signing::Unsigned
+                };
+                Spanned::new(DataTypeKind::IntAtom(ty, sign), span)
+            }
+            TokenKind::NonIntTy(ty) => {
                 let span = self.consume().span;
-                let dim = self.parse_list(Self::parse_pack_dim);
-                Spanned::new(DataTypeKind::Implicit(sign, dim), span)
+                Spanned::new(DataTypeKind::NonInt(ty), span)
+            }
+            TokenKind::Keyword(Keyword::Struct) |
+            TokenKind::Keyword(Keyword::Union) => self.parse_aggr_decl(),
+            TokenKind::Keyword(Keyword::Enum) => {
+                self.unimplemented();
+            }
+            TokenKind::Keyword(Keyword::String) => {
+                let span = self.consume().span;
+                Spanned::new(DataTypeKind::String, span)
+            }
+            TokenKind::Keyword(Keyword::Chandle) => {
+                let span = self.consume().span;
+                Spanned::new(DataTypeKind::Chandle, span)
+            }
+            TokenKind::Keyword(Keyword::Event) => {
+                let span = self.consume().span;
+                Spanned::new(DataTypeKind::Event, span)
+            }
+            TokenKind::Keyword(Keyword::Virtual) => {
+                self.unimplemented();
+            }
+            // type_reference
+            TokenKind::Keyword(Keyword::Type) => {
+                let token = self.consume();
+                match self.parse_if_delim_spanned(Delim::Paren, Self::parse_expr) {
+                    None => Spanned::new(DataTypeKind::Type, token.span),
+                    Some(v) => Spanned::new(DataTypeKind::TypeRef(Box::new(v.value)), token.span.merge(v.span)),
+                }
             }
             TokenKind::Keyword(Keyword::Void) => {
                 let token = self.consume();
                 Spanned::new(DataTypeKind::Void, token.span)
             }
-            TokenKind::Keyword(Keyword::Type) => {
-                let token = self.consume();
-                // TODO: Might be parenthesis
-                Spanned::new(DataTypeKind::Type, token.span)
+            TokenKind::Signing(sign) => {
+                let mut span = self.consume().span;
+                let dim = self.parse_list(Self::parse_pack_dim);
+                if let Some(v) = dim.last() {
+                    span = span.merge(v.span);
+                }
+                Spanned::new(DataTypeKind::Implicit(sign, dim), span)
             }
             TokenKind::DelimGroup(Delim::Bracket, _) => {
                 let span = self.peek().span;
                 let dim = self.parse_list(Self::parse_pack_dim);
                 Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)
             }
-            _ => {
-                self.unimplemented();
-            }
+            _ => unreachable!(),
         }
+    }
+
+    /// Parse a struct or union declaration.
+    fn parse_aggr_decl(&mut self) -> DataType {
+        let (token, kind) = match **self.peek() {
+            TokenKind::Keyword(Keyword::Struct) => (self.consume(), AggrType::Struct),
+            TokenKind::Keyword(Keyword::Union) => {
+                (self.consume(), if self.check(TokenKind::Keyword(Keyword::Tagged)) {
+                    AggrType::TaggedUnion
+                } else {
+                    AggrType::Union
+                })
+            }
+            _ => unimplemented!()
+        };
+        let packed = self.check(TokenKind::Keyword(Keyword::Packed));
+        let sign = self.parse_signing();
+        let members = self.parse_delim_spanned(Delim::Brace, |this| {
+            this.parse_list(|this| {
+                // Return if this is the end
+                match **this.peek() {
+                    TokenKind::Eof => return None,
+                    _ => (),
+                }
+                let attr = this.parse_attr_inst_opt();
+                match **this.peek() {
+                    TokenKind::Keyword(Keyword::Rand) |
+                    TokenKind::Keyword(Keyword::Randc) => {
+                        this.unimplemented();
+                    }
+                    _ => (),
+                }
+                let span = this.peek().span;
+                let (ty, list) = this.parse_data_type_decl_assign_list();
+                this.expect(TokenKind::Semicolon);
+                let ty = match ty {
+                    None => {
+                        this.report_span(Severity::Fatal, "data type of aggregate member cannot be implicit", span);
+                        // TODO: Error recovery
+                        unreachable!();
+                    }
+                    Some(v) => v,
+                };
+                Some(AggrMember {
+                    attr,
+                    ty,
+                    list,
+                })
+            })
+        });
+        let span = token.span.merge(members.span);
+        Spanned::new(DataTypeKind::Aggr(AggrDecl {
+            kind,
+            packed,
+            sign,
+            members: members.value
+        }), span)
     }
 
     /// Convert an expression to a type. Useful when we try to parse thing as expression first due

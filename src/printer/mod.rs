@@ -385,6 +385,15 @@ impl PrettyPrint {
                 }
                 self.append(";");
             }
+            Item::Typedef(_attr, ty, id, dim) => {
+                self.append("typedef ");
+                self.print_type(&ty);
+                self.append(format!(" {}", id));
+                for dim in dim {
+                    self.print_dim(dim);
+                }
+                self.append(";");
+            }
             Item::ModportDecl(_attr, decl) => {
                 self.append("modport ");
                 self.print_comma_list(decl, |this, decl| {
@@ -435,6 +444,25 @@ impl PrettyPrint {
                 for dim in dim {
                     self.print_dim(dim);
                 }
+            }
+            DataTypeKind::Aggr(aggr) => {
+                self.append(format!("{}", aggr.kind));
+                if aggr.packed {
+                    self.append(" packed");
+                }
+                if aggr.sign == Signing::Signed {
+                    self.append(" signed");
+                }
+                self.append(" {\n");
+                self.indent(4);
+                for member in &aggr.members {
+                    self.indent_append("");
+                    self.print_type(&member.ty);
+                    self.print_comma_list(&member.list, Self::print_decl_assign);
+                    self.append(";\n");
+                }
+                self.indent(-4);
+                self.indent_append("}");
             }
             DataTypeKind::Implicit(sign, dim) => {
                 if sign == &Signing::Signed {

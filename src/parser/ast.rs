@@ -316,8 +316,8 @@ pub enum DataTypeKind {
     Implicit(Signing, Vec<Dim>),
     IntVec(IntVecTy, Signing, Vec<Dim>),
     IntAtom(IntAtomTy, Signing),
-    NonIntType(NonIntTy),
-    StructUnion, // TODO
+    NonInt(NonIntTy),
+    Aggr(AggrDecl),
     Enum, // TODO
     String,
     Chandle,
@@ -358,6 +358,41 @@ pub struct DataDecl {
     pub attr: Option<Box<AttrInst>>,
     pub has_const: bool,
     pub lifetime: Lifetime,
+    pub ty: DataType,
+    pub list: Vec<DeclAssign>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggrType {
+    Struct,
+    Union,
+    TaggedUnion,
+}
+
+impl fmt::Display for AggrType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            AggrType::Struct => "struct",
+            AggrType::Union => "union",
+            AggrType::TaggedUnion => "union tagged",
+        })
+    }
+}
+
+/// Represent a struct_union
+#[derive(Debug)]
+pub struct AggrDecl {
+    pub kind: AggrType,
+    pub packed: bool,
+    pub sign: Signing,
+    pub members: Vec<AggrMember>,
+}
+
+/// Represent a struct_union_member
+#[derive(Debug)]
+pub struct AggrMember {
+    pub attr: Option<Box<AttrInst>>,
+    // TODO: Random qualifier
     pub ty: DataType,
     pub list: Vec<DeclAssign>,
 }

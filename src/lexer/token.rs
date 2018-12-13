@@ -168,6 +168,7 @@ impl fmt::Display for Operator {
             Operator::Lt => "<",
             Operator::Leq => "<=",
             Operator::Gt => ">",
+            Operator::Power => "**",
             Operator::LAnd => "&&",
             Operator::LOr => "||",
             Operator::Eq => "==",

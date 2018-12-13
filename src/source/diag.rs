@@ -161,9 +161,9 @@ impl Diagnostic {
             None => {
                 // If the message has no associated file, just print it
                 if color {
-                    println!("{}{}", severity, self.message.bold());
+                    eprintln!("{}{}", severity, self.message.bold());
                 } else {
-                    println!("{}{}", severity, self.message);
+                    eprintln!("{}{}", severity, self.message);
                 }
                 return
             }
@@ -249,9 +249,9 @@ impl Diagnostic {
                 line = line.green().to_string();
             }
 
-            println!("{}\n{}\n{}\n{}", msg, vstr.visual_text(), indicator_line, line);
+            eprintln!("{}\n{}\n{}\n{}", msg, vstr.visual_text(), indicator_line, line);
         } else {
-            println!("{}\n{}\n{}", msg, vstr.visual_text(), indicator_line);
+            eprintln!("{}\n{}\n{}", msg, vstr.visual_text(), indicator_line);
         }
     }
 }
