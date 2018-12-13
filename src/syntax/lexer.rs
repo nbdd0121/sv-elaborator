@@ -11,25 +11,29 @@ use std::rc::Rc;
 use std::cmp;
 use std::collections::VecDeque;
 
-pub struct Lexer {
-    pub mgr: Rc<SrcMgr>,
-    pub diag: Rc<DiagMgr>,
-    pub src_offset: Pos,
+pub fn lex<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> VecDeque<Token> {
+    Lexer::new(mgr, diag, src).all()
+}
+
+struct Lexer<'a> {
+    mgr: &'a SrcMgr,
+    diag: &'a DiagMgr,
+    src_offset: Pos,
     // Current index pointer
-    pub pos: usize,
+    pos: usize,
     // The source code to tokenize
-    pub src_text: Rc<String>,
+    src_text: Rc<String>,
     // Start of current token
-    pub start: usize,
+    start: usize,
     // 1, 2, 3, 4 -> Verilog 95, 01, 01-noconfig, 05
     // 5, 6, 7, 8 -> SystemVerilog 05, 09, 12, 17
-    pub keyword: u8,
-    pub keyword_stack: Vec<u8>,
+    keyword: u8,
+    keyword_stack: Vec<u8>,
     attr: bool,
 }
 
-impl Lexer {
-    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, src: &Rc<Source>) -> Lexer {
+impl<'a> Lexer<'a> {
+    fn new(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> Lexer<'a> {
         Lexer {
             diag,
             src_offset: mgr.find_src(src).unwrap().start,
@@ -697,7 +701,7 @@ impl Lexer {
         })
     }
 
-    pub fn next_tk(&mut self) -> TokenKind {
+    fn next_tk(&mut self) -> TokenKind {
         self.start = self.pos;
 
         // Early return if result is EOF
@@ -1106,7 +1110,7 @@ impl Lexer {
         }
     }
 
-    pub fn next_span(&mut self) -> Token {
+    fn next_span(&mut self) -> Token {
         loop {
             let tok = self.next_tk();
             match tok {
@@ -1174,7 +1178,7 @@ impl Lexer {
         )
     }
 
-    pub fn next_tree(&mut self) -> Token {
+    fn next_tree(&mut self) -> Token {
         loop {
             let tok = self.next_tree_recurse();
             match *tok {
@@ -1191,7 +1195,7 @@ impl Lexer {
         }
     }
 
-    pub fn all(&mut self) -> VecDeque<Token> {
+    fn all(&mut self) -> VecDeque<Token> {
         let mut vec = VecDeque::new();
         loop {
             let tok = self.next_tree();

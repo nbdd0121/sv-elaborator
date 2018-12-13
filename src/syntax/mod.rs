@@ -1,6 +1,9 @@
 pub mod tokens;
 pub mod ast;
 mod kw_map;
-pub mod lexer;
-pub mod parser;
+mod lexer;
+mod parser;
+
+pub use self::lexer::lex;
+pub use self::parser::parse;
 

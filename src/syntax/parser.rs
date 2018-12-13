@@ -3,13 +3,16 @@ use super::tokens::*;
 use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span};
 
 use std::mem;
-use std::rc::Rc;
 use std::collections::VecDeque;
 use std::borrow::Borrow;
 
-pub struct Parser {
-    mgr: Rc<SrcMgr>,
-    diag: Rc<DiagMgr>,
+pub fn parse<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Vec<Item> {
+    Parser::new(mgr, diag, lexer).parse_source()
+}
+
+struct Parser<'a> {
+    mgr: &'a SrcMgr,
+    diag: &'a DiagMgr,
     lexer: VecDeque<Token>,
     eof: Token,
 }
@@ -76,8 +79,8 @@ enum ItemDAB {
 /// We've noted that all identifiers are actually legal data types, so for implicit data type
 /// followed by identifier case we will parse them as data type first and when we see no
 /// identifiers following we can perform conversion.
-impl Parser {
-    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, lexer: VecDeque<Token>) -> Parser {
+impl<'a> Parser<'a> {
+    fn new(mgr: &'a SrcMgr, diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Parser<'a> {
         let last_pos = lexer.back().map(|x| x.span.end).unwrap_or(Pos(0));
         Parser {
             mgr,
@@ -707,7 +710,7 @@ impl Parser {
     /// source_text ::= { item }
     /// ```
     /// TODO: We still need to check if these items can legally appear here.
-    pub fn parse_source(&mut self) -> Vec<Item> {
+    fn parse_source(&mut self) -> Vec<Item> {
         let list = self.parse_list(Self::parse_item_opt);
         list
     }
