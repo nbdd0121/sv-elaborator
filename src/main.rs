@@ -7,8 +7,7 @@ extern crate colored;
 extern crate lazy_static;
 
 mod util;
-mod lexer;
-mod parser;
+mod syntax;
 mod source;
 mod number;
 mod printer;
@@ -50,19 +49,26 @@ fn main() {
         let src = Rc::new(Source::new(filename.to_owned(), contents));
         src_mgr.add_source(src.clone());
 
-        let mut tokens = lexer::Tokenizer::new(src_mgr.clone(), diag_mgr.clone(), &src).all();
-        let mut psr = parser::Parser::new(src_mgr.clone(), diag_mgr.clone(), tokens);
+        let mut tokens = syntax::lexer::Lexer::new(src_mgr.clone(), diag_mgr.clone(), &src).all();
+        let mut psr = syntax::parser::Parser::new(src_mgr.clone(), diag_mgr.clone(), tokens);
 
         let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             psr.parse_source()
         })) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(info) => {
+                if info.downcast_ref::<Severity>().is_some() {
+                    continue
+                } else {
+                    return;
+                }
+            }
         };
 
         let mut printer = PrettyPrint::new();
         for i in list {
             printer.print_item(&i);
+            printer.append("\n");
         }
         println!("{}", printer.take());
     }

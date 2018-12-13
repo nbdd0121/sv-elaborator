@@ -1,6 +1,5 @@
-use super::parser::ast::*;
-use lexer::TokenKind;
-use lexer::{Keyword};
+use syntax::ast::*;
+use syntax::tokens::{TokenKind, Keyword};
 
 use util::IdentifyFirstLast;
 

@@ -1,8 +1,6 @@
-pub mod ast;
-
-use self::ast::*;
-use super::lexer::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
-use super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
+use super::ast::*;
+use super::tokens::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
+use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
 
 use std::mem;
 use std::rc::Rc;

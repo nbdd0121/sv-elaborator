@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use super::{Keyword, TokenKind};
-use parser::ast::*;
+use super::tokens::{Keyword, TokenKind};
+use super::ast::*;
 
 lazy_static!{
 pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {

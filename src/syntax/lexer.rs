@@ -1,15 +1,8 @@
-#![warn(dead_code)]
+pub use super::tokens::{Token, TokenKind, Operator, Keyword, Delim, DelimGroup};
 
-mod kw;
-mod kw_map;
-mod token;
-
-pub use self::kw::Keyword;
-pub use self::token::{Token, TokenKind, Operator, Delim, DelimGroup};
-
-use self::kw_map::HASHMAP;
-use super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Spanned};
-use super::number::{LogicValue, LogicNumber};
+use super::kw_map::HASHMAP;
+use super::super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Spanned};
+use super::super::number::{LogicValue, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};
 
@@ -17,7 +10,7 @@ use std::rc::Rc;
 use std::cmp;
 use std::collections::VecDeque;
 
-pub struct Tokenizer {
+pub struct Lexer {
     pub mgr: Rc<SrcMgr>,
     pub diag: Rc<DiagMgr>,
     pub src_offset: Pos,
@@ -34,9 +27,9 @@ pub struct Tokenizer {
     attr: bool,
 }
 
-impl Tokenizer {
-    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, src: &Rc<Source>) -> Tokenizer {
-        Tokenizer {
+impl Lexer {
+    pub fn new(mgr: Rc<SrcMgr>, diag: Rc<DiagMgr>, src: &Rc<Source>) -> Lexer {
+        Lexer {
             diag,
             src_offset: mgr.find_src(src).unwrap().start,
             src_text: src.content().clone(),

@@ -1,5 +1,5 @@
 use super::super::source::{Span, Spanned};
-use super::super::lexer::{Token, Keyword, Operator};
+use super::super::syntax::tokens::{Token, Keyword, Operator};
 use std::fmt;
 
 //
