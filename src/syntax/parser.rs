@@ -1,5 +1,5 @@
 use super::ast::*;
-use super::tokens::{Token, TokenKind, Keyword, Operator, Delim, DelimGroup};
+use super::tokens::*;
 use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span, Spanned};
 
 use std::mem;
@@ -887,7 +887,7 @@ impl Parser {
     /// ```
     fn parse_port_list(&mut self) -> Option<Vec<PortDecl>> {
         self.parse_if_delim(Delim::Paren, |this| {
-            if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
+            if let Some(v) = this.consume_if(TokenKind::WildPattern) {
                 this.report_span(Severity::Fatal, "(.*) port declaration is not supported", v.span);
                 unreachable!();
             }
@@ -1220,8 +1220,8 @@ impl Parser {
             None => return None,
             Some(v) => v,
         };
-        self.expect(TokenKind::Operator(Operator::ScopeSep));
-        let id = if self.check(TokenKind::Operator(Operator::Mul)) {
+        self.expect(TokenKind::ScopeSep);
+        let id = if self.check(TokenKind::BinaryOp(BinaryOp::Mul)) {
             None
         } else {
             Some(self.expect_id())
@@ -1282,7 +1282,7 @@ impl Parser {
             Some(name) => {
                 let mut dim = self.parse_list(Self::parse_dim_opt);
                 self.check_list(Self::check_unpacked_dim, &mut dim);
-                let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
+                let init = match self.consume_if(TokenKind::Assign) {
                     None => None,
                     Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                 };
@@ -1295,7 +1295,7 @@ impl Parser {
             None => {
                 match self.conv_type_to_id(dtype) {
                     Some((name, dim)) => {
-                        let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
+                        let init = match self.consume_if(TokenKind::Assign) {
                             None => None,
                             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                         };
@@ -1618,7 +1618,7 @@ impl Parser {
         }
 
         self.check_list(Self::check_unpacked_dim, &mut dim);
-        let init = match self.consume_if(TokenKind::Operator(Operator::Assign)) {
+        let init = match self.consume_if(TokenKind::Assign) {
             None => None,
             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
         };
@@ -1662,7 +1662,7 @@ impl Parser {
                 TokenKind::Eof => {
                     return DimKind::Unsized
                 }
-                TokenKind::Operator(Operator::Mul) => {
+                TokenKind::BinaryOp(BinaryOp::Mul) => {
                     if let TokenKind::Eof = **this.peek_n(1) {
                         this.consume();
                         return DimKind::AssocWild
@@ -1676,11 +1676,11 @@ impl Parser {
                     this.consume();
                     DimKind::Range(Box::new(expr), Box::new(this.parse_expr()))
                 }
-                TokenKind::Operator(Operator::PlusColon) => {
+                TokenKind::PlusColon => {
                     this.consume();
                     DimKind::PlusRange(Box::new(expr), Box::new(this.parse_expr()))
                 }
-                TokenKind::Operator(Operator::MinusColon) => {
+                TokenKind::MinusColon => {
                     this.consume();
                     DimKind::MinusRange(Box::new(expr), Box::new(this.parse_expr()))
                 }
@@ -1909,7 +1909,7 @@ impl Parser {
                         attr.as_ref().unwrap().span
                     );
                 }
-                if let Some(v) = this.consume_if(TokenKind::Operator(Operator::WildPattern)) {
+                if let Some(v) = this.consume_if(TokenKind::WildPattern) {
                     if option != ArgOption::Port {
                         this.report_span(
                             Severity::Error,
@@ -1972,7 +1972,7 @@ impl Parser {
             self.parse_delim(Delim::Paren, |this| {
                 let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
                 let id = this.expect_id();
-                this.expect(TokenKind::Operator(Operator::Assign));
+                this.expect(TokenKind::Assign);
                 let init = this.parse_expr();
                 this.expect(TokenKind::Semicolon);
                 let cond = this.parse_expr();
@@ -2109,25 +2109,6 @@ impl Parser {
     //
     // A.6.2 Procedural blocks and assignments
     //
-
-    fn is_assign_op(op: Operator) -> bool {
-        match op {
-            Operator::Assign |
-            Operator::AddEq |
-            Operator::SubEq |
-            Operator::MulEq |
-            Operator::DivEq |
-            Operator::ModEq |
-            Operator::AndEq |
-            Operator::OrEq |
-            Operator::XorEq |
-            Operator::LShlEq |
-            Operator::LShrEq |
-            Operator::AShlEq |
-            Operator::AShrEq => true,
-            _ => false,
-        }
-    }
 
     fn parse_always(&mut self) -> Item {
         let kw = if let TokenKind::AlwaysKw(kw) = *self.consume() {
@@ -2461,11 +2442,17 @@ impl Parser {
         };
 
         match **self.peek() {
-            TokenKind::Operator(op) if Self::is_assign_op(op) => {
+            TokenKind::Assign => {
                 self.consume();
                 let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
-                Some(Spanned::new(ExprKind::Assign(Box::new(expr), op, Box::new(rhs)), span))
+                Some(Spanned::new(ExprKind::Assign(Box::new(expr), Box::new(rhs)), span))
+            }
+            TokenKind::BinaryOpAssign(op) => {
+                self.consume();
+                let rhs = self.parse_expr();
+                let span = expr.span.merge(rhs.span);
+                Some(Spanned::new(ExprKind::BinaryAssign(Box::new(expr), op, Box::new(rhs)), span))
             }
             _ => Some(expr)
         }
@@ -2517,8 +2504,8 @@ impl Parser {
     fn parse_expr_opt(&mut self) -> Option<Expr> {
         let lhs = self.parse_cond_expr_opt()?;
         match **self.peek() {
-            TokenKind::Operator(Operator::Implies) |
-            TokenKind::Operator(Operator::Equiv) => {
+            TokenKind::BinaryOp(BinaryOp::Imply) |
+            TokenKind::BinaryOp(BinaryOp::Equiv) => {
                 let span = self.peek().span;
                 self.report_span(Severity::Fatal, "-> and <-> not yet supported", span);
                 unreachable!();
@@ -2533,7 +2520,7 @@ impl Parser {
 
     fn parse_cond_expr_opt(&mut self) -> Option<Expr> {
         let expr = self.parse_cond_pred_opt()?;
-        if self.check(TokenKind::Operator(Operator::Question)) {
+        if self.check(TokenKind::Question) {
             let attr = self.parse_attr_inst_opt();
             let true_expr = Box::new(self.parse_expr());
             self.expect(TokenKind::Colon);
@@ -2549,7 +2536,7 @@ impl Parser {
 
     fn parse_cond_pred_opt(&mut self) -> Option<Expr> {
         let expr = self.parse_cond_pattern_opt()?;
-        if self.check(TokenKind::Operator(Operator::TripleAnd)) {
+        if self.check(TokenKind::TripleAnd) {
             let span = self.peek().span;
             self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span);
             unreachable!();
@@ -2587,12 +2574,11 @@ impl Parser {
         loop {
 
             let (op, new_prec) = match **self.peek() {
-                TokenKind::Operator(op) => {
-                    match Self::get_bin_op_prec(op) {
-                        // Can only proceed if precedence is higher
-                        Some(v) if v > prec => (op, v),
-                        _ => break,
-                    }
+                TokenKind::BinaryOp(op) => {
+                    let new_prec = Self::get_bin_op_prec(op);
+                    // Can only proceed if precedence is higher
+                    if new_prec <= prec { break }
+                    (op, new_prec)
                 }
                 TokenKind::Keyword(Keyword::Inside) |
                 TokenKind::Keyword(Keyword::Dist) if 7 > prec => {
@@ -2615,41 +2601,51 @@ impl Parser {
     }
 
     fn parse_unary_expr(&mut self) -> Option<Expr> {
-        match **self.peek() {
+        let op = match **self.peek() {
             // inc_or_dec_operator { attribute_instance } variable_lvalue
             // unary_operator { attribute_instance } primary
-            TokenKind::Operator(op) if Self::is_prefix_operator(op) => {
+            TokenKind::IncDec(incdec) => {
                 let span = self.consume().span;
                 let attr = self.parse_attr_inst_opt();
                 let expr = self.parse_unwrap(Self::parse_primary);
                 let span = span.merge(expr.span);
-                Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span))
+                return Some(Spanned::new(ExprKind::PrefixIncDec(incdec, attr, Box::new(expr)), span))
             }
+            TokenKind::UnaryOp(op) => op,
+            TokenKind::BinaryOp(BinaryOp::Add) => UnaryOp::Add,
+            TokenKind::BinaryOp(BinaryOp::Sub) => UnaryOp::Sub,
+            TokenKind::BinaryOp(BinaryOp::And) => UnaryOp::And,
+            TokenKind::BinaryOp(BinaryOp::Or) => UnaryOp::Or,
+            TokenKind::BinaryOp(BinaryOp::Xor) => UnaryOp::Xor,
+            TokenKind::BinaryOp(BinaryOp::Xnor) => UnaryOp::Xnor,
             _ => {
                 let expr = self.parse_primary()?;
-                match **self.peek() {
+                return match **self.peek() {
                     // Inc/dec with attributes
                     TokenKind::DelimGroup(Delim::Attr, _) => {
                         match **self.peek_n(1) {
-                            TokenKind::Operator(e @ Operator::Inc) |
-                            TokenKind::Operator(e @ Operator::Dec) => {
+                            TokenKind::IncDec(incdec) => {
                                 let attr = self.parse_attr_inst_opt();
                                 let span = expr.span.merge(self.consume().span);
-                                Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), attr, e), span))
+                                Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), attr, incdec), span))
                             }
                             _ => Some(expr),
                         }
                     }
                     // Inc/dec without attributes
-                    TokenKind::Operator(e @ Operator::Inc) |
-                    TokenKind::Operator(e @ Operator::Dec) => {
+                    TokenKind::IncDec(incdec) => {
                         let span = expr.span.merge(self.consume().span);
-                        Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), None, e), span))
+                        Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), None, incdec), span))
                     }
                     _ => Some(expr),
                 }
             }
-        }
+        };
+        let span = self.consume().span;
+        let attr = self.parse_attr_inst_opt();
+        let expr = self.parse_unwrap(Self::parse_primary);
+        let span = span.merge(expr.span);
+        Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span))
     }
 
     /// Parse mintypmax expression
@@ -2679,14 +2675,14 @@ impl Parser {
         let mut expr = match **self.peek() {
             TokenKind::Keyword(Keyword::Const) => {
                 let span = self.consume().span;
-                self.expect(TokenKind::Operator(Operator::Tick));
+                self.expect(TokenKind::Tick);
                 let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
                 Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
             }
             TokenKind::Signing(sign) => {
-                if let TokenKind::Operator(Operator::Tick) = **self.peek_n(1) {
+                if let TokenKind::Tick = **self.peek_n(1) {
                     let span = self.consume().span;
-                    self.expect(TokenKind::Operator(Operator::Tick));
+                    self.expect(TokenKind::Tick);
                     let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
                     Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
                 } else {
@@ -2702,7 +2698,7 @@ impl Parser {
             }
         };
         loop {
-            if self.consume_if(TokenKind::Operator(Operator::Tick)).is_none() {
+            if self.consume_if(TokenKind::Tick).is_none() {
                 break
             }
 
@@ -2748,7 +2744,7 @@ impl Parser {
             TokenKind::TimeLiteral(_) |
             TokenKind::UnbasedLiteral(_) |
             TokenKind::StringLiteral(_) | 
-            TokenKind::Operator(Operator::Dollar) |
+            TokenKind::Dollar |
             TokenKind::Keyword(Keyword::Null) => {
                 let tok = self.consume();
                 let sp = tok.span;
@@ -2762,8 +2758,8 @@ impl Parser {
                 Some(self.parse_delim_spanned(Delim::Brace, |this| {
                     match **this.peek() {
                         TokenKind::Eof => ExprKind::EmptyQueue,
-                        TokenKind::Operator(Operator::LShr) |
-                        TokenKind::Operator(Operator::LShl) => {
+                        TokenKind::BinaryOp(BinaryOp::LShr) |
+                        TokenKind::BinaryOp(BinaryOp::LShl) => {
                             let span = this.peek().span;
                             this.report_span(Severity::Fatal, "streaming concat is not yet supported", span);
                             unreachable!();
@@ -2932,54 +2928,36 @@ impl Parser {
     // A.8.6 Operators
     //
 
-    fn is_prefix_operator(op: Operator) -> bool {
-        match op {
-            Operator::Add |
-            Operator::Sub |
-            Operator::LNot |
-            Operator::Not |
-            Operator::And |
-            Operator::Nand |
-            Operator::Or |
-            Operator::Nor |
-            Operator::Xor |
-            Operator::Xnor => true,
-            Operator::Inc |
-            Operator::Dec => true,
-            _ => false,
-        }
-    }
-
     /// Get precedence of binary operator. Exclude -> and ->>
-    fn get_bin_op_prec(op: Operator) -> Option<i32> {
+    fn get_bin_op_prec(op: BinaryOp) -> i32 {
         match op {
-            Operator::Power => Some(11),
-            Operator::Mul |
-            Operator::Div |
-            Operator::Mod => Some(10),
-            Operator::Add |
-            Operator::Sub => Some(9),
-            Operator::LShl |
-            Operator::LShr |
-            Operator::AShl |
-            Operator::AShr => Some(8),
-            Operator::Lt |
-            Operator::Leq |
-            Operator::Gt |
-            Operator::Geq => Some(7),
-            Operator::Eq |
-            Operator::Neq |
-            Operator::CaseEq |
-            Operator::CaseNeq |
-            Operator::WildEq |
-            Operator::WildNeq => Some(6),
-            Operator::And => Some(5),
-            Operator::Xor |
-            Operator::Xnor => Some(4),
-            Operator::Or => Some(3),
-            Operator::LAnd => Some(2),
-            Operator::LOr => Some(1),
-            _ => None,
+            BinaryOp::Power => 11,
+            BinaryOp::Mul |
+            BinaryOp::Div |
+            BinaryOp::Mod => 10,
+            BinaryOp::Add |
+            BinaryOp::Sub => 9,
+            BinaryOp::LShl |
+            BinaryOp::LShr |
+            BinaryOp::AShl |
+            BinaryOp::AShr => 8,
+            BinaryOp::Lt |
+            BinaryOp::Leq |
+            BinaryOp::Gt |
+            BinaryOp::Geq => 7,
+            BinaryOp::Eq |
+            BinaryOp::Neq |
+            BinaryOp::CaseEq |
+            BinaryOp::CaseNeq |
+            BinaryOp::WildEq |
+            BinaryOp::WildNeq => 6,
+            BinaryOp::And => 5,
+            BinaryOp::Xor |
+            BinaryOp::Xnor => 4,
+            BinaryOp::Or => 3,
+            BinaryOp::LAnd => 2,
+            BinaryOp::LOr => 1,
+            _ => unreachable!(),
         }
     }
 
@@ -2993,7 +2971,7 @@ impl Parser {
                     match this.consume_if_id() {
                         None => None,
                         Some(name) => {
-                            let expr = if this.check(TokenKind::Operator(Operator::Assign)) {
+                            let expr = if this.check(TokenKind::Assign) {
                                 Some(Box::new(this.parse_expr()))
                             } else {
                                 None
@@ -3029,7 +3007,7 @@ impl Parser {
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep));
+                    self.expect(TokenKind::ScopeSep);
                 }
                 TokenKind::Keyword(Keyword::Unit) => {
                     let tok = self.consume();
@@ -3038,15 +3016,15 @@ impl Parser {
                     } else {
                         scope = Some(Scope::Local)
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep));
+                    self.expect(TokenKind::ScopeSep);
                 }
                 TokenKind::Id(_) => {
                     // Lookahead to check if this is actually a scope
                     match **self.peek_n(1) {
-                        TokenKind::Operator(Operator::ScopeSep) => (),
+                        TokenKind::ScopeSep => (),
                         TokenKind::Hash => {
                             if let TokenKind::DelimGroup(Delim::Paren,_) = **self.peek_n(2) {
-                                if let TokenKind::Operator(Operator::ScopeSep) = **self.peek_n(3) {
+                                if let TokenKind::ScopeSep = **self.peek_n(3) {
                                 } else {
                                     break
                                 }
@@ -3062,7 +3040,7 @@ impl Parser {
                         self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span);
                         unreachable!();
                     }
-                    self.expect(TokenKind::Operator(Operator::ScopeSep));
+                    self.expect(TokenKind::ScopeSep);
                     scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
                 }
                 _ => break,

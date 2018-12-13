@@ -1,5 +1,5 @@
 use super::super::source::{Span, Spanned};
-use super::super::syntax::tokens::{Token, Keyword, Operator};
+use super::super::syntax::tokens::{Token, Keyword};
 use std::fmt;
 
 //
@@ -212,8 +212,121 @@ pub enum Primitive {
     Pulldown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncDec {
+    Inc,
+    Dec,
+}
+
+impl fmt::Display for IncDec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            IncDec::Inc => "++",
+            IncDec::Dec => "--",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Add,
+    Sub,
+    LNot,
+    Not,
+    And,
+    Nand,
+    Or,
+    Nor,
+    Xor,
+    Xnor,
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            UnaryOp::Add => "+",
+            UnaryOp::Sub => "-",
+            UnaryOp::LNot => "!",
+            UnaryOp::Not => "~",
+            UnaryOp::And => "&",
+            UnaryOp::Nand => "~&",
+            UnaryOp::Or => "|",
+            UnaryOp::Nor => "~|",
+            UnaryOp::Xor => "^",
+            UnaryOp::Xnor => "~^",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Neq,
+    CaseEq,
+    CaseNeq,
+    WildEq,
+    WildNeq,
+    LAnd,
+    LOr,
+    Power,
+    Lt,
+    Leq,
+    Gt,
+    Geq,
+    And,
+    Or,
+    Xor,
+    Xnor,
+    LShr,
+    LShl,
+    AShr,
+    AShl,
+    Imply,
+    Equiv,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            BinaryOp::Eq => "==",
+            BinaryOp::Neq => "!=",
+            BinaryOp::CaseEq => "===",
+            BinaryOp::CaseNeq => "!==",
+            BinaryOp::WildEq => "==?",
+            BinaryOp::WildNeq => "!=?",
+            BinaryOp::LAnd => "&&",
+            BinaryOp::LOr => "||",
+            BinaryOp::Power => "**",
+            BinaryOp::Lt => "<",
+            BinaryOp::Leq => "<=",
+            BinaryOp::Gt => ">",
+            BinaryOp::Geq => ">=",
+            BinaryOp::And => "&",
+            BinaryOp::Or => "|",
+            BinaryOp::Xor => "^",
+            BinaryOp::Xnor => "~^",
+            BinaryOp::LShr => ">>",
+            BinaryOp::LShl => "<<",
+            BinaryOp::AShr => ">>>",
+            BinaryOp::AShl => "<<<",
+            BinaryOp::Imply => "->",
+            BinaryOp::Equiv => "<->",
+        })
+    }
+}
+
 //
-// Unknown
+// A.1.2 SystemVerilog source text
 //
 
 #[derive(Debug)]
@@ -251,10 +364,6 @@ pub enum Item {
 impl AstNode for Item {
     fn name() -> &'static str { "item" }
 }
-
-//
-// A.1.2 SystemVerilog source text
-//
 
 /// Declaration of module, interface, program or package
 #[derive(Debug)]
@@ -641,12 +750,14 @@ pub enum ExprKind {
     SignCast(Signing, Box<Expr>),
     TypeCast(Box<Expr>, Box<Expr>),
 
-    Unary(Operator, Option<Box<AttrInst>>, Box<Expr>),
-    Binary(Box<Expr>, Operator, Option<Box<AttrInst>>, Box<Expr>),
-    PostfixIncDec(Box<Expr>, Option<Box<AttrInst>>, Operator),
+    Unary(UnaryOp, Option<Box<AttrInst>>, Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Option<Box<AttrInst>>, Box<Expr>),
+    PrefixIncDec(IncDec, Option<Box<AttrInst>>, Box<Expr>),
+    PostfixIncDec(Box<Expr>, Option<Box<AttrInst>>, IncDec),
 
     /// Assignment
-    Assign(Box<Expr>, Operator, Box<Expr>),
+    Assign(Box<Expr>, Box<Expr>),
+    BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
 
     /// Parenthesised expression
     Paren(Box<Expr>),

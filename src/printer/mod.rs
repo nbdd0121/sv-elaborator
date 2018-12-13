@@ -614,8 +614,17 @@ impl PrettyPrint {
                 self.append(format!("{}", op));
                 self.print_expr(expr);
             }
-            ExprKind::Assign(lhr, op, rhs) |
-            ExprKind::Binary(lhr, op, _, rhs) => {
+            ExprKind::Assign(lhr, rhs) => {
+                self.print_expr(lhr);
+                self.append(" = ");
+                self.print_expr(rhs);
+            }
+            ExprKind::BinaryAssign(lhr, op, rhs) => {
+                self.print_expr(lhr);
+                self.append(format!(" {}= ", op));
+                self.print_expr(rhs);
+            }
+            ExprKind::Binary(lhr, op, _attr, rhs) => {
                 self.print_expr(lhr);
                 self.append(format!(" {} ", op));
                 self.print_expr(rhs);

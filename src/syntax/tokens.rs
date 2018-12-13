@@ -20,171 +20,6 @@ pub enum Delim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Operator {
-    // Binary Ops
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    And,
-    Or,
-    Xor,
-    LShl,
-    LShr,
-    AShl,
-    AShr,
-
-    // Binary Ops Assign
-    AddEq,
-    SubEq,
-    MulEq,
-    DivEq,
-    ModEq,
-    AndEq,
-    OrEq,
-    XorEq,
-    LShlEq,
-    LShrEq,
-    AShlEq,
-    AShrEq,
-
-    // Single character operators
-    // "="
-    Assign,
-    // "!"
-    LNot,
-    // "~",
-    Not,
-    // "<"
-    Lt,
-    // ">"
-    Gt,
-    // "?"
-    Question,
-    // "'"
-    Tick,
-    // "$"
-    Dollar,
-
-    // Multi-character operator
-    // "&&"
-    LAnd,
-    // "||",
-    LOr,
-    // "<="
-    Leq,
-    // ">=",
-    Geq,
-    // "=="
-    Eq,
-    // "!="
-    Neq,
-    // "==="
-    CaseEq,
-    // "!=="
-    CaseNeq,
-    // "==?"
-    WildEq,
-    // "!=?"
-    WildNeq,
-    // "~&"
-    Nand,
-    // "~|"
-    Nor,
-    // "~^" or "^~"
-    Xnor,
-    // "->"
-    Implies,
-    // "<->"
-    Equiv,
-    // "=>"
-    ParConnect,
-    // "*>"
-    FullConnect,
-    // "&&&"
-    TripleAnd,
-    // "**"
-    Power,
-    // "+:"
-    PlusColon,
-    // "-:"
-    MinusColon,
-    // ".*"
-    WildPattern,
-    // "++"
-    Inc,
-    // "--"
-    Dec,
-    // "->>""
-    NonblockTrigger,
-    // "::"
-    ScopeSep,
-    // ":="
-    DistEq,
-    // ":/"
-    DistDiv,
-    // "|->"
-    OverlapImply,
-    // "|=>"
-    NonOverlapImply,
-    /* We parse the following operators and a combinational of operators for
-     * simplicity. The standard seems to treat them as a single symbol though,
-     * but that design isn't really friendly for non-generated tokenizers.
-     * // "[=]"
-     * Repeat,
-     * // "[="
-     * RepeatStart,
-     * // "[*]"
-     * ConsecutiveRepeat,
-     * // "[*"
-     * ConsecutiveRepeatStart,
-     * // "[+]"
-     * ConsecutiveRepeatPlus,
-     * // "[->]"
-     * GotoRepeat,
-     * // "[->"
-     * GotoRepeatStart,
-     */
-}
-
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let str = match self {
-            Operator::LNot => "!",
-            Operator::Not => "~",
-            Operator::Add => "+",
-            Operator::Sub => "-",
-            Operator::Mul => "*",
-            Operator::Div => "/",
-            Operator::Mod => "%",
-            Operator::And => "&",
-            Operator::Or => "|",
-            Operator::Xor => "^",
-            Operator::LShl => "<<",
-            Operator::LShr => ">>",
-            Operator::AShl => "<<<",
-            Operator::AShr => ">>>",
-            Operator::Assign => "=",
-            Operator::Lt => "<",
-            Operator::Leq => "<=",
-            Operator::Gt => ">",
-            Operator::Power => "**",
-            Operator::LAnd => "&&",
-            Operator::LOr => "||",
-            Operator::Eq => "==",
-            Operator::Neq => "!=",
-            Operator::Inc => "++",
-            Operator::Dec => "--",
-            _ => {
-                return write!(f, "{:?} unimp", self);
-            }
-        };
-        write!(f, "{}", str)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
     // System task identifiers that are treated as keyword
     Unit,
@@ -397,8 +232,6 @@ impl fmt::Display for Keyword {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
-    /// This is an expression operator or structure symbols
-    Operator(Operator),
     /// This is a keyword
     Keyword(Keyword),
     /// An opening delimiter
@@ -408,6 +241,15 @@ pub enum TokenKind {
     //
     // Operator groups
     //
+    // Single character operators
+    /// "="
+    Assign,
+    /// "?"
+    Question,
+    /// "'"
+    Tick,
+    /// "$"
+    Dollar,
     /// "@"
     At,
     /// "#"
@@ -421,6 +263,7 @@ pub enum TokenKind {
     /// ";"
     Semicolon,
 
+    // Multi-character operator
     /// "@*"
     AtStar,
     /// "@@"
@@ -429,6 +272,60 @@ pub enum TokenKind {
     CycleDelay,
     /// "(*)"
     ParenedStar,
+    /// "=>"
+    ParConnect,
+    /// "*>"
+    FullConnect,
+    /// "&&&"
+    TripleAnd,
+    /// "+:"
+    PlusColon,
+    /// "-:"
+    MinusColon,
+    /// ".*"
+    WildPattern,
+    /// "->>""
+    NonblockTrigger,
+    /// "::"
+    ScopeSep,
+    /// ":="
+    DistEq,
+    /// ":/"
+    DistDiv,
+    /// "|->"
+    OverlapImply,
+    /// "|=>"
+    NonOverlapImply,
+    /* We parse the following operators and a combinational of operators for
+     * simplicity. The standard seems to treat them as a single symbol though,
+     * but that design isn't really friendly for non-generated tokenizers.
+     * // "[=]"
+     * Repeat,
+     * // "[="
+     * RepeatStart,
+     * // "[*]"
+     * ConsecutiveRepeat,
+     * // "[*"
+     * ConsecutiveRepeatStart,
+     * // "[+]"
+     * ConsecutiveRepeatPlus,
+     * // "[->]"
+     * GotoRepeat,
+     * // "[->"
+     * GotoRepeatStart,
+     */
+
+    /// Represent an unary operator.
+    /// Exclude +, -, &, |, ^, ~^, which will be parsed as BinaryOp
+    UnaryOp(UnaryOp),
+    /// Represent a binary operator.
+    /// Note that +, -, *, /, &, |, ^, ~^, ->, <<, >>, <= will all be tokenized as BinaryOp but
+    /// has special meaning elsewhere.
+    BinaryOp(BinaryOp),
+    /// Represent a binary operator with assignment.
+    BinaryOpAssign(BinaryOp),
+    /// Represent either ++ or --.
+    IncDec(IncDec),
 
     //
     // Keyword groups
