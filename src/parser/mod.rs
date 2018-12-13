@@ -1253,6 +1253,20 @@ impl Parser {
     // A.2.2.1 Net and variable types
     //
 
+    /// Parse a data type (or implicit)
+    fn parse_data_type(&mut self) -> DataType {
+        let expr = self.parse_expr();
+        let span = expr.span;
+        match self.conv_expr_to_type(expr) {
+            Some(v) => v,
+            None => {
+                self.report_span(Severity::Error, "expected data type", span);
+                // Error recovery
+                Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), span)
+            }
+        }
+    }
+
     /// Parse a data type (or implicit) followed a decl_assign.
     fn parse_data_type_decl_assign(&mut self) -> (Option<DataType>, DeclAssign) {
         let expr = self.parse_expr();
@@ -1405,9 +1419,7 @@ impl Parser {
             }
             TokenKind::Keyword(Keyword::Struct) |
             TokenKind::Keyword(Keyword::Union) => self.parse_aggr_decl(),
-            TokenKind::Keyword(Keyword::Enum) => {
-                self.unimplemented();
-            }
+            TokenKind::Keyword(Keyword::Enum) => self.parse_enum_decl(),
             TokenKind::Keyword(Keyword::String) => {
                 let span = self.consume().span;
                 Spanned::new(DataTypeKind::String, span)
@@ -1500,13 +1512,37 @@ impl Parser {
                 })
             })
         });
-        let span = token.span.merge(members.span);
+        let mut span = token.span.merge(members.span);
+        let dim = self.parse_list(Self::parse_dim_opt);
+        if let Some(v) = dim.last() {
+            span = span.merge(v.span);
+        }
         Spanned::new(DataTypeKind::Aggr(AggrDecl {
             kind,
             packed,
             sign,
             members: members.value
-        }), span)
+        }, dim), span)
+    }
+
+    /// Parse a enum declaration.
+    fn parse_enum_decl(&mut self) -> DataType {
+        let token = self.consume();
+        let base = if let TokenKind::DelimGroup(Delim::Brace, _) = **self.peek() { None } else {
+            Some(Box::new(self.parse_data_type()))
+        };
+        let members = self.parse_delim_spanned(Delim::Brace, |this| {
+            this.parse_comma_list(false, false, Self::parse_decl_assign_opt)
+        });
+        let mut span = token.span.merge(members.span);
+        let dim = self.parse_list(Self::parse_dim_opt);
+        if let Some(v) = dim.last() {
+            span = span.merge(v.span);
+        }
+        Spanned::new(DataTypeKind::Enum(EnumDecl {
+            ty: base,
+            members: members.value
+        }, dim), span)
     }
 
     /// Convert an expression to a type. Useful when we try to parse thing as expression first due

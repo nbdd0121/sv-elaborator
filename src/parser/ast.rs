@@ -317,8 +317,8 @@ pub enum DataTypeKind {
     IntVec(IntVecTy, Signing, Vec<Dim>),
     IntAtom(IntAtomTy, Signing),
     NonInt(NonIntTy),
-    Aggr(AggrDecl),
-    Enum, // TODO
+    Aggr(AggrDecl, Vec<Dim>),
+    Enum(EnumDecl, Vec<Dim>),
     String,
     Chandle,
     VirtualInterface, // TODO
@@ -395,6 +395,13 @@ pub struct AggrMember {
     // TODO: Random qualifier
     pub ty: DataType,
     pub list: Vec<DeclAssign>,
+}
+
+/// Represent a enum_declaration
+#[derive(Debug)]
+pub struct EnumDecl {
+    pub ty: Option<Box<DataType>>,
+    pub members: Vec<DeclAssign>,
 }
 
 //

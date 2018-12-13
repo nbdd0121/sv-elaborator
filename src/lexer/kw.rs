@@ -201,6 +201,7 @@ impl fmt::Display for Keyword {
         let str = match self {
             Keyword::Module => "module",
             Keyword::Interface => "interface",
+            Keyword::Package => "package",
             _ => {
                 return write!(f, "{:?} unimp", self);
             }

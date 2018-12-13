@@ -450,7 +450,7 @@ impl PrettyPrint {
                     self.print_dim(dim);
                 }
             }
-            DataTypeKind::Aggr(aggr) => {
+            DataTypeKind::Aggr(aggr, dim) => {
                 self.append(format!("{}", aggr.kind));
                 if aggr.packed {
                     self.append(" packed");
@@ -463,11 +463,30 @@ impl PrettyPrint {
                 for member in &aggr.members {
                     self.indent_append("");
                     self.print_type(&member.ty);
+                    self.append(" ");
                     self.print_comma_list(&member.list, Self::print_decl_assign);
                     self.append(";\n");
                 }
                 self.indent(-4);
                 self.indent_append("}");
+                for dim in dim {
+                    self.print_dim(dim);
+                }
+            }
+            DataTypeKind::Enum(en, dim) => {
+                self.append("enum ");
+                if let Some(v) = &en.ty {
+                    self.print_type(v);
+                    self.append(" ");
+                }
+                self.append("{\n");
+                self.indent(4);
+                self.print_comma_list_newline(&en.members, Self::print_decl_assign);
+                self.indent(-4);
+                self.indent_append("}");
+                for dim in dim {
+                    self.print_dim(dim);
+                }
             }
             DataTypeKind::Implicit(sign, dim) => {
                 if sign == &Signing::Signed {
