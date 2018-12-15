@@ -738,7 +738,7 @@ impl PrettyPrint {
             }
             _ => {
                 eprintln!("{:?}", obj);
-                // unimplemented!();
+                unimplemented!();
             }
         }
     }

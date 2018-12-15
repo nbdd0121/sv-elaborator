@@ -334,7 +334,7 @@ pub enum TokenKind {
     Signing(Signing),
     IntAtomTy(IntAtomTy),
     IntVecTy(IntVecTy),
-    NonIntTy(NonIntTy),
+    RealTy(RealTy),
     NetTy(NetTy),
     /// Exclude supply0, which will be parsed as NetTy
     Strength0(DriveStrength),

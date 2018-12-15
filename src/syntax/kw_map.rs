@@ -69,8 +69,8 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("pullup", (TokenKind::Primitive(Primitive::Pullup), 1));
     m.insert("pulldown", (TokenKind::Primitive(Primitive::Pulldown), 1));
     m.insert("rcmos", (TokenKind::Primitive(Primitive::Rcmos), 1));
-    m.insert("real", (TokenKind::NonIntTy(NonIntTy::Real), 1));
-    m.insert("realtime", (TokenKind::NonIntTy(NonIntTy::Real), 1));
+    m.insert("real", (TokenKind::RealTy(RealTy::Real), 1));
+    m.insert("realtime", (TokenKind::RealTy(RealTy::Real), 1));
     m.insert("reg", (TokenKind::Keyword(Keyword::Reg), 1));
     m.insert("release", (TokenKind::Keyword(Keyword::Release), 1));
     m.insert("repeat", (TokenKind::Keyword(Keyword::Repeat), 1));
@@ -214,7 +214,7 @@ pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     m.insert("return", (TokenKind::Keyword(Keyword::Return), 5));
     m.insert("sequence", (TokenKind::Keyword(Keyword::Sequence), 5));
     m.insert("shortint", (TokenKind::IntAtomTy(IntAtomTy::Shortint), 5));
-    m.insert("shortreal", (TokenKind::NonIntTy(NonIntTy::Shortreal), 5));
+    m.insert("shortreal", (TokenKind::RealTy(RealTy::Shortreal), 5));
     m.insert("solve", (TokenKind::Keyword(Keyword::Solve), 5));
     m.insert("static", (TokenKind::Keyword(Keyword::Static), 5));
     m.insert("string", (TokenKind::Keyword(Keyword::String), 5));

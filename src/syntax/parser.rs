@@ -654,7 +654,7 @@ impl<'a> Parser<'a> {
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::NonIntTy(_) |
+            TokenKind::RealTy(_) |
             TokenKind::Keyword(Keyword::Struct) |
             TokenKind::Keyword(Keyword::Union) |
             TokenKind::Keyword(Keyword::Enum) |
@@ -1414,9 +1414,9 @@ impl<'a> Parser<'a> {
                 };
                 Spanned::new(DataTypeKind::IntAtom(ty, sign), span)
             }
-            TokenKind::NonIntTy(ty) => {
+            TokenKind::RealTy(ty) => {
                 let span = self.consume().span;
-                Spanned::new(DataTypeKind::NonInt(ty), span)
+                Spanned::new(DataTypeKind::Real(ty), span)
             }
             TokenKind::Keyword(Keyword::Struct) |
             TokenKind::Keyword(Keyword::Union) => self.parse_aggr_decl(),
@@ -2827,7 +2827,7 @@ impl<'a> Parser<'a> {
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::NonIntTy(_) |
+            TokenKind::RealTy(_) |
             TokenKind::Keyword(Keyword::Struct) |
             TokenKind::Keyword(Keyword::Union) |
             TokenKind::Keyword(Keyword::Enum) |
