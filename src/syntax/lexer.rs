@@ -3,7 +3,7 @@ use super::ast::*;
 
 use super::kw_map::HASHMAP;
 use super::super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos};
-use super::super::number::{LogicValue, LogicNumber};
+use super::super::number::{LogicValue, LogicVec, LogicNumber};
 
 use num::{BigUint, Zero, One, Num};
 
@@ -392,11 +392,13 @@ impl<'a> Lexer<'a> {
 
                 // Error recovery, treat it as zero
                 return LogicNumber {
-                    width: 1,
                     sized: false,
                     signed: signed,
-                    value: BigUint::zero(),
-                    xz: BigUint::zero(),
+                    value: LogicVec {
+                        width: 1,
+                        value: BigUint::zero(),
+                        xz: BigUint::zero(),
+                    }
                 }
             }
         };
@@ -425,11 +427,13 @@ impl<'a> Lexer<'a> {
 
             // Error recovery, treat it as zero
             return LogicNumber {
-                width: 1,
                 sized: false,
                 signed: signed,
-                value: BigUint::zero(),
-                xz: BigUint::zero(),
+                value: LogicVec {
+                    width: 1,
+                    value: BigUint::zero(),
+                    xz: BigUint::zero(),
+                },
             }
         }
 
@@ -441,11 +445,13 @@ impl<'a> Lexer<'a> {
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
                     LogicNumber {
-                        width: 1,
                         sized: false,
                         signed: signed,
-                        value: BigUint::one(),
-                        xz: BigUint::one(),
+                        value: LogicVec {
+                            width: 1,
+                            value: BigUint::one(),
+                            xz: BigUint::one(),
+                        },
                     }
                 }
                 'z' | 'Z' => {
@@ -453,22 +459,26 @@ impl<'a> Lexer<'a> {
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
                     LogicNumber {
-                        width: 1,
                         sized: false,
                         signed: signed,
-                        value: BigUint::zero(),
-                        xz: BigUint::one(),
+                        value: LogicVec {
+                            width: 1,
+                            value: BigUint::zero(),
+                            xz: BigUint::one(),
+                        },
                     }
                 }
                 '0' ... '9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
                     LogicNumber {
-                        width: cmp::min(num.bits(), 1),
                         sized: false,
                         signed: signed,
-                        value: num,
-                        xz: BigUint::zero(),
+                        value: LogicVec {
+                            width: cmp::min(num.bits(), 1),
+                            value: num,
+                            xz: BigUint::zero(),
+                        },
                     }
                 }
                 _ => unreachable!(),
@@ -514,11 +524,13 @@ impl<'a> Lexer<'a> {
         }
 
         return LogicNumber {
-            width: str.len() * log2,
             sized: false,
             signed: signed,
-            value: BigUint::from_str_radix(&str, radix).unwrap(),
-            xz: BigUint::from_str_radix(&xz, radix).unwrap(),
+            value: LogicVec {
+                width: str.len() * log2,
+                value: BigUint::from_str_radix(&str, radix).unwrap(),
+                xz: BigUint::from_str_radix(&xz, radix).unwrap(),
+            }
         }
     }
 
@@ -682,7 +694,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 let mut num = self.parse_based_number();
-                num.x_extend(size);
+                num.value = num.value.xz_extend_or_trunc(size);
                 num.sized = true;
                 return TokenKind::IntegerLiteral(num);
             }
@@ -693,11 +705,13 @@ impl<'a> Lexer<'a> {
 
         let num: BigUint = str.parse().unwrap();
         TokenKind::IntegerLiteral(LogicNumber {
-            width: cmp::min(num.bits(), 32),
             sized: false,
             signed: true,
-            value: num,
-            xz: BigUint::zero()
+            value: LogicVec {
+                width: cmp::max(num.bits(), 32),
+                value: num,
+                xz: BigUint::zero(),
+            }
         })
     }
 
