@@ -367,7 +367,7 @@ impl<'a> Lexer<'a> {
     }
 
     // Parse based number (assume ' is already consumed).
-    fn parse_based_number(&mut self) -> LogicNumber {
+    fn parse_based_number(&mut self) -> LogicVec {
         // Parse sign
         let signed = match self.peekch() {
             Some('s') | Some('S') => {
@@ -391,14 +391,11 @@ impl<'a> Lexer<'a> {
                 );
 
                 // Error recovery, treat it as zero
-                return LogicNumber {
-                    sized: false,
+                return LogicVec {
+                    width: 1,
                     signed: signed,
-                    value: LogicVec {
-                        width: 1,
-                        value: BigUint::zero(),
-                        xz: BigUint::zero(),
-                    }
+                    value: BigUint::zero(),
+                    xz: BigUint::zero(),
                 }
             }
         };
@@ -426,14 +423,11 @@ impl<'a> Lexer<'a> {
             );
 
             // Error recovery, treat it as zero
-            return LogicNumber {
-                sized: false,
+            return LogicVec {
+                width: 1,
                 signed: signed,
-                value: LogicVec {
-                    width: 1,
-                    value: BigUint::zero(),
-                    xz: BigUint::zero(),
-                },
+                value: BigUint::zero(),
+                xz: BigUint::zero(),
             }
         }
 
@@ -444,41 +438,32 @@ impl<'a> Lexer<'a> {
                     self.nextch();
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
-                    LogicNumber {
-                        sized: false,
+                    LogicVec {
+                        width: 1,
                         signed: signed,
-                        value: LogicVec {
-                            width: 1,
-                            value: BigUint::one(),
-                            xz: BigUint::one(),
-                        },
+                        value: BigUint::one(),
+                        xz: BigUint::one(),
                     }
                 }
                 'z' | 'Z' => {
                     self.nextch();
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
-                    LogicNumber {
-                        sized: false,
+                    LogicVec {
+                        width: 1,
                         signed: signed,
-                        value: LogicVec {
-                            width: 1,
-                            value: BigUint::zero(),
-                            xz: BigUint::one(),
-                        },
+                        value: BigUint::zero(),
+                        xz: BigUint::one(),
                     }
                 }
                 '0' ... '9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
-                    LogicNumber {
-                        sized: false,
+                    LogicVec {
+                        width: cmp::min(num.bits(), 1),
                         signed: signed,
-                        value: LogicVec {
-                            width: cmp::min(num.bits(), 1),
-                            value: num,
-                            xz: BigUint::zero(),
-                        },
+                        value: num,
+                        xz: BigUint::zero(),
                     }
                 }
                 _ => unreachable!(),
@@ -523,14 +508,11 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        return LogicNumber {
-            sized: false,
+        return LogicVec {
+            width: str.len() * log2,
             signed: signed,
-            value: LogicVec {
-                width: str.len() * log2,
-                value: BigUint::from_str_radix(&str, radix).unwrap(),
-                xz: BigUint::from_str_radix(&xz, radix).unwrap(),
-            }
+            value: BigUint::from_str_radix(&str, radix).unwrap(),
+            xz: BigUint::from_str_radix(&xz, radix).unwrap(),
         }
     }
 
@@ -694,9 +676,11 @@ impl<'a> Lexer<'a> {
                 }
 
                 let mut num = self.parse_based_number();
-                num.value = num.value.xz_extend_or_trunc(size);
-                num.sized = true;
-                return TokenKind::IntegerLiteral(num);
+                num = num.xz_extend_or_trunc(size);
+                return TokenKind::IntegerLiteral(LogicNumber {
+                    sized: true,
+                    value: num
+                });
             }
         }
 
@@ -706,9 +690,10 @@ impl<'a> Lexer<'a> {
         let num: BigUint = str.parse().unwrap();
         TokenKind::IntegerLiteral(LogicNumber {
             sized: false,
-            signed: true,
             value: LogicVec {
-                width: cmp::max(num.bits(), 32),
+                // +1 here to account for the sign bit.
+                width: cmp::max(num.bits() + 1, 32),
+                signed: true,
                 value: num,
                 xz: BigUint::zero(),
             }
@@ -770,7 +755,13 @@ impl<'a> Lexer<'a> {
             '\'' => {
                 match self.peekch().unwrap_or(' ') {
                     's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
-                        TokenKind::IntegerLiteral(self.parse_based_number())
+                        let num = self.parse_based_number();
+                        let size = cmp::max(num.width + num.signed as usize, 32);
+                        let num = num.xz_extend_or_trunc(size);
+                        TokenKind::IntegerLiteral(LogicNumber {
+                            sized: false,
+                            value: num
+                        })
                     }
                     '{' => {
                         self.nextch();

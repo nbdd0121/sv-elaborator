@@ -1,4 +1,4 @@
-use num::{BigUint, One, Zero, ToPrimitive};
+use num::{BigUint, BigInt, bigint::Sign, One, Zero, ToPrimitive};
 use std::fmt;
 
 /// Represntation of Verilog's 4-state logic
@@ -25,6 +25,7 @@ impl fmt::Display for LogicValue {
 #[derive(Clone, PartialEq)]
 pub struct LogicVec {
     pub width: usize,
+    pub signed: bool,
     pub value: BigUint,
     pub xz: BigUint,
 }
@@ -32,7 +33,7 @@ pub struct LogicVec {
 impl LogicVec {
 
     /// Construct a 4-state logic array from 2-state logic.
-    pub fn new(width: usize, mut value: BigUint) -> LogicVec {
+    pub fn new(width: usize, signed: bool, mut value: BigUint) -> LogicVec {
         if width < value.bits() {
             let mut val = BigUint::one();
             val <<= width;
@@ -42,14 +43,32 @@ impl LogicVec {
 
         LogicVec {
             width,
+            signed,
             value,
             xz: BigUint::zero(),
         }
     }
 
+    /// Convert from BigInt
+    pub fn from(width: usize, signed: bool, value: BigInt) -> LogicVec {
+        let value = if let Sign::Minus = value.sign() {
+            let mut abs = (-value).to_biguint().unwrap();
+            let mut val = BigUint::one();
+            val <<= width;
+            val -= 1 as u8;
+            // Invert all bits
+            abs ^= val;
+            abs + 1 as u8
+        } else {
+            value.to_biguint().unwrap()
+        };
+        Self::new(width, signed, value)
+    }
+
     /// Fill a vector with a value
-    pub fn fill(width: usize, value: LogicValue) -> LogicVec {
-        let vec: Self = (&value).into();
+    pub fn fill(width: usize, signed: bool, value: LogicValue) -> LogicVec {
+        let mut vec: Self = (&value).into();
+        vec.signed = signed;
         vec.duplicate(width)
     }
 
@@ -75,6 +94,7 @@ impl LogicVec {
         let xz = &self.xz & &val;
         Self {
             width,
+            signed: self.signed,
             value,
             xz,
         }
@@ -85,10 +105,26 @@ impl LogicVec {
         self.xz.is_zero()
     }
 
-    /// Convert to two state value. If there is a Z or X, `None` is returned.
-    pub fn get_two_state(&self) -> Option<BigUint> {
+    /// Convert to unsigned two state value. If there is a Z or X, `None` is returned.
+    pub fn get_two_state_unsigned(&self) -> Option<BigUint> {
         if self.is_two_state() {
             Some(self.value.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Convert to two state value. If there is a Z or X, `None` is returned.
+    pub fn get_two_state(&self) -> Option<BigInt> {
+        if self.is_two_state() {
+            if self.signed && self.value_bit_at(self.width - 1) {
+                let mut ret = BigUint::one();
+                ret <<= self.width;
+                ret -= &self.value;
+                Some(BigInt::from_biguint(Sign::Minus, ret))
+            } else {
+                Some(BigInt::from_biguint(Sign::Plus, self.value.clone()))
+            }
         } else {
             None
         }
@@ -120,6 +156,7 @@ impl LogicVec {
 
         Self {
             width,
+            signed: self.signed,
             value,
             xz,
         }
@@ -146,6 +183,7 @@ impl LogicVec {
 
         Self {
             width,
+            signed: self.signed,
             value,
             xz,
         }
@@ -163,6 +201,7 @@ impl LogicVec {
         }
         Self {
             width: self.width * count,
+            signed: self.signed,
             value,
             xz,
         }
@@ -179,6 +218,7 @@ impl<'a> From<&'a LogicValue> for LogicVec {
         };
         LogicVec {
             width: 1,
+            signed: false,
             value,
             xz,
         }
@@ -202,21 +242,20 @@ impl fmt::Debug for LogicVec {
 #[derive(Clone, PartialEq)]
 pub struct LogicNumber {
     pub sized: bool,
-    pub signed: bool,
     pub value: LogicVec,
 }
 
 impl fmt::Display for LogicNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         // In this case we can simply print out a decimal
-        if self.value.is_two_state() && !self.sized && self.signed {
+        if self.value.is_two_state() && !self.sized && self.value.signed {
             return write!(f, "{}", self.value.value)
         }
         if self.sized {
             write!(f, "{}", self.value.width)?;
         }
         write!(f, "'")?;
-        if self.signed {
+        if self.value.signed {
             write!(f, "s")?;
         }
         if self.value.xz.is_zero() {
