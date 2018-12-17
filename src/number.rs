@@ -189,6 +189,15 @@ impl LogicVec {
         }
     }
 
+    /// Perform extension or truncation
+    pub fn extend_or_trunc(&self, width: usize) -> Self {
+        if self.signed {
+            self.sign_extend_or_trunc(width)
+        } else {
+            self.xz_extend_or_trunc(width)
+        }
+    }
+
     pub fn duplicate(&self, count: usize) -> Self {
         // Currently we assume count is small, and does not use O(logn) algorithm.
         let mut value = BigUint::zero();

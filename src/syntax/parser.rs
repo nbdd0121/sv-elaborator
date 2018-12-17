@@ -1,17 +1,16 @@
 use super::ast::*;
 use super::tokens::*;
-use super::super::source::{SrcMgr, Diagnostic, DiagMgr, Severity, Pos, Span};
+use super::super::source::{Diagnostic, DiagMgr, Severity, Pos, Span};
 
 use std::mem;
 use std::collections::VecDeque;
 use std::borrow::Borrow;
 
-pub fn parse<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Vec<Item> {
-    Parser::new(mgr, diag, lexer).parse_source()
+pub fn parse<'a>(diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Vec<Item> {
+    Parser::new(diag, lexer).parse_source()
 }
 
 struct Parser<'a> {
-    mgr: &'a SrcMgr,
     diag: &'a DiagMgr,
     lexer: VecDeque<Token>,
     eof: Token,
@@ -80,10 +79,9 @@ enum ItemDAB {
 /// followed by identifier case we will parse them as data type first and when we see no
 /// identifiers following we can perform conversion.
 impl<'a> Parser<'a> {
-    fn new(mgr: &'a SrcMgr, diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Parser<'a> {
+    fn new(diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Parser<'a> {
         let last_pos = lexer.back().map(|x| x.span.end).unwrap_or(Pos(0));
         Parser {
-            mgr,
             diag,
             lexer: lexer,
             eof: Spanned::new(TokenKind::Eof, last_pos.span_to(last_pos))
