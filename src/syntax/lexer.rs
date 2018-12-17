@@ -349,7 +349,7 @@ impl<'a> Lexer<'a> {
                 '0' ... '9' => {
                     str.push(next);
                 },
-                'x' | 'X' | 'z' | 'Z' => {
+                'x' | 'X' | 'z' | 'Z' | '?' => {
                     self.report_pos(
                         Severity::Error,
                         "X or Zs are not allowed when base is decimal",
@@ -408,7 +408,7 @@ impl<'a> Lexer<'a> {
         let num_after_ws = match self.peekch() {
             None => false,
             Some(v) => match v {
-                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' | 'x' | 'X' | 'z' | 'Z' => true,
+                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' | 'x' | 'X' | 'z' | 'Z' | '?' => true,
                 // TODO: If + or - is specified here, probably give a better suggestion
                 _ => false
             }
@@ -445,7 +445,7 @@ impl<'a> Lexer<'a> {
                         xz: BigUint::one(),
                     }
                 }
-                'z' | 'Z' => {
+                'z' | 'Z' | '?' => {
                     self.nextch();
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
@@ -497,7 +497,7 @@ impl<'a> Lexer<'a> {
                     str.push(maxch);
                     xz.push(maxch);
                 }
-                'z' | 'Z' => {
+                'z' | 'Z' | '?' => {
                     str.push('0');
                     xz.push(maxch);
                 }
@@ -775,7 +775,7 @@ impl<'a> Lexer<'a> {
                         self.nextch();
                         TokenKind::UnbasedLiteral(LogicValue::One)
                     }
-                    'z' | 'Z' => {
+                    'z' | 'Z' | '?' => {
                         self.nextch();
                         TokenKind::UnbasedLiteral(LogicValue::Z)
                     }
