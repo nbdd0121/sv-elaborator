@@ -426,10 +426,6 @@ impl PrettyPrint {
                 });
                 self.append(";");
             }
-            _ => {
-                eprintln!("{:?}", obj);
-                unimplemented!()
-            }
         }
     }
 
@@ -443,10 +439,16 @@ impl PrettyPrint {
             DataTypeKind::IntVec(kw, sign, dim) => {
                 self.append(format!("{}", kw));
                 if sign == &Signing::Signed {
-                    self.append("signed");
+                    self.append(" signed");
                 }
                 for dim in dim {
                     self.print_dim(dim);
+                }
+            }
+            DataTypeKind::IntAtom(ty, sign) => {
+                self.append(format!("{}", ty));
+                if let Some(v) = sign {
+                    self.append(format!("{}", v));
                 }
             }
             DataTypeKind::Aggr(aggr, dim) => {
@@ -504,6 +506,11 @@ impl PrettyPrint {
                 for dim in dim {
                     self.print_dim(dim);
                 }
+            }
+            DataTypeKind::TypeRef(expr) => {
+                self.append("type(");
+                self.print_expr(expr);
+                self.append(")");
             }
             _ => {
                 eprintln!("{:?}", obj);

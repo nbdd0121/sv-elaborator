@@ -121,6 +121,19 @@ pub enum IntAtomTy {
     Time,
 }
 
+impl fmt::Display for IntAtomTy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            IntAtomTy::Byte => "byte",
+            IntAtomTy::Shortint => "shortint",
+            IntAtomTy::Int => "int",
+            IntAtomTy::Longint => "longint",
+            IntAtomTy::Integer => "integer",
+            IntAtomTy::Time => "time",
+        })
+    }
+}
+
 /// Represent a built-in vectored integer base type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntVecTy {
@@ -180,6 +193,15 @@ pub enum ChargeStrength {
 pub enum Signing {
     Signed,
     Unsigned,
+}
+
+impl fmt::Display for Signing {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            Signing::Signed => "signed",
+            Signing::Unsigned => "unsigned",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,11 +404,7 @@ impl fmt::Display for BinaryOp {
 
 #[derive(Debug)]
 pub enum Item {
-    TimeunitDecl,
     DesignDecl(Box<DesignDecl>),
-    UdpDecl,
-    BindDirective,
-    ConfigDecl,
     PkgImport(Vec<PkgImportItem>),
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
@@ -475,7 +493,7 @@ pub enum DataTypeKind {
     Type,
     Implicit(Signing, Vec<Dim>),
     IntVec(IntVecTy, Signing, Vec<Dim>),
-    IntAtom(IntAtomTy, Signing),
+    IntAtom(IntAtomTy, Option<Signing>),
     Real(RealTy),
     Aggr(AggrDecl, Vec<Dim>),
     Enum(EnumDecl, Vec<Dim>),

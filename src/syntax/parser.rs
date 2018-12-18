@@ -566,8 +566,8 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::End) => None,
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
-                let clone = self.peek().span.clone();
-                self.report_span(Severity::Fatal, "extern is not supported", clone);
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "extern is not supported", span);
                 unreachable!()
             }
             TokenKind::Keyword(Keyword::Import) => {
@@ -597,6 +597,15 @@ impl<'a> Parser<'a> {
             // package_declaration
             TokenKind::Keyword(Keyword::Package) => {
                 Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Package, Keyword::Endpackage))))
+            }
+            // parameter_override
+            TokenKind::Keyword(Keyword::Defparam) => {
+                // We've decided not to support defparam at all ever even though the standard
+                // still requires tools to support it. Defparam is a disaster to implement
+                // properly.
+                let span = self.peek().span;
+                self.report_span(Severity::Fatal, "defparam is deprecated, and is not supported by this tool.", span);
+                unreachable!()
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Some(self.parse_continuous_assign()),
@@ -1406,9 +1415,9 @@ impl<'a> Parser<'a> {
                 let mut span = self.consume().span;
                 let sign = if let TokenKind::Signing(sign) = **self.peek() {
                     span = span.merge(self.consume().span);
-                    sign
+                    Some(sign)
                 } else {
-                    Signing::Unsigned
+                    None
                 };
                 Spanned::new(DataTypeKind::IntAtom(ty, sign), span)
             }
