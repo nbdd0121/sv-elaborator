@@ -288,6 +288,25 @@ impl DiagMgr {
         }
     }
 
+    /// Create a errpr diagnostic from message and span and report it.
+    pub fn report_error<M: Into<String>>(&self, msg: M, span: Span) {
+        self.report(Diagnostic::new(
+            Severity::Error,
+            msg.into(),
+            span,
+        ));
+    }
+
+    /// Create a fatal diagnostic from message and span and report it.
+    pub fn report_fatal<M: Into<String>>(&self, msg: M, span: Span) -> ! {
+        self.report(Diagnostic::new(
+            Severity::Fatal,
+            msg.into(),
+            span,
+        ));
+        unreachable!()
+    }
+
     /// Clear exsting diagnostics
     pub fn clear(&self) {
         let mut m = self.mutable.borrow_mut();
