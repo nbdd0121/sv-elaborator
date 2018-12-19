@@ -502,7 +502,7 @@ impl PrettyPrint {
                     self.append(Self::get_scope(scope));
                     self.append("::");
                 }
-                self.append(Self::get_hier_id(name));
+                self.append(format!("{}", name));
                 for dim in dim {
                     self.print_dim(dim);
                 }

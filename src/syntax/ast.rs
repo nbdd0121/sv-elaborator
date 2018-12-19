@@ -502,7 +502,7 @@ pub enum DataTypeKind {
     VirtualInterface, // TODO
     Event,
     /// A hierahical name. Could possibly be typedef'd type, class type or covergroup identifier.
-    HierName(Option<Scope>, HierId, Vec<Dim>),
+    HierName(Option<Scope>, Ident, Vec<Dim>),
     /// Type reference of form type'(expr_or_data_type)
     TypeRef(Box<Expr>),
     /// Void type

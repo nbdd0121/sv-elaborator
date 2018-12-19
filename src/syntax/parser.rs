@@ -1558,7 +1558,15 @@ impl<'a> Parser<'a> {
     fn conv_expr_to_type(&mut self, expr: Expr) -> Option<DataType> {
         match expr.value {
             ExprKind::Type(ty) => Some(*ty),
-            ExprKind::HierName(scope, name) => {
+            ExprKind::HierName(scope, id) => {
+                // In data type, hierachical identifier is not allowed. It can only be 
+                let name = match id {
+                    HierId::Name(None, name) => *name,
+                    _ => {
+                        self.diag.report_error("hierachical identifier cannot appear in data type", expr.span);
+                        Ident::new_unspanned("".to_owned())
+                    }
+                };
                 Some(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span))
             }
             ExprKind::Select(ty, dim) => {
@@ -1582,8 +1590,8 @@ impl<'a> Parser<'a> {
     fn conv_type_to_id(&mut self, ty: DataType) -> Option<(Ident, Vec<Dim>)> {
         match ty.value {
             // TODO: what about dimension
-            DataTypeKind::HierName(None, HierId::Name(None, id), dim) => {
-                Some((*id, dim))
+            DataTypeKind::HierName(None, id, dim) => {
+                Some((id, dim))
             }
             _ => None,
         }
