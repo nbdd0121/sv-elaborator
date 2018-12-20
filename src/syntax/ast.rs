@@ -891,6 +891,72 @@ impl AstNode for HierId {
     fn name() -> &'static str { "hierachical identifier" }
 }
 
-/// Should be boxed when nested in other AST structure. An exception is that if the identifier is
-/// a compulsory part for an AST, it does not have to be boxed.
-pub type Ident = Spanned<String>;
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SymbolId(pub u32);
+
+impl SymbolId {
+    pub const DUMMY: Self = SymbolId(std::u32::MAX);
+}
+
+/// Represent an identifier. In additional to value and span as Spanned<T> have, it also contains
+/// a SymbolId field which will be filled by resolver.
+#[derive(Clone)]
+pub struct Ident {
+    pub value: String,
+    pub span: Span,
+    pub symbol: SymbolId,
+}
+
+impl Ident {
+    pub fn new(value: String, span: Span) -> Self {
+        Self {
+            value: value,
+            span: span,
+            symbol: SymbolId::DUMMY,
+        }
+    }
+
+    pub fn new_unspanned(value: String) -> Self {
+        Self {
+            value: value,
+            span: Span::none(),
+            symbol: SymbolId::DUMMY,
+        }
+    }
+}
+
+impl Deref for Ident {
+    type Target = String;
+
+    fn deref(&self) -> &String {
+        &self.value
+    }
+}
+
+impl DerefMut for Ident {
+    fn deref_mut(&mut self) -> &mut String {
+        &mut self.value
+    }
+}
+
+impl fmt::Debug for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+impl fmt::Display for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.symbol == SymbolId::DUMMY {
+            write!(f, "/*unresolved*/{}", self.value)
+        } else {
+            self.value.fmt(f)
+        }
+    }
+}
+
+impl PartialEq for Ident {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.value == rhs.value
+    }
+}

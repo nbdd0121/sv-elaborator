@@ -159,7 +159,7 @@ impl<'a> Parser<'a> {
     fn consume_if_id(&mut self) -> Option<Ident> {
         let toksp = self.consume();
         if let TokenKind::Id(name) = toksp.value {
-            Some(Spanned::new(name, toksp.span))
+            Some(Ident::new(name, toksp.span))
         } else {
             self.pushback(toksp);
             None
@@ -215,7 +215,7 @@ impl<'a> Parser<'a> {
                 let span = self.peek().span.clone();
                 self.report_span(Severity::Error, "expected identifier", span.clone());
                 // Error recovery
-                Spanned::new("".to_owned(), span)
+                Ident::new("".to_owned(), span)
             }
             Some(v) => v,
         }
@@ -2871,7 +2871,7 @@ impl<'a> Parser<'a> {
                         let span = self.peek().span;
                         self.report_span(Severity::Error, "expected identifiers after scope", span);
                         // Error recovery
-                        id = Some(HierId::Name(None, Box::new(Spanned::new_unspanned("".to_owned()))))
+                        id = Some(HierId::Name(None, Box::new(Ident::new_unspanned("".to_owned()))))
                     }
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);

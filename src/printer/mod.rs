@@ -216,7 +216,7 @@ impl PrettyPrint {
             self.append("\n");
         }
         self.indent(-4);
-        self.append(format!("end{}", obj.kw));
+        self.indent_append(format!("end{}", obj.kw));
     }
 
     fn print_hier_instantiation(&mut self, obj: &HierInstantiation) {
