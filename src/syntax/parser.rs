@@ -36,7 +36,7 @@ enum ItemDAB {
 
 /// SystemVerilog Parser.
 ///
-/// The complexity of SystemVerilog comes from determing what an identifer means. There are few
+/// The complexity of SystemVerilog comes from determining what an identifer means. There are few
 /// cases that we might be confused:
 /// When parsing item, we might be confused by:
 /// * hierarchical instantiation

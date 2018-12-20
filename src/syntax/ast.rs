@@ -402,7 +402,7 @@ impl fmt::Display for BinaryOp {
 // A.1.2 SystemVerilog source text
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     DesignDecl(Box<DesignDecl>),
     PkgImport(Vec<PkgImportItem>),
@@ -435,7 +435,7 @@ impl AstNode for Item {
 }
 
 /// Declaration of module, interface, program or package
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DesignDecl {
     pub attr: Option<Box<AttrInst>>,
     pub kw: Keyword,
@@ -452,7 +452,7 @@ pub struct DesignDecl {
 //
 
 /// AST for parameter_declaration or localparam_declaration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParamDecl {
     // Parameter or localparam
     pub kw: Keyword,
@@ -461,7 +461,7 @@ pub struct ParamDecl {
 }
 
 /// The type of ANSI port
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PortDecl {
     Data(PortDir, NetPortType, Box<DataType>, Vec<DeclAssign>),
     Interface(Option<Box<Ident>>, Option<Box<Ident>>, Vec<DeclAssign>),
@@ -472,7 +472,7 @@ pub enum PortDecl {
 // A.2.1.3 Type declarations
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PkgImportItem(pub Ident, pub Option<Ident>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -487,7 +487,7 @@ pub enum Lifetime {
 
 /// Represent a data_type_or_implicit. We have merged implicit here to simplify code, but if
 /// explicit data_type is required a check is needed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DataTypeKind {
     /// This isn't really a data type, but it is more convinient to have it here.
     Type,
@@ -519,7 +519,7 @@ impl AstNode for DataType {
 }
 
 /// Represent a net_port_type (but without data type)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NetPortType {
     Builtin(NetTy),
     UserDefined(Box<Ident>),
@@ -531,7 +531,7 @@ pub enum NetPortType {
     Default,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataDecl {
     pub attr: Option<Box<AttrInst>>,
     pub has_const: bool,
@@ -558,7 +558,7 @@ impl fmt::Display for AggrType {
 }
 
 /// Represent a struct_union
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AggrDecl {
     pub kind: AggrType,
     pub packed: bool,
@@ -567,7 +567,7 @@ pub struct AggrDecl {
 }
 
 /// Represent a struct_union_member
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AggrMember {
     pub attr: Option<Box<AttrInst>>,
     // TODO: Random qualifier
@@ -576,7 +576,7 @@ pub struct AggrMember {
 }
 
 /// Represent a enum_declaration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnumDecl {
     pub ty: Option<Box<DataType>>,
     pub members: Vec<DeclAssign>,
@@ -587,7 +587,7 @@ pub struct EnumDecl {
 //
 
 /// Most common declaration assignment
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeclAssign {
     pub name: Ident,
     pub dim: Vec<Dim>,
@@ -603,7 +603,7 @@ impl AstNode for DeclAssign {
 //
 
 /// Possible ways of specifying a variable dimension
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DimKind {
     /// Represent bit-select/dimension of type `[ expression ]`.
     /// It can also represent dimension of type `[ data_type ]`, but the resolution will not occur
@@ -632,14 +632,14 @@ pub type Dim = Spanned<DimKind>;
 //
 
 /// The type of modport port
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModportPortDecl {
     Simple(Option<Box<AttrInst>>, PortDir, Vec<ModportSimplePort>),
     Clocking(Option<Box<AttrInst>>, Box<Ident>),
     // TODO: modport_tf_port
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModportSimplePort {
     Named(Ident),
     Explicit(Ident, Box<Expr>),
@@ -649,14 +649,14 @@ pub enum ModportSimplePort {
 // A.4.1.1 Module instantiations
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HierInst {
     pub name: Ident,
     pub dim: Vec<Dim>,
     pub ports: Vec<Arg>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HierInstantiation {
     pub attr: Option<Box<AttrInst>>,
     pub name: Ident,
@@ -664,7 +664,7 @@ pub struct HierInstantiation {
     pub inst: Vec<HierInst>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Arg {
     Ordered(Option<Box<AttrInst>>, Option<Box<Expr>>),
     Named(Option<Box<AttrInst>>, Box<Ident>, Option<Box<Expr>>),
@@ -679,7 +679,7 @@ impl AstNode for Vec<Arg> {
 // A.4.2 Generate instantiations
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoopGen {
     pub attr: Option<Box<AttrInst>>,
     pub genvar: bool,
@@ -690,7 +690,7 @@ pub struct LoopGen {
     pub block: Item,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IfGen {
     pub attr: Option<Box<AttrInst>>,
     pub cond: Expr,
@@ -698,7 +698,7 @@ pub struct IfGen {
     pub false_block: Option<Box<Item>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GenBlock {
     pub name: Option<Box<Ident>>,
     pub items: Vec<Item>,
@@ -708,7 +708,7 @@ pub struct GenBlock {
 // A.6.4 Statements
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StmtKind {
     Empty,
     TimingCtrl(TimingCtrl, Box<Stmt>),
@@ -717,7 +717,7 @@ pub enum StmtKind {
     Expr(Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stmt {
     pub label: Option<Box<Ident>>,
     pub attr: Option<Box<AttrInst>>,
@@ -732,21 +732,21 @@ impl AstNode for Stmt {
 // A.6.5 Timing control statements
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EventExprItem {
     pub edge: Option<Edge>,
     pub expr: Box<Expr>,
     pub iff: Option<Box<Expr>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EventExpr {
     Item(Box<EventExprItem>),
     List(Vec<EventExpr>),
     Paren(Box<EventExpr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TimingCtrl {
     DelayCtrl(Box<Expr>),
     ExprEventCtrl(Box<EventExpr>),
@@ -760,7 +760,7 @@ pub enum TimingCtrl {
 //
 
 /// Represent an assignment pattern.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AssignPattern {
     Simple(Vec<Expr>),
     Keyed(Vec<(Expr, Expr)>),
@@ -771,7 +771,7 @@ pub enum AssignPattern {
 // A.8.2 Subroutine call
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SysTfCall {
     pub task: Spanned<String>,
     pub args: Option<Vec<Arg>>,
@@ -781,7 +781,7 @@ pub struct SysTfCall {
 // A.8.3 Expressions
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExprKind {
     /// As in many cases expression and type can occur in a same context, we have
     /// `ExprKind::Type` in the enum to represent the case where we know "this is definitely a
@@ -850,13 +850,13 @@ impl AstNode for Expr {
 // A.9.1 Attributes
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AttrSpec {
     pub name: Ident,
     pub expr: Option<Box<Expr>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AttrInstStruct(pub Vec<AttrSpec>);
 
 pub type AttrInst = Spanned<AttrInstStruct>;
@@ -865,7 +865,7 @@ pub type AttrInst = Spanned<AttrInstStruct>;
 // A.9.3 Identifiers
 //
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Scope {
     /// $unit scope
     Unit,
@@ -875,7 +875,7 @@ pub enum Scope {
     Name(Option<Box<Scope>>, Box<Ident>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum HierId {
     /// $root
     Root,
