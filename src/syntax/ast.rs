@@ -653,25 +653,25 @@ pub enum ModportSimplePort {
 pub struct HierInst {
     pub name: Ident,
     pub dim: Vec<Dim>,
-    pub ports: Vec<Arg>,
+    pub ports: Args,
 }
 
 #[derive(Debug, Clone)]
 pub struct HierInstantiation {
     pub attr: Option<Box<AttrInst>>,
     pub name: Ident,
-    pub param: Option<Vec<Arg>>,
+    pub param: Option<Args>,
     pub inst: Vec<HierInst>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Arg {
-    Ordered(Option<Box<AttrInst>>, Option<Box<Expr>>),
-    Named(Option<Box<AttrInst>>, Box<Ident>, Option<Box<Expr>>),
-    NamedWildcard(Option<Box<AttrInst>>),
+pub struct Args {
+    pub ordered: Vec<(Option<Box<AttrInst>>, Option<Box<Expr>>)>,
+    pub named: Vec<(Option<Box<AttrInst>>, Box<Ident>, Option<Box<Expr>>)>,
+    pub has_wildcard: bool,
 }
 
-impl AstNode for Vec<Arg> {
+impl AstNode for Args {
     fn name() -> &'static str { "arguments" }
 }
 
@@ -774,7 +774,7 @@ pub enum AssignPattern {
 #[derive(Debug, Clone)]
 pub struct SysTfCall {
     pub task: Spanned<String>,
-    pub args: Option<Vec<Arg>>,
+    pub args: Option<Args>,
 }
 
 //

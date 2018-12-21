@@ -236,14 +236,28 @@ impl<'a> From<&'a LogicValue> for LogicVec {
 
 impl fmt::Debug for LogicVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let mut str = format!("{:0width$b}", self.value, width=self.width).into_bytes();
-        let xz = format!("{:0width$b}", self.xz, width=self.width).into_bytes();
-        for i in 0..xz.len() {
-            if xz[i] == b'1' {
-                str[i] = if str[i] == b'0' { b'z' } else { b'x' }
-            }
+        write!(f, "{}'", self.width)?;
+        if self.signed {
+            write!(f, "s")?;
         }
-        write!(f, "b{}", String::from_utf8(str).unwrap())
+        if self.is_two_state() {
+            // We use a heuristics for display number. If the number is below 1024, display it as
+            // decimal. Otherwise display as hex.
+            if &self.value < &(1024 as u16).into() {
+                write!(f, "d{}", self.value)
+            } else {
+                write!(f, "h{:X}", self.value)
+            }
+        } else {
+            let mut str = format!("{:0width$b}", self.value, width=self.width).into_bytes();
+            let xz = format!("{:0width$b}", self.xz, width=self.width).into_bytes();
+            for i in 0..xz.len() {
+                if xz[i] == b'1' {
+                    str[i] = if str[i] == b'0' { b'z' } else { b'x' }
+                }
+            }
+            write!(f, "b{}", String::from_utf8(str).unwrap())
+        }
     }
 }
 

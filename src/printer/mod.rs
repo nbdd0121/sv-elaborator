@@ -222,13 +222,8 @@ impl PrettyPrint {
     fn print_hier_instantiation(&mut self, obj: &HierInstantiation) {
         self.append(format!("{}", obj.name));
         if let Some(v) = &obj.param {
-            self.append(" #(\n");
-            self.indent(4);
-            self.print_comma_list_newline(v, |this, t| {
-                this.print_arg(t)
-            });
-            self.indent(-4);
-            self.indent_append(")");
+            self.append(" #");
+            self.print_args(v, false);
         }
         for (item, first, _) in obj.inst.iter().identify_first_last() {
             if !first {
@@ -238,30 +233,47 @@ impl PrettyPrint {
             for dim in &item.dim {
                 self.print_dim(dim);
             }
-            self.append(" (\n");
-            self.indent(4);
-            self.print_comma_list_newline(&item.ports, |this, t| {
-                this.print_arg(t)
-            });
-            self.indent(-4);
-            self.indent_append(")");
+            self.append(" ");
+            self.print_args(&item.ports, false);
         }
         self.append(";");
     }
 
-    fn print_arg(&mut self, obj: &Arg) {
-        match obj {
-            Arg::Ordered(_, None) => (),
-            Arg::Ordered(_, Some(v)) => self.print_expr(v),
-            Arg::NamedWildcard(_) => self.append(".*"), 
-            Arg::Named(_, id, v) => {
-                self.append(format!(".{}(", id));
-                if let Some(v) = v {
-                    self.print_expr(v);
-                }
-                self.append(")");
+    fn print_args(&mut self, obj: &Args, inline: bool) {
+        self.append("(");
+        if !inline {
+            self.append("\n");
+            self.indent(4);
+        }
+        for ((_, v), _, last) in obj.ordered.iter().identify_first_last() {
+            if !inline { self.indent_append(""); }
+            if let Some(v) = v {
+                self.print_expr(v);
+            }
+            if !last || !obj.named.is_empty() {
+                self.append(if inline { ", " } else { ",\n" });
             }
         }
+        for ((_, id, v), _, last) in obj.named.iter().identify_first_last() {
+            if !inline { self.indent_append(""); }
+            self.append(format!(".{}(", id));
+            if let Some(v) = v {
+                self.print_expr(v);
+            }
+            self.append(")");
+            if !last || !obj.has_wildcard {
+                self.append(if inline { ", " } else { ",\n" });
+            }
+        }
+        if obj.has_wildcard {
+            self.indent_append(".*");
+        }
+        if !inline {
+            self.append("\n");
+            self.indent(-4);
+            self.indent_append("");
+        }
+        self.append(")");
     }
 
     pub fn print_item(&mut self, obj: &Item) {
@@ -544,11 +556,7 @@ impl PrettyPrint {
     fn print_sys_tf_call(&mut self, obj: &SysTfCall) {
         self.append(format!("{}", obj.task));
         if let Some(args) = &obj.args {
-            self.append("(");
-            self.print_comma_list(args, |this, t| {
-                this.print_arg(t)
-            });
-            self.append(")");
+            self.print_args(args, true);
         }
     }
 

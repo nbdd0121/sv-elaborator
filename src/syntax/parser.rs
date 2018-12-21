@@ -637,7 +637,17 @@ impl<'a> Parser<'a> {
             }
             // elaboration_system_task
             TokenKind::SystemTask(_) => {
+                // First parse as a standard system tf call.
                 let tf = self.parse_sys_tf_call();
+                // Check that this is an elaboration_system_task.
+                match tf.task.as_str() {
+                    // Also the syntax requires first argument of $fatal to be either 0,1,2
+                    // literal we relax a little bit here and delay it until elaboration.
+                    "$fatal" | "$error" | "$warning" | "$info" => (),
+                    _ => {
+                        self.diag.report_error("only elaboration system task can appear as an item", tf.task.span);
+                    }
+                }
                 self.expect(TokenKind::Semicolon);
                 Some(Item::SysTfCall(Box::new(tf)))
             }
@@ -1914,11 +1924,14 @@ impl<'a> Parser<'a> {
     ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
     /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
     /// ```
-    fn parse_args_opt(&mut self, option: ArgOption) -> Option<Vec<Arg>> {
-        let mut named_seen = false;
-        let mut ordered_seen = false;
+    fn parse_args_opt(&mut self, option: ArgOption) -> Option<Args> {
         self.parse_if_delim(Delim::Paren, |this| {
-            this.parse_comma_list(true, false, |this| {
+            // One list for each type of argument.
+            let mut ordered = Vec::new();
+            let mut named = Vec::new();
+            let mut has_wildcard = false;
+
+            this.parse_comma_list_unit(true, false, |this| {
                 let attr = this.parse_attr_inst_opt();
                 if option != ArgOption::Port && attr.is_some() {
                     this.report_span(
@@ -1935,23 +1948,30 @@ impl<'a> Parser<'a> {
                             v.span
                         );
                     }
-                    named_seen = true;
-                    Some(Arg::NamedWildcard(attr))
+                    if has_wildcard {
+                        this.report_span(
+                            Severity::Error,
+                            ".* can only appear once in an argument list",
+                            v.span
+                        );
+                    }
+                    has_wildcard = true;
+                    true
                 } else if let Some(v) = this.consume_if(TokenKind::Dot) {
                     let name = this.expect_id();
                     let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
-                    if ordered_seen && option != ArgOption::Arg {
+                    if !ordered.is_empty() && option != ArgOption::Arg {
                         this.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(expr.span)
                         );
                     }
-                    named_seen = true;
-                    Some(Arg::Named(attr, Box::new(name), expr.value.map(Box::new)))
+                    named.push((attr, Box::new(name), expr.value.map(Box::new)));
+                    true
                 } else {
                     let expr = this.parse_expr_opt().map(Box::new);
-                    if named_seen {
+                    if !named.is_empty() || has_wildcard {
                         if let Some(expr) = &expr {
                             this.report_span(
                                 Severity::Error,
@@ -1960,17 +1980,23 @@ impl<'a> Parser<'a> {
                             );
                         } else {
                             // Return None so error message will be about trailing comma.
-                            return None
+                            return false
                         }
                     }
-                    ordered_seen = true;
-                    Some(Arg::Ordered(attr, expr))
+                    ordered.push((attr, expr));
+                    true
                 }
-            })
+            });
+
+            Args {
+                ordered,
+                named,
+                has_wildcard,
+            }
         })
     }
 
-    fn parse_args(&mut self, option: ArgOption) -> Vec<Arg> {
+    fn parse_args(&mut self, option: ArgOption) -> Args {
         self.parse_unwrap(|this| this.parse_args_opt(option))
     }
 
