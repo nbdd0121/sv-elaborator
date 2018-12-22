@@ -12,18 +12,28 @@ pub struct Int {
 impl Int {
 
     /// Create a Int from BigUint
-    pub fn new(width: usize, mut value: BigUint) -> Int {
-        if width < value.bits() {
+    pub fn new(width: usize, value: BigUint) -> Int {
+        let mut ret = Int {
+            width,
+            value,
+        };
+        ret.trunc_to_fit();
+        ret
+    }
+
+    pub fn from_bigint(width: usize, value: BigInt) -> Int {
+        let value = if let Sign::Minus = value.sign() {
+            let mut abs = (-value).to_biguint().unwrap();
             let mut val = BigUint::one();
             val <<= width;
             val -= 1 as u8;
-            value &= val;
-        }
-
-        Int {
-            width,
-            value,
-        }
+            // Invert all bits
+            abs ^= val;
+            abs + 1 as u8
+        } else {
+            value.to_biguint().unwrap()
+        };
+        Int {width, value}
     }
 
     /// Get a zero of a certain length
@@ -81,6 +91,16 @@ impl Int {
             BigInt::from_biguint(Sign::Minus, (-self).to_biguint())
         } else {
             BigInt::from_biguint(Sign::Plus, self.to_biguint())
+        }
+    }
+
+    /// Truncate to current width
+    fn trunc_to_fit(&mut self) {
+        if self.width < self.value.bits() {
+            let mut val = BigUint::one();
+            val <<= self.width;
+            val -= 1 as u8;
+            self.value &= &val;
         }
     }
 
@@ -153,6 +173,68 @@ macro_rules! impl_bin_traits {
                 self
             }
         }
+    }
+}
+
+impl<'a> AddAssign<&'a Int> for Int {
+    fn add_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        self.value += &rhs.value;
+        self.trunc_to_fit();
+    }
+}
+
+impl<'a> SubAssign<&'a Int> for Int {
+    fn sub_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+
+        // Extend first to avoid small - big
+        let mut mask = BigUint::one();
+        mask <<= self.width;
+        self.value |= mask;
+
+        self.value -= &rhs.value;
+        self.trunc_to_fit();
+    }
+}
+
+impl<'a> MulAssign<&'a Int> for Int {
+    fn mul_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        self.value *= &rhs.value;
+        self.trunc_to_fit();
+    }
+}
+
+/// Unsigned division
+impl<'a> DivAssign<&'a Int> for Int {
+    fn div_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        self.value /= &rhs.value;
+    }
+}
+
+/// Unsigned remainder
+impl<'a> RemAssign<&'a Int> for Int {
+    fn rem_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        self.value %= &rhs.value;
+    }
+}
+
+impl Int {
+    /// Do a signed division. Panic if RHS is zero.
+    pub fn signed_div(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        let value = self.clone().to_bigint() / rhs.clone().to_bigint();
+        *self = Self::from_bigint(self.width, value);
+    }
+
+    /// Do a signed remainder. Panic if RHS is zero.
+    pub fn signed_rem(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        let value = self.clone().to_bigint() % rhs.clone().to_bigint();
+        *self = Self::from_bigint(self.width, value);
     }
 }
 

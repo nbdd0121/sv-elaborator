@@ -1,5 +1,6 @@
 use num::{BigUint, BigInt, bigint::Sign, One, Zero};
 use std::fmt;
+use std::ops;
 
 pub mod int;
 use self::int::Int;
@@ -89,6 +90,10 @@ impl LogicVec {
             value: Int::fill(width, value),
             xz: Int::fill(width, xz),
         }
+    }
+
+    fn replace_with_x(&mut self) {
+        *self = Self::fill(self.value.width(), self.signed, LogicValue::X);
     }
 
     /// Get the width of this number
@@ -182,6 +187,64 @@ impl LogicVec {
 //
 // Arithmetic of LogicVec
 //
+
+impl<'a> ops::AddAssign<&'a LogicVec> for LogicVec {
+    fn add_assign(&mut self, rhs: &Self) {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return self.replace_with_x();
+        }
+        self.value += &rhs.value;
+    }
+}
+
+impl<'a> ops::SubAssign<&'a LogicVec> for LogicVec {
+    fn sub_assign(&mut self, rhs: &Self) {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return self.replace_with_x();
+        }
+        self.value -= &rhs.value;
+    }
+}
+
+impl<'a> ops::MulAssign<&'a LogicVec> for LogicVec {
+    fn mul_assign(&mut self, rhs: &Self) {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return self.replace_with_x();
+        }
+        self.value *= &rhs.value;
+    }
+}
+
+impl<'a> ops::DivAssign<&'a LogicVec> for LogicVec {
+    fn div_assign(&mut self, rhs: &Self) {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() || rhs.value.is_zero() {
+            return self.replace_with_x();
+        }
+        if self.signed {
+            self.value.signed_div(&rhs.value);
+        } else {
+            self.value /= &rhs.value;
+        }
+    }
+}
+
+impl<'a> ops::RemAssign<&'a LogicVec> for LogicVec {
+    fn rem_assign(&mut self, rhs: &Self) {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() || rhs.value.is_zero() {
+            return self.replace_with_x();
+        }
+        if self.signed {
+            self.value.signed_rem(&rhs.value);
+        } else {
+            self.value %= &rhs.value;
+        }
+    }
+}
 
 impl LogicVec {
     pub fn l_shr(&mut self, rhs: &Self) {
