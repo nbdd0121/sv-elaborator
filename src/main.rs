@@ -42,12 +42,12 @@ fn main() {
 
     // Parse all files together
     let mut files = Vec::new();
-    'outer: for filename in files_to_test {
+    'outer: for filename in &files_to_test {
         let mut infile = File::open(filename).unwrap();
         let mut contents = String::new();
         infile.read_to_string(&mut contents).unwrap();
 
-        let src = Rc::new(Source::new(filename.to_owned(), contents));
+        let src = Rc::new(Source::new((*filename).to_owned(), contents));
         src_mgr.add_source(src.clone());
 
         let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -68,6 +68,7 @@ fn main() {
         files.push(list);
     }
 
+    // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() {
         return;
     }

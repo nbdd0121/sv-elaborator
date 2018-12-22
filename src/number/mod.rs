@@ -246,6 +246,20 @@ impl<'a> ops::RemAssign<&'a LogicVec> for LogicVec {
     }
 }
 
+impl<'a> ops::ShlAssign<&'a LogicVec> for LogicVec {
+    fn shl_assign(&mut self, rhs: &Self) {
+        // The rhs should always be unsigned.
+        assert!(!rhs.signed);
+
+        if !rhs.is_two_state() {
+            return self.replace_with_x();
+        }
+
+        self.value <<= &rhs.value;
+        self.xz <<= &rhs.value;
+    }
+}
+
 impl LogicVec {
     pub fn l_shr(&mut self, rhs: &Self) {
         // The rhs should always be unsigned.

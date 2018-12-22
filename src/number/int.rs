@@ -274,6 +274,13 @@ impl<'a> BitAndAssign<&'a Int> for Int {
 
 impl_bin_traits!(BitAnd, bitand, BitAndAssign, bitand_assign);
 
+impl<'a> BitOrAssign<&'a Int> for Int {
+    fn bitor_assign(&mut self, rhs: &Self) {
+        assert!(self.width == rhs.width);
+        self.value |= &rhs.value;
+    }
+}
+
 impl Not for Int {
     type Output = Int;
 
@@ -285,6 +292,19 @@ impl Not for Int {
         let mask = Int { width: self.width, value: mask };
         // Xor with the mask will yield not
         self ^ &mask
+    }
+}
+
+impl<'a> ShlAssign<&'a Int> for Int {
+    fn shl_assign(&mut self, rhs: &Self) {
+        // Prepare RHS
+        let rhs = rhs.value.to_usize().unwrap_or(std::usize::MAX);
+        // Guard against corner case (e.g. super large RHS)
+        if rhs > self.width {
+            self.value = BigUint::zero();
+            return;
+        }
+        self.value <<= rhs;
     }
 }
 
