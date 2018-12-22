@@ -11,6 +11,7 @@ mod syntax;
 mod source;
 mod number;
 mod printer;
+mod elaborate;
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -72,6 +73,8 @@ fn main() {
     if diag_mgr.has_error() {
         return;
     }
+
+    elaborate::resolve(&diag_mgr, &mut files);
 
     let mut printer = PrettyPrint::new();
     for list in &files {
