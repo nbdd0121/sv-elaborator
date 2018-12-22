@@ -336,6 +336,12 @@ impl Int {
     }
 }
 
+impl Int {
+    pub fn reduce_or(&self) -> bool {
+        !self.value.is_zero()
+    }
+}
+
 impl fmt::Debug for Int {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{}'", self.width)?;

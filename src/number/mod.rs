@@ -14,6 +14,36 @@ pub enum LogicValue {
     X,
 }
 
+impl ops::Not for LogicValue {
+    type Output = LogicValue;
+    fn not(self) -> LogicValue {
+        match self {
+            LogicValue::Zero => LogicValue::One,
+            LogicValue::One => LogicValue::Zero,
+            _ => LogicValue::X,
+        }
+    }
+}
+
+impl From<bool> for LogicValue {
+    fn from(val: bool) -> Self {
+        match val {
+            false => LogicValue::Zero,
+            true => LogicValue::One,
+        }
+    }
+}
+
+impl From<LogicValue> for Option<bool> {
+    fn from(val: LogicValue) -> Option<bool> {
+        match val {
+            LogicValue::Zero => Some(false),
+            LogicValue::One => Some(true),
+            _ => None,
+        }
+    }
+}
+
 impl fmt::Display for LogicValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -184,6 +214,12 @@ impl LogicVec {
     }
 }
 
+impl From<LogicValue> for LogicVec {
+    fn from(val: LogicValue) -> LogicVec {
+        LogicVec::fill(1, false, val)
+    }
+}
+
 //
 // Arithmetic of LogicVec
 //
@@ -290,6 +326,73 @@ impl LogicVec {
             self.value.zero_shr(&rhs.value);
             self.xz.zero_shr(&rhs.value);
         }
+    }
+}
+
+//
+// Bitwise operations
+//
+
+impl<'a> ops::BitXorAssign<&'a LogicVec> for LogicVec {
+    fn bitxor_assign(&mut self, rhs: &Self) {
+        self.value ^= &rhs.value;
+        // When X or Z exist, corresponding bit will be an X.
+        // So it is basically OR xz onto value
+        self.value |= &self.xz;
+        self.value |= &rhs.xz;
+    }
+}
+
+impl ops::Not for LogicVec {
+    type Output = Self;
+    fn not(mut self) -> Self {
+        self.value = !self.value;
+        // When X or Z exist, corresponding bit will be an X.
+        // So it is basically OR xz onto value
+        self.value |= &self.xz;
+        self
+    }
+}
+
+// Logical operations
+impl LogicVec {
+    /// Reduction or
+    pub fn reduce_or(&self) -> LogicValue {
+        if self.is_two_state() {
+            // Simple case, just check if value is zero
+            return self.value.reduce_or().into();
+        }
+
+        // First convert to two-state (this convert all X's and Z's into 0)
+        let two_state = self.clone().force_two_state();
+        if two_state.value.reduce_or() {
+            // This means that there is no single digit or one.
+            LogicValue::X
+        } else {
+            LogicValue::One
+        }
+    }
+
+    pub fn logic_eq(&self, rhs: &Self) -> LogicValue {
+        if self.is_two_state() && rhs.is_two_state() {
+            // Simple case, direct comparision
+            return (self.value == rhs.value).into()
+        }
+
+        // Otherwise XNOR them together for bitwise-equality test
+        let mut val = self.clone();
+        val ^= rhs;
+        val = !val;
+
+        // Then covnert the value to boolean
+        val.to_bool()
+    }
+
+
+    /// Convert to boolean (single LogicValue)
+    pub fn to_bool(&self) -> LogicValue {
+        // This is equivalent to a reduction or.
+        self.reduce_or()
     }
 }
 
