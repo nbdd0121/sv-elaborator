@@ -1,6 +1,9 @@
 use num::{BigUint, BigInt, bigint::Sign, One, Zero, ToPrimitive};
 use std::fmt;
 
+pub mod int;
+use self::int::Int;
+
 /// Represntation of Verilog's 4-state logic
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LogicValue {
@@ -24,13 +27,21 @@ impl fmt::Display for LogicValue {
 /// Represntation of Verilog's 4-state logic array
 #[derive(Clone, PartialEq)]
 pub struct LogicVec {
-    pub width: usize,
     pub signed: bool,
-    pub value: BigUint,
-    pub xz: BigUint,
+    value: Int,
+    xz: Int,
 }
 
 impl LogicVec {
+
+    /// Construct a 4-state logic array from 2-state logic.
+    pub fn new_xz(width: usize, signed: bool, value: BigUint, xz: BigUint) -> LogicVec {
+        LogicVec {
+            signed,
+            value: Int::new(width, value),
+            xz: Int::new(width, xz),
+        }
+    }
 
     /// Construct a 4-state logic array from 2-state logic.
     pub fn new(width: usize, signed: bool, mut value: BigUint) -> LogicVec {
@@ -41,12 +52,12 @@ impl LogicVec {
             value &= val;
         }
 
-        LogicVec {
+        LogicVec::new_xz(
             width,
             signed,
             value,
-            xz: BigUint::zero(),
-        }
+            BigUint::zero(),
+        )
     }
 
     /// Convert from BigInt
@@ -72,32 +83,14 @@ impl LogicVec {
         vec.duplicate(width)
     }
 
-    fn value_bit_at(&self, index: usize) -> bool {
-        if index >= self.width {
-            panic!("out of bound");
-        }
-        ((&self.value >> index).to_u32().unwrap() & 1) != 0
+    /// Get the width of this number
+    pub fn width(&self) -> usize {
+        self.value.width()
     }
 
-    fn xz_bit_at(&self, index: usize) -> bool {
-        if index >= self.width {
-            panic!("out of bound");
-        }
-        ((&self.xz >> index).to_u32().unwrap() & 1) != 0
-    }
-
-    fn truncate(&self, width: usize) -> Self {
-        let mut val = BigUint::one();
-        val <<= width;
-        val -= 1 as u8;
-        let value = &self.value & &val;
-        let xz = &self.xz & &val;
-        Self {
-            width,
-            signed: self.signed,
-            value,
-            xz,
-        }
+    /// Check if this is signed
+    pub fn signed(&self) -> bool {
+        self.signed
     }
 
     /// Check if this is a 2-state logic
@@ -105,25 +98,13 @@ impl LogicVec {
         self.xz.is_zero()
     }
 
-    /// Convert to unsigned two state value. If there is a Z or X, `None` is returned.
-    pub fn get_two_state_unsigned(&self) -> Option<BigUint> {
-        if self.is_two_state() {
-            Some(self.value.clone())
-        } else {
-            None
-        }
-    }
-
     /// Convert to two state value. If there is a Z or X, `None` is returned.
     pub fn get_two_state(&self) -> Option<BigInt> {
         if self.is_two_state() {
-            if self.signed && self.value_bit_at(self.width - 1) {
-                let mut ret = BigUint::one();
-                ret <<= self.width;
-                ret -= &self.value;
-                Some(BigInt::from_biguint(Sign::Minus, ret))
+            if self.signed {
+                Some(self.value.clone().to_bigint_signed())
             } else {
-                Some(BigInt::from_biguint(Sign::Plus, self.value.clone()))
+                Some(self.value.clone().to_bigint_unsigned())
             }
         } else {
             None
@@ -132,30 +113,19 @@ impl LogicVec {
 
     /// Force as two state value. X and Zs will be converted to 0.
     pub fn force_two_state(mut self) -> Self {
-        self.value |= &self.xz;
-        self.value ^= self.xz;
-        self.xz = BigUint::zero();
+        self.value &= &!self.xz;
+        self.xz = Int::zero(self.value.width());
         self
     }
 
     /// Perform sign extension or truncation
     pub fn sign_extend_or_trunc(&self, width: usize) -> Self {
-        if width == self.width { return self.clone(); }
-        if width < self.width { return self.truncate(width); }
-
-        // Calculate the mask for extension
-        let mut extend_mask = BigUint::one();
-        extend_mask <<= width - self.width;
-        extend_mask -= 1 as u8;
-        extend_mask <<= self.width;
-
         let mut value = self.value.clone();
         let mut xz = self.xz.clone();
-        if self.value_bit_at(self.width - 1) { value |= &extend_mask; }
-        if self.xz_bit_at(self.width - 1) { xz |= &extend_mask; }
+        value.sign_extend_or_trunc(width);
+        xz.sign_extend_or_trunc(width);
 
         Self {
-            width,
             signed: self.signed,
             value,
             xz,
@@ -164,25 +134,19 @@ impl LogicVec {
 
     /// Perform xz-extension or truncation
     pub fn xz_extend_or_trunc(&self, width: usize) -> Self {
-        if width == self.width { return self.clone(); }
-        if width < self.width { return self.truncate(width); }
-
         let mut value = self.value.clone();
         let mut xz = self.xz.clone();
 
-        if self.xz_bit_at(self.width - 1) {
-            // Calculate the mask for extension
-            let mut extend_mask = BigUint::one();
-            extend_mask <<= width - self.width;
-            extend_mask -= 1 as u8;
-            extend_mask <<= self.width;
-
-            if self.value_bit_at(self.width - 1) { value |= &extend_mask; }
-            xz |= &extend_mask;
+        if self.xz.bit_at(self.value.width() - 1) {
+            // If highest bit is XZ, do sign extension on value
+            value.sign_extend_or_trunc(width);
+            xz.one_extend_or_trunc(width);
+        } else {
+            value.zero_extend_or_trunc(width);
+            xz.zero_extend_or_trunc(width);
         }
 
         Self {
-            width,
             signed: self.signed,
             value,
             xz,
@@ -199,21 +163,37 @@ impl LogicVec {
     }
 
     pub fn duplicate(&self, count: usize) -> Self {
-        // Currently we assume count is small, and does not use O(logn) algorithm.
-        let mut value = BigUint::zero();
-        let mut xz = BigUint::zero();
-        for _ in 0..count {
-            value <<= self.width;
-            value |= &self.value;
-            xz <<= self.width;
-            xz |= &self.xz;
-        }
         Self {
-            width: self.width * count,
             signed: self.signed,
-            value,
-            xz,
+            value: self.value.duplicate(count),
+            xz: self.xz.duplicate(count),
         }
+    }
+}
+
+//
+// Arithmetic of LogicVec
+//
+
+impl LogicVec {
+    pub fn l_shr(mut self, rhs: &Self) -> Self {
+        // The rhs should always be unsigned.
+        assert!(!rhs.signed);
+
+        // If right hand side is not two-state, then this is a X.
+        if !rhs.is_two_state() {
+            return Self::fill(self.value.width(), self.signed, LogicValue::X);
+        }
+
+        if self.signed {
+            self.value.sign_shr(&rhs.value);
+            self.xz.sign_shr(&rhs.value);
+        } else {
+            self.value.zero_shr(&rhs.value);
+            self.xz.zero_shr(&rhs.value);
+        }
+
+        self
     }
 }
 
@@ -225,32 +205,35 @@ impl<'a> From<&'a LogicValue> for LogicVec {
             LogicValue::Z => (BigUint::one(), BigUint::zero()),
             LogicValue::X => (BigUint::one(), BigUint::one()),
         };
-        LogicVec {
-            width: 1,
-            signed: false,
+        LogicVec::new_xz(
+            1,
+            false,
             value,
             xz,
-        }
+        )
     }
 }
 
 impl fmt::Debug for LogicVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}'", self.width)?;
+        let width = self.width();
+        let value = self.value.clone().to_bigint_unsigned();
+        let xz = self.xz.clone().to_bigint_unsigned();
+        write!(f, "{}'", width)?;
         if self.signed {
             write!(f, "s")?;
         }
         if self.is_two_state() {
             // We use a heuristics for display number. If the number is below 1024, display it as
             // decimal. Otherwise display as hex.
-            if &self.value < &(1024 as u16).into() {
-                write!(f, "d{}", self.value)
+            if &value < &(1024 as u16).into() {
+                write!(f, "d{}", value)
             } else {
-                write!(f, "h{:X}", self.value)
+                write!(f, "h{:X}", value)
             }
         } else {
-            let mut str = format!("{:0width$b}", self.value, width=self.width).into_bytes();
-            let xz = format!("{:0width$b}", self.xz, width=self.width).into_bytes();
+            let mut str = format!("{:0width$b}", value, width=width).into_bytes();
+            let xz = format!("{:0width$b}", xz, width=width).into_bytes();
             for i in 0..xz.len() {
                 if xz[i] == b'1' {
                     str[i] = if str[i] == b'0' { b'z' } else { b'x' }
@@ -270,22 +253,26 @@ pub struct LogicNumber {
 
 impl fmt::Display for LogicNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let width = self.value.width();
+        let value = self.value.value.clone().to_bigint_unsigned();
+        let xz = self.value.xz.clone().to_bigint_unsigned();
+
         // In this case we can simply print out a decimal
         if self.value.is_two_state() && !self.sized && self.value.signed {
-            return write!(f, "{}", self.value.value)
+            return write!(f, "{}", value)
         }
         if self.sized {
-            write!(f, "{}", self.value.width)?;
+            write!(f, "{}", width)?;
         }
         write!(f, "'")?;
         if self.value.signed {
             write!(f, "s")?;
         }
-        if self.value.xz.is_zero() {
-            write!(f, "d{}", self.value.value)
+        if xz.is_zero() {
+            write!(f, "d{}", value)
         } else {
-            let mut str = format!("{:0width$b}", self.value.value, width=self.value.width).into_bytes();
-            let xz = format!("{:0width$b}", self.value.xz, width=self.value.width).into_bytes();
+            let mut str = format!("{:0width$b}", value, width=width).into_bytes();
+            let xz = format!("{:0width$b}", xz, width=width).into_bytes();
             for i in 0..xz.len() {
                 if xz[i] == b'1' {
                     str[i] = if str[i] == b'0' { b'z' } else { b'x' }

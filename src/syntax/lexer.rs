@@ -391,12 +391,7 @@ impl<'a> Lexer<'a> {
                 );
 
                 // Error recovery, treat it as zero
-                return LogicVec {
-                    width: 1,
-                    signed: signed,
-                    value: BigUint::zero(),
-                    xz: BigUint::zero(),
-                }
+                return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero())
             }
         };
         self.nextch();
@@ -423,12 +418,7 @@ impl<'a> Lexer<'a> {
             );
 
             // Error recovery, treat it as zero
-            return LogicVec {
-                width: 1,
-                signed: signed,
-                value: BigUint::zero(),
-                xz: BigUint::zero(),
-            }
+            return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero())
         }
 
         // Radix 10 is special: no X or Z allowed it other digits are present
@@ -438,33 +428,18 @@ impl<'a> Lexer<'a> {
                     self.nextch();
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
-                    LogicVec {
-                        width: 1,
-                        signed: signed,
-                        value: BigUint::one(),
-                        xz: BigUint::one(),
-                    }
+                    LogicVec::new_xz(1, signed, BigUint::one(), BigUint::one())
                 }
                 'z' | 'Z' | '?' => {
                     self.nextch();
                     // Consume extra _ if there are any
                     while self.nextch_if('_') {}
-                    LogicVec {
-                        width: 1,
-                        signed: signed,
-                        value: BigUint::zero(),
-                        xz: BigUint::one(),
-                    }
+                    LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::one())
                 }
                 '0' ... '9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
-                    LogicVec {
-                        width: cmp::min(num.bits(), 1),
-                        signed: signed,
-                        value: num,
-                        xz: BigUint::zero(),
-                    }
+                    LogicVec::new_xz(cmp::min(num.bits(), 1), signed, num, BigUint::zero())
                 }
                 _ => unreachable!(),
             }
@@ -508,12 +483,12 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        return LogicVec {
-            width: str.len() * log2,
-            signed: signed,
-            value: BigUint::from_str_radix(&str, radix).unwrap(),
-            xz: BigUint::from_str_radix(&xz, radix).unwrap(),
-        }
+        return LogicVec::new_xz(
+            str.len() * log2,
+            signed,
+            BigUint::from_str_radix(&str, radix).unwrap(),
+            BigUint::from_str_radix(&xz, radix).unwrap()
+        )
     }
 
     // Try parse time literal suffix. Returns the parsed time unit in terms of seconds
@@ -690,13 +665,13 @@ impl<'a> Lexer<'a> {
         let num: BigUint = str.parse().unwrap();
         TokenKind::IntegerLiteral(LogicNumber {
             sized: false,
-            value: LogicVec {
+            value: LogicVec::new_xz(
                 // +1 here to account for the sign bit.
-                width: cmp::max(num.bits() + 1, 32),
-                signed: true,
-                value: num,
-                xz: BigUint::zero(),
-            }
+                cmp::max(num.bits() + 1, 32),
+                true,
+                num,
+                BigUint::zero(),
+            )
         })
     }
 
@@ -756,7 +731,7 @@ impl<'a> Lexer<'a> {
                 match self.peekch().unwrap_or(' ') {
                     's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
                         let num = self.parse_based_number();
-                        let size = cmp::max(num.width + num.signed as usize, 32);
+                        let size = cmp::max(num.width() + num.signed() as usize, 32);
                         let num = num.xz_extend_or_trunc(size);
                         TokenKind::IntegerLiteral(LogicNumber {
                             sized: false,
