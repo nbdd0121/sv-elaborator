@@ -1,4 +1,4 @@
-use num::{BigUint, BigInt, bigint::Sign, One, Zero, ToPrimitive};
+use num::{BigUint, BigInt, bigint::Sign, One, Zero};
 use std::fmt;
 
 pub mod int;
@@ -78,9 +78,17 @@ impl LogicVec {
 
     /// Fill a vector with a value
     pub fn fill(width: usize, signed: bool, value: LogicValue) -> LogicVec {
-        let mut vec: Self = (&value).into();
-        vec.signed = signed;
-        vec.duplicate(width)
+        let (xz, value) = match value {
+            LogicValue::Zero => (false, false),
+            LogicValue::One => (false, true),
+            LogicValue::Z => (true, false),
+            LogicValue::X => (true, true),
+        };
+        LogicVec {
+            signed,
+            value: Int::fill(width, value),
+            xz: Int::fill(width, xz),
+        }
     }
 
     /// Get the width of this number
@@ -102,9 +110,9 @@ impl LogicVec {
     pub fn get_two_state(&self) -> Option<BigInt> {
         if self.is_two_state() {
             if self.signed {
-                Some(self.value.clone().to_bigint_signed())
+                Some(self.value.clone().to_bigint())
             } else {
-                Some(self.value.clone().to_bigint_unsigned())
+                Some(BigInt::from_biguint(Sign::Minus, self.value.clone().to_biguint()))
             }
         } else {
             None
@@ -176,13 +184,26 @@ impl LogicVec {
 //
 
 impl LogicVec {
-    pub fn l_shr(mut self, rhs: &Self) -> Self {
+    pub fn l_shr(&mut self, rhs: &Self) {
         // The rhs should always be unsigned.
         assert!(!rhs.signed);
 
         // If right hand side is not two-state, then this is a X.
         if !rhs.is_two_state() {
-            return Self::fill(self.value.width(), self.signed, LogicValue::X);
+            return *self = Self::fill(self.value.width(), self.signed, LogicValue::X);
+        }
+
+        self.value.zero_shr(&rhs.value);
+        self.xz.zero_shr(&rhs.value);
+    }
+
+    pub fn a_shr(&mut self, rhs: &Self) {
+        // The rhs should always be unsigned.
+        assert!(!rhs.signed);
+
+        // If right hand side is not two-state, then this is a X.
+        if !rhs.is_two_state() {
+            return *self = Self::fill(self.value.width(), self.signed, LogicValue::X);
         }
 
         if self.signed {
@@ -192,33 +213,14 @@ impl LogicVec {
             self.value.zero_shr(&rhs.value);
             self.xz.zero_shr(&rhs.value);
         }
-
-        self
-    }
-}
-
-impl<'a> From<&'a LogicValue> for LogicVec {
-    fn from(val: &'a LogicValue) -> LogicVec {
-        let (xz, value) = match val {
-            LogicValue::Zero => (BigUint::zero(), BigUint::zero()),
-            LogicValue::One => (BigUint::zero(), BigUint::one()),
-            LogicValue::Z => (BigUint::one(), BigUint::zero()),
-            LogicValue::X => (BigUint::one(), BigUint::one()),
-        };
-        LogicVec::new_xz(
-            1,
-            false,
-            value,
-            xz,
-        )
     }
 }
 
 impl fmt::Debug for LogicVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let width = self.width();
-        let value = self.value.clone().to_bigint_unsigned();
-        let xz = self.xz.clone().to_bigint_unsigned();
+        let value = self.value.clone().to_biguint();
+        let xz = self.xz.clone().to_biguint();
         write!(f, "{}'", width)?;
         if self.signed {
             write!(f, "s")?;
@@ -254,8 +256,8 @@ pub struct LogicNumber {
 impl fmt::Display for LogicNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let width = self.value.width();
-        let value = self.value.value.clone().to_bigint_unsigned();
-        let xz = self.value.xz.clone().to_bigint_unsigned();
+        let value = self.value.value.clone().to_biguint();
+        let xz = self.value.xz.clone().to_biguint();
 
         // In this case we can simply print out a decimal
         if self.value.is_two_state() && !self.sized && self.value.signed {

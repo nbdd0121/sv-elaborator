@@ -26,21 +26,31 @@ impl Int {
         }
     }
 
-    /// Fill with a value
-    pub fn fill(width: usize, bit: bool) -> Int {
-        let vec = Self {
-            width: 1,
-            value: if bit { BigUint::one() } else { BigUint::zero() },
-        };
-        // TODO performance
-        vec.duplicate(width)
-    }
-
     /// Get a zero of a certain length
     pub fn zero(width: usize) -> Int {
         Int {
             width,
             value: BigUint::zero(),
+        }
+    }
+
+    /// Get a value with all one.
+    pub fn all_one(width: usize) -> Int {
+        let mut value = BigUint::one();
+        value <<= width;
+        value -= 1 as u8;
+        Int {
+            width,
+            value,
+        }
+    }
+
+    /// Get a value with all one or all zero
+    pub fn fill(width: usize, bit: bool) -> Int {
+        if bit {
+            Self::all_one(width)
+        } else {
+            Self::zero(width)
         }
     }
 
@@ -60,20 +70,17 @@ impl Int {
         self.value.is_zero()
     }
 
-    /// Convert this number to BigInt, treat as unsigned
-    pub fn to_bigint_unsigned(self) -> BigInt {
-        BigInt::from_biguint(Sign::Plus, self.value)
+    /// Convert this number to BigUInt, treat as unsigned
+    pub fn to_biguint(self) -> BigUint {
+        self.value
     }
 
     /// Convert this number to BigInt, treat as signed
-    pub fn to_bigint_signed(self) -> BigInt {
+    pub fn to_bigint(self) -> BigInt {
         if self.bit_at(self.width - 1) {
-            let mut ret = BigUint::one();
-            ret <<= self.width;
-            ret -= self.value;
-            BigInt::from_biguint(Sign::Minus, ret)
+            BigInt::from_biguint(Sign::Minus, (-self).to_biguint())
         } else {
-            BigInt::from_biguint(Sign::Plus, self.value)
+            BigInt::from_biguint(Sign::Plus, self.to_biguint())
         }
     }
 
@@ -148,6 +155,24 @@ macro_rules! impl_bin_traits {
         }
     }
 }
+
+impl Neg for Int {
+    type Output = Int;
+
+    fn neg(self) -> Self {
+        let mut ret = BigUint::one();
+        ret <<= self.width;
+        ret -= self.value;
+        Self {
+            width: self.width,
+            value: ret,
+        }
+    }
+}
+
+//
+// Bitwise operations
+//
 
 impl<'a> BitXorAssign<&'a Int> for Int {
     fn bitxor_assign(&mut self, rhs: &Self) {
