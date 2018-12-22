@@ -333,32 +333,22 @@ impl PrettyPrint {
                 self.append("; ");
                 self.print_expr(&gen.update);
                 self.append(") ");
-                self.print_item(&gen.block);
+                self.print_gen_block(&gen.block);
             }
             Item::IfGen(gen) => {
-                self.append("if (");
-                self.print_expr(&gen.cond);
-                self.append(") ");
-                self.print_item(&gen.true_block);
-                if let Some(v) = &gen.false_block {
+                for ((cond, block), first, _) in gen.if_block.iter().identify_first_last() {
+                    if !first {
+                        self.append(" else ");
+                    }
+                    self.append("if (");
+                    self.print_expr(cond);
+                    self.append(") ");
+                    self.print_gen_block(block);
+                }
+                if let Some(v) = &gen.else_block {
                     self.append(" else ");
-                    self.print_item(&v);
+                    self.print_gen_block(&v);
                 }
-            }
-            Item::GenBlock(gen) => {
-                self.append("begin");
-                if let Some(v) = &gen.name {
-                    self.append(format!(": {}", v));
-                }
-                self.append("\n");
-                self.indent(4);
-                for item in &gen.items {
-                    self.indent_append("");
-                    self.print_item(item);
-                    self.append("\n");
-                }
-                self.indent(-4);
-                self.indent_append("end");
             }
             Item::SysTfCall(tf) => {
                 self.print_sys_tf_call(tf);
@@ -439,6 +429,22 @@ impl PrettyPrint {
                 self.append(";");
             }
         }
+    }
+
+    fn print_gen_block(&mut self, obj: &GenBlock) {
+        self.append("begin");
+        if let Some(v) = &obj.name {
+            self.append(format!(": {}", v));
+        }
+        self.append("\n");
+        self.indent(4);
+        for item in &obj.items {
+            self.indent_append("");
+            self.print_item(item);
+            self.append("\n");
+        }
+        self.indent(-4);
+        self.indent_append("end");
     }
 
     //

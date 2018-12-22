@@ -2044,23 +2044,35 @@ impl<'a> Parser<'a> {
     fn parse_if_gen(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         // Eat the if keyword
         self.consume();
-        let cond = self.parse_delim(Delim::Paren, Self::parse_expr);
-        let true_block = self.parse_gen_block();
-        let false_block = if self.check(TokenKind::Keyword(Keyword::Else)) {
-            Some(Box::new(self.parse_gen_block()))
-        } else {
-            None
-        };
 
-        Item::IfGen(Box::new(IfGen {
-            attr,
-            cond,
-            true_block,
-            false_block,
-        }))
+        let mut if_block = Vec::new();
+
+        loop {
+            let cond = self.parse_delim(Delim::Paren, Self::parse_expr);
+            let true_block = self.parse_gen_block();
+            if_block.push((cond, true_block));
+
+            let else_block = if self.check(TokenKind::Keyword(Keyword::Else)) {
+                // This is a else-if. We need to treat it differently
+                if self.check(TokenKind::Keyword(Keyword::If)) {
+                    continue;
+                }
+                // Treat different if next one is also a if
+                Some(Box::new(self.parse_gen_block()))
+            } else {
+                None
+            };
+
+            // There are no more else-if's, return now.
+            return Item::IfGen(Box::new(IfGen {
+                attr,
+                if_block,
+                else_block,
+            }))
+        }
     }
 
-    fn parse_gen_block(&mut self) -> Item {
+    fn parse_gen_block(&mut self) -> GenBlock {
         // A generate-block may begin with a label. It is treated as same as label after begin.
         let label = if let TokenKind::Id(_) = **self.peek() {
             if let TokenKind::Colon = **self.peek_n(1) {
@@ -2074,7 +2086,10 @@ impl<'a> Parser<'a> {
         } else { None };
         
         let begin = match self.consume_if(TokenKind::Keyword(Keyword::Begin)) {
-            None => return self.parse_item(),
+            None => return GenBlock {
+                name: None,
+                items: vec![self.parse_item()]
+            },
             Some(v) => v,
         };
 
@@ -2132,10 +2147,10 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Item::GenBlock(Box::new(GenBlock {
+        GenBlock {
             name: name.map(Box::new),
             items,
-        }))
+        }
     }
 
     //

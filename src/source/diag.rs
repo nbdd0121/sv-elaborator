@@ -289,6 +289,15 @@ impl DiagMgr {
     }
 
     /// Create a errpr diagnostic from message and span and report it.
+    pub fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) {
+        self.report(Diagnostic::new(
+            severity,
+            msg.into(),
+            span,
+        ));
+    }
+
+    /// Create a errpr diagnostic from message and span and report it.
     pub fn report_error<M: Into<String>>(&self, msg: M, span: Span) {
         self.report(Diagnostic::new(
             Severity::Error,

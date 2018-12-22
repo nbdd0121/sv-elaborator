@@ -424,7 +424,6 @@ pub enum Item {
     GenRegion(Vec<Item>),
     LoopGen(Box<LoopGen>),
     IfGen(Box<IfGen>),
-    GenBlock(Box<GenBlock>),
     SysTfCall(Box<SysTfCall>),
 
     ModportDecl(Option<Box<AttrInst>>, Vec<(Ident, Vec<ModportPortDecl>)>),
@@ -687,15 +686,14 @@ pub struct LoopGen {
     pub init: Expr,
     pub cond: Expr,
     pub update: Expr,
-    pub block: Item,
+    pub block: GenBlock,
 }
 
 #[derive(Debug, Clone)]
 pub struct IfGen {
     pub attr: Option<Box<AttrInst>>,
-    pub cond: Expr,
-    pub true_block: Item,
-    pub false_block: Option<Box<Item>>,
+    pub if_block: Vec<(Expr, GenBlock)>,
+    pub else_block: Option<Box<GenBlock>>,
 }
 
 #[derive(Debug, Clone)]
