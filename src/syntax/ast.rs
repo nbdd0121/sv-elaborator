@@ -355,10 +355,9 @@ pub enum BinaryOp {
     Or,
     Xor,
     Xnor,
+    Shl,
     LShr,
-    LShl,
     AShr,
-    AShl,
     Imply,
     Equiv,
 }
@@ -388,10 +387,9 @@ impl fmt::Display for BinaryOp {
             BinaryOp::Or => "|",
             BinaryOp::Xor => "^",
             BinaryOp::Xnor => "~^",
+            BinaryOp::Shl => "<<",
             BinaryOp::LShr => ">>",
-            BinaryOp::LShl => "<<",
             BinaryOp::AShr => ">>>",
-            BinaryOp::AShl => "<<<",
             BinaryOp::Imply => "->",
             BinaryOp::Equiv => "<->",
         })

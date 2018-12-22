@@ -1018,16 +1018,16 @@ impl<'a> Lexer<'a> {
                             Some('<') => {
                                 self.nextch();
                                 if self.nextch_if('=') {
-                                    TokenKind::BinaryOpAssign(BinaryOp::AShl)
+                                    TokenKind::BinaryOpAssign(BinaryOp::Shl)
                                 } else {
-                                    TokenKind::BinaryOp(BinaryOp::AShl)
+                                    TokenKind::BinaryOp(BinaryOp::Shl)
                                 }
                             }
                             Some('=') => {
                                 self.nextch();
-                                TokenKind::BinaryOpAssign(BinaryOp::LShl)
+                                TokenKind::BinaryOpAssign(BinaryOp::Shl)
                             }
-                            _ => TokenKind::BinaryOp(BinaryOp::LShl)
+                            _ => TokenKind::LShl
                         }
                     }
                     Some('-') => {

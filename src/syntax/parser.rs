@@ -2639,6 +2639,12 @@ impl<'a> Parser<'a> {
                     if new_prec <= prec { break }
                     (op, new_prec)
                 }
+                TokenKind::LShl => {
+                    let new_prec = Self::get_bin_op_prec(BinaryOp::Shl);
+                    // Can only proceed if precedence is higher
+                    if new_prec <= prec { break }
+                    (BinaryOp::Shl, new_prec)
+                }
                 TokenKind::Keyword(Keyword::Inside) |
                 TokenKind::Keyword(Keyword::Dist) if 7 > prec => {
                     // 7 is the precedence of comparison operator.
@@ -2818,7 +2824,7 @@ impl<'a> Parser<'a> {
                     match **this.peek() {
                         TokenKind::Eof => ExprKind::EmptyQueue,
                         TokenKind::BinaryOp(BinaryOp::LShr) |
-                        TokenKind::BinaryOp(BinaryOp::LShl) => {
+                        TokenKind::LShl => {
                             let span = this.peek().span;
                             this.report_span(Severity::Fatal, "streaming concat is not yet supported", span);
                             unreachable!();
@@ -2996,9 +3002,8 @@ impl<'a> Parser<'a> {
             BinaryOp::Mod => 10,
             BinaryOp::Add |
             BinaryOp::Sub => 9,
-            BinaryOp::LShl |
+            BinaryOp::Shl |
             BinaryOp::LShr |
-            BinaryOp::AShl |
             BinaryOp::AShr => 8,
             BinaryOp::Lt |
             BinaryOp::Leq |

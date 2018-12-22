@@ -318,9 +318,12 @@ pub enum TokenKind {
     /// Exclude +, -, &, |, ^, ~^, which will be parsed as BinaryOp
     UnaryOp(UnaryOp),
     /// Represent a binary operator.
-    /// Note that +, -, *, /, &, |, ^, ~^, ->, <<, >>, <= will all be tokenized as BinaryOp but
+    /// Note that +, -, *, /, &, |, ^, ~^, ->, >>, <= will all be tokenized as BinaryOp but
     /// has special meaning elsewhere.
     BinaryOp(BinaryOp),
+    /// "<<". Can be used interchangably with <<< except that "<<" can also start a streaming
+    /// concatenation.
+    LShl,
     /// Represent a binary operator with assignment.
     BinaryOpAssign(BinaryOp),
     /// Represent either ++ or --.
