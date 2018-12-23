@@ -41,6 +41,8 @@ enum SymbolKind {
     /// Means that the symbol is conflicted, e.g. import the same name (wildcard) from two
     /// packages.
     Conflict,
+    /// Error recovery symbol
+    Error,
 }
 
 /// What's being declared in the current scope so far
@@ -143,7 +145,7 @@ impl<'a> Resolver<'a> {
                 format!("name {} does not exist in the scope", ident.value),
                 ident.span
             );
-            break (SymbolId::DUMMY, SymbolKind::Var)
+            break (SymbolId::DUMMY, SymbolKind::Error)
         };
         if let SymbolKind::Conflict = ret.1 {
             self.diag.report_fatal(
@@ -164,7 +166,7 @@ impl<'a> Resolver<'a> {
                 format!("name {} does not exist in the scope", ident.value),
                 ident.span
             );
-            break (SymbolId::DUMMY, SymbolKind::Var)
+            break (SymbolId::DUMMY, SymbolKind::Error)
         };
         if let SymbolKind::Conflict = ret.1 {
             self.diag.report_fatal(
@@ -181,7 +183,7 @@ impl<'a> Resolver<'a> {
             None => {
                 self.diag.report_error("cannot find this package", pkg.span);
                 ident.symbol = SymbolId::DUMMY;
-                return SymbolKind::Var;
+                return SymbolKind::Error;
             }
             Some(v) => v,
         };
@@ -189,7 +191,7 @@ impl<'a> Resolver<'a> {
         let symbol = match pkg_items.get(&ident.value) {
             None => {
                 self.diag.report_error("cannot find the name in package", ident.span);
-                (SymbolId::DUMMY, SymbolKind::Var)
+                (SymbolId::DUMMY, SymbolKind::Error)
             }
             Some(ret) => *ret,
         };
@@ -430,9 +432,10 @@ impl<'a> AstVisitor for Resolver<'a> {
                 let kind = self.resolve(&mut inst.name);
                 match kind {
                     SymbolKind::Design |
-                    SymbolKind::Interface => (),
+                    SymbolKind::Interface |
+                    SymbolKind::Error => (),
                     _ => {
-                        self.diag.report_fatal("Only design units can appear in hierachical instantiation", inst.name.span);
+                        self.diag.report_fatal("only design units can appear in hierachical instantiation", inst.name.span);
                     }
                 }
                 if let Some(param) = &mut inst.param {
