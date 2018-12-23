@@ -1,9 +1,10 @@
 use num::{BigUint, BigInt, bigint::Sign, One, Zero, ToPrimitive};
 use std::fmt;
 use std::ops::*;
+use std::cmp;
 
 /// Represntation of number with fixed width.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Int {
     width: usize,
     value: BigUint,
@@ -339,6 +340,36 @@ impl Int {
 impl Int {
     pub fn reduce_or(&self) -> bool {
         !self.value.is_zero()
+    }
+}
+
+//
+// Comparisions
+//
+
+impl cmp::Ord for Int {
+    fn cmp(&self, rhs: &Int) -> cmp::Ordering {
+        assert!(self.width == rhs.width);
+        cmp::Ord::cmp(&self.value, &rhs.value)
+    }
+}
+
+impl cmp::PartialOrd for Int {
+    fn partial_cmp(&self, rhs: &Int) -> Option<cmp::Ordering> {
+        Some(self.cmp(rhs))
+    }
+}
+
+impl Int {
+    pub fn signed_cmp(&self, rhs: &Int) -> cmp::Ordering {
+        let lsign = self.bit_at(self.width - 1);
+        let rsign = self.bit_at(self.width - 1);
+        match (lsign, rsign) {
+            (false, false) => self.cmp(rhs),
+            (false, true) => cmp::Ordering::Greater,
+            (true, false) => cmp::Ordering::Less,
+            (true, true) => rhs.cmp(self),
+        }
     }
 }
 

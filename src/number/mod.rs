@@ -1,6 +1,7 @@
 use num::{BigUint, BigInt, bigint::Sign, One, Zero};
 use std::fmt;
 use std::ops;
+use std::cmp;
 
 pub mod int;
 use self::int::Int;
@@ -393,6 +394,35 @@ impl LogicVec {
     pub fn to_bool(&self) -> LogicValue {
         // This is equivalent to a reduction or.
         self.reduce_or()
+    }
+}
+
+//
+// Numerical Comparision
+//
+impl LogicVec {
+    pub fn lt(&self, rhs: &Self) -> LogicValue {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return LogicValue::X;
+        }
+        (if self.signed {
+            self.value.signed_cmp(&rhs.value)
+        } else {
+            self.value.cmp(&rhs.value)
+        } == cmp::Ordering::Less).into()
+    }
+
+    pub fn le(&self, rhs: &Self) -> LogicValue {
+        assert!(self.signed == rhs.signed);
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return LogicValue::X;
+        }
+        (if self.signed {
+            self.value.signed_cmp(&rhs.value)
+        } else {
+            self.value.cmp(&rhs.value)
+        } != cmp::Ordering::Greater).into()
     }
 }
 
