@@ -1591,6 +1591,69 @@ impl<'a> Parser<'a> {
             this.parse_comma_list(false, false, Self::parse_decl_assign_opt)
         });
         let mut span = token.span.merge(members.span);
+
+        // The declaration assignment list in enum is special: a dimension will dictate the
+        // compiler to create multiple items instead of creating an array. So we have to check
+        // if the dimensions are valid.
+        for assign in &members.value {
+            // The most common case where there are no dimensions. It is valid.
+            if assign.dim.is_empty() { continue; }
+
+            // Multiple dimensions are illegal
+            if assign.dim.len() > 1 {
+                self.diag.report_span(
+                    Severity::Error,
+                    "multiple dimensions are not allowed in enumeration",
+                    assign.dim[1].span
+                );
+            }
+
+            // Check that the dimension values are integral literals.
+            match assign.dim[0].value {
+                DimKind::AssocWild |
+                DimKind::PlusRange(..) |
+                DimKind::MinusRange(..) |
+                DimKind::Unsized => {
+                    self.report_span(
+                        Severity::Error,
+                        "this type of dimension is not allowed in enumeration",
+                        assign.dim[0].span
+                    );
+                }
+                DimKind::Value(ref v) => {
+                    if let ExprKind::Literal(Spanned {
+                        value: TokenKind::IntegerLiteral(_), ..
+                    }) = v.value {} else {
+                        self.report_span(
+                            Severity::Error,
+                            "only integral literals are allowed in enumeration",
+                            v.span
+                        );
+                    }
+                }
+                DimKind::Range(ref ub, ref lb) => {
+                    if let ExprKind::Literal(Spanned {
+                        value: TokenKind::IntegerLiteral(_), ..
+                    }) = ub.value {} else {
+                        self.report_span(
+                            Severity::Error,
+                            "only integral literals are allowed in enumeration",
+                            ub.span
+                        );
+                    }
+                    if let ExprKind::Literal(Spanned {
+                        value: TokenKind::IntegerLiteral(_), ..
+                    }) = lb.value {} else {
+                        self.report_span(
+                            Severity::Error,
+                            "only integral literals are allowed in enumeration",
+                            lb.span
+                        );
+                    }
+                }
+            }
+        }
+
         let mut dim = self.parse_list(Self::parse_dim_opt);
         if let Some(v) = dim.last() {
             span = span.merge(v.span);
