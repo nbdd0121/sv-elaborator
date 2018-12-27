@@ -283,6 +283,65 @@ impl<'a> ops::RemAssign<&'a LogicVec> for LogicVec {
     }
 }
 
+impl LogicVec {
+    pub fn pow_assign(&mut self, rhs: &Self) {
+        if !self.is_two_state() || !rhs.is_two_state() {
+            return self.replace_with_x();
+        }
+
+        // Take the value out as there are few operations that require value access.
+        let width = self.value.width();
+        let mut value = std::mem::replace(&mut self.value, Int::zero(width));
+
+        // self ** 0 == 1
+        if rhs.value.is_zero() {
+            return self.value = Int::new(value.width(), BigUint::one());
+        }
+
+        // If self is zero
+        if value.is_zero() {
+            // If rhs is negative, return 'x, otherwise stick with 0
+            if rhs.signed && rhs.value.sign_bit() {
+                self.replace_with_x();
+            }
+            return;
+        }
+
+        if self.signed && value.sign_bit() {
+            // If self negative number
+            let rhs_parity = rhs.value.bit_at(0);
+            // Get the positive part of value
+            value = -value;
+            // Cases for -1:
+            if value.is_one() {
+                // If RHS is odd, return -1, otherwise 1.
+                if rhs_parity {
+                    value = -value;
+                }
+            } else {
+                if rhs.signed && rhs.value.sign_bit() {
+                    // Value is already replaced with zero.
+                    return;
+                } else {
+                    value.pow_assign(&rhs.value);
+                    if rhs_parity {
+                        value = -value;
+                    }
+                }
+            }
+        } else {
+            // self is positive number
+            if rhs.signed && rhs.value.sign_bit() {
+                // Value is already replaced with zero.
+                return;
+            } else {
+                value.pow_assign(&rhs.value);
+            }
+        }
+        self.value = value;
+    }
+}
+
 impl<'a> ops::ShlAssign<&'a LogicVec> for LogicVec {
     fn shl_assign(&mut self, rhs: &Self) {
         // The rhs should always be unsigned.

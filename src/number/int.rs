@@ -73,12 +73,21 @@ impl Int {
         ((&self.value >> index).to_u32().unwrap() & 1) != 0
     }
 
+    /// Get the sign bit
+    pub fn sign_bit(&self) -> bool {
+        self.bit_at(self.width - 1)
+    }
+
     pub fn width(&self) -> usize {
         self.width
     }
 
     pub fn is_zero(&self) -> bool {
         self.value.is_zero()
+    }
+
+    pub fn is_one(&self) -> bool {
+        self.value.is_one()
     }
 
     /// Convert this number to BigUInt, treat as unsigned
@@ -220,6 +229,15 @@ impl<'a> RemAssign<&'a Int> for Int {
     fn rem_assign(&mut self, rhs: &Self) {
         assert!(self.width == rhs.width);
         self.value %= &rhs.value;
+    }
+}
+
+impl Int {
+    pub fn pow_assign(&mut self, rhs: &Self) {
+        let pow = rhs.value.to_usize().unwrap();
+        let val = std::mem::replace(&mut self.value, BigUint::zero());
+        self.value = num::pow(val, pow);
+        self.trunc_to_fit();
     }
 }
 
