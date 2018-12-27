@@ -98,8 +98,7 @@ impl<'a> Resolver<'a> {
             symbol: 0,
             pkg: HashMap::new(),
             pkg_ref: HashMap::new(),
-            // Pre-fill scope with a globla scope.
-            scopes: vec![Scope::new()],
+            scopes: Vec::new(),
         }
     }
 
@@ -199,8 +198,36 @@ impl<'a> Resolver<'a> {
         symbol.1
     }
 
-    /// Build global symbols. First all all top-level design units into the top-level scope.
+    /// Build global symbols.
+    /// * First we handle all packages. We do this first as packages cannot refer to other
+    ///   identifiers in the compilation unit scope, so they are effectively isolated. By process
+    //    them first we also get rid of file dependency problems.
+    /// * Then we add all all top-level design units into the top-level scope.
     fn build_global(&mut self, items: &mut Vec<Vec<Item>>) {
+        for items in items.iter_mut() {
+            for item in items {
+                match item {
+                    Item::PkgDecl(decl) => {
+                        // Introduce new scope
+                        self.scopes.push(Scope::new());
+                        for item in &mut decl.items {
+                            self.visit_item(item)
+                        }
+                        // Leave the namespace
+                        let scope = self.scopes.pop().unwrap();
+                        let name = Rc::new(decl.name.value.to_owned());
+                        for (_, (id, _)) in &scope.map {
+                            self.pkg_ref.insert(*id, name.clone());
+                        }
+                        self.pkg.insert(name, scope.map);
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        // Introduce the global scope.
+        self.scopes.push(Scope::new());
         for items in items {
             for item in items {
                 match item {
@@ -351,6 +378,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                 match (modport.is_some(), self.resolve(v)) {
                                     (false, SymbolKind::Type) => panic!("aww!! this should be a data port instead!"),
                                     (_, SymbolKind::Interface) => (),
+                                    (_, SymbolKind::Error) => (),
                                     _ => {
                                         self.diag.report_fatal(format!("name {} is not an interface", v.value), v.span);
                                     }
@@ -381,21 +409,8 @@ impl<'a> AstVisitor for Resolver<'a> {
             Item::PkgDecl(decl) => {
                 if self.scopes.len() != 2 {
                     // TODO: This should actually be checked in parser.
-                    self.diag.report_fatal("package can only appear in compilation-unit level", decl.name.span);
+                    self.diag.report_error("package can only appear in compilation-unit level", decl.name.span);
                 }
-
-                // Introduce new scope
-                self.scopes.push(Scope::new());
-                for item in &mut decl.items {
-                    self.visit_item(item)
-                }
-                // Leave the namespace
-                let scope = self.scopes.pop().unwrap();
-                let name = Rc::new(decl.name.value.to_owned());
-                for (_, (id, _)) in &scope.map {
-                    self.pkg_ref.insert(*id, name.clone());
-                }
-                self.pkg.insert(name, scope.map);
                 return;
             }
             Item::PkgImport(import) => {
