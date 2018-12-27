@@ -473,7 +473,7 @@ impl<'a> Parser<'a> {
 
     /// Check if the list contains invalid elements, and remove them.
     fn check_list<T, F: FnMut(&mut Self, &T) -> bool>(
-        &mut self, mut f: F, list: &mut Vec<T>
+        &mut self, list: &mut Vec<T>, mut f: F
     ) {
         list.retain(|x| f(self, x));
     }
@@ -541,7 +541,7 @@ impl<'a> Parser<'a> {
     /// | elaboration_system_task
     /// # from 'interface item'
     /// | modport_declaration
-    /// | extern_tf_declaration 
+    /// | extern_tf_declaration
     /// ```
     ///
     /// SystemVerilog supports following extern definitions:
@@ -823,7 +823,7 @@ impl<'a> Parser<'a> {
     //
     // A.1.3 Module parameters and ports
     //
-    
+
     /// Parse a parameter port list.
     ///
     /// According to spec:
@@ -976,7 +976,7 @@ impl<'a> Parser<'a> {
                             Some(PortDecl::Data(dir, ..)) | Some(PortDecl::Explicit(dir, ..)) => dir,
                         }
                     });
-                    
+
                     let decl = PortDecl::Explicit(dir, name, expr);
                     if let Some(v) = mem::replace(&mut prev, Some(decl)) {
                         vec.push(v);
@@ -1319,11 +1319,10 @@ impl<'a> Parser<'a> {
             }
             Some(v) => v,
         };
-        
+
         match self.consume_if_id() {
             Some(name) => {
                 let mut dim = self.parse_list(Self::parse_dim_opt);
-                self.check_list(Self::check_unpacked_dim, &mut dim);
                 let init = match self.consume_if(TokenKind::Assign) {
                     None => None,
                     Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
@@ -1433,15 +1432,29 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Reg) => {
                 // This makes Keyword::Reg turn into IntVecTy::Logic
                 let kw = self.consume();
+                let mut span = kw.span;
                 let ty = if let TokenKind::IntVecTy(IntVecTy::Bit) = *kw {
                     IntVecTy::Bit
                 } else {
                     IntVecTy::Logic
                 };
-                let sign = self.parse_signing();
-                let dim = self.parse_list(Self::parse_pack_dim);
-                // TODO: Span
-                Spanned::new(DataTypeKind::IntVec(ty, sign, dim), kw.span)
+
+                // Parse signing
+                let sign = if let TokenKind::Signing(sign) = **self.peek() {
+                    span = span.merge(self.consume().span);
+                    sign
+                } else {
+                    Signing::Unsigned
+                };
+
+                // Parse dimension
+                let mut dim = self.parse_list(Self::parse_dim_opt);
+                if let Some(v) = dim.last() {
+                    span = span.merge(v.span);
+                }
+                self.check_list(&mut dim, Self::check_packed_dim);
+
+                Spanned::new(DataTypeKind::IntVec(ty, sign, dim), span)
             }
             TokenKind::IntAtomTy(ty) => {
                 let mut span = self.consume().span;
@@ -1489,15 +1502,17 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Signing(sign) => {
                 let mut span = self.consume().span;
-                let dim = self.parse_list(Self::parse_pack_dim);
+                let mut dim = self.parse_list(Self::parse_dim_opt);
                 if let Some(v) = dim.last() {
                     span = span.merge(v.span);
                 }
+                self.check_list(&mut dim, Self::check_packed_dim);
                 Spanned::new(DataTypeKind::Implicit(sign, dim), span)
             }
             TokenKind::DelimGroup(Delim::Bracket, _) => {
-                let span = self.peek().span;
-                let dim = self.parse_list(Self::parse_pack_dim);
+                let mut dim = self.parse_list(Self::parse_dim_opt);
+                let span = dim.first().unwrap().span.merge(dim.last().unwrap().span);
+                self.check_list(&mut dim, Self::check_packed_dim);
                 Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, dim), span)
             }
             _ => unreachable!(),
@@ -1553,10 +1568,11 @@ impl<'a> Parser<'a> {
             })
         });
         let mut span = token.span.merge(members.span);
-        let dim = self.parse_list(Self::parse_dim_opt);
+        let mut dim = self.parse_list(Self::parse_dim_opt);
         if let Some(v) = dim.last() {
             span = span.merge(v.span);
         }
+        self.check_list(&mut dim, Self::check_packed_dim);
         Spanned::new(DataTypeKind::Aggr(AggrDecl {
             kind,
             packed,
@@ -1575,10 +1591,11 @@ impl<'a> Parser<'a> {
             this.parse_comma_list(false, false, Self::parse_decl_assign_opt)
         });
         let mut span = token.span.merge(members.span);
-        let dim = self.parse_list(Self::parse_dim_opt);
+        let mut dim = self.parse_list(Self::parse_dim_opt);
         if let Some(v) = dim.last() {
             span = span.merge(v.span);
         }
+        self.check_list(&mut dim, Self::check_packed_dim);
         Spanned::new(DataTypeKind::Enum(EnumDecl {
             ty: base,
             members: members.value
@@ -1591,7 +1608,7 @@ impl<'a> Parser<'a> {
         match expr.value {
             ExprKind::Type(ty) => Some(*ty),
             ExprKind::HierName(scope, id) => {
-                // In data type, hierachical identifier is not allowed. It can only be 
+                // In data type, hierachical identifier is not allowed. It can only be
                 let name = match id {
                     HierId::Name(None, name) => *name,
                     _ => {
@@ -1667,7 +1684,6 @@ impl<'a> Parser<'a> {
             dim = self.parse_list(Self::parse_dim_opt);
         }
 
-        self.check_list(Self::check_unpacked_dim, &mut dim);
         let init = match self.consume_if(TokenKind::Assign) {
             None => None,
             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
@@ -1755,17 +1771,13 @@ impl<'a> Parser<'a> {
                 );
                 false
             }
-            _ => true
+            _ => true,
         }
     }
 
-    /// Parse a packed dimension
-    fn parse_pack_dim(&mut self) -> Option<Dim> {
-        let ret = match self.parse_dim_opt() {
-            None => return None,
-            Some(v) => v,
-        };
-        match *ret {
+    /// Check if a dimension is a legal packed dimension
+    fn check_packed_dim(&mut self, dim: &Dim) -> bool {
+        match **dim {
             DimKind::AssocWild |
             DimKind::PlusRange(..) |
             DimKind::MinusRange(..) |
@@ -1773,18 +1785,18 @@ impl<'a> Parser<'a> {
                 self.report_span(
                     Severity::Error,
                     "this type of range is not allowed in packed dimension context",
-                    ret.span
+                    dim.span
                 );
-                None
+                false
             }
-            _ => Some(ret)
+            _ => true,
         }
     }
 
     //
     // A.2.9 Interface declarations
     //
-    
+
     fn parse_modport_decl(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         self.consume();
         let vec = self.parse_comma_list(false, false, |this| {
@@ -1840,7 +1852,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Semicolon);
         Item::ModportDecl(attr, vec)
     }
-    
+
     //
     // A.4.1.1 Module instantiation
     //
@@ -1911,7 +1923,7 @@ impl<'a> Parser<'a> {
             };
 
             let mut dim = this.parse_list(Self::parse_dim_opt);
-            this.check_list(Self::check_unpacked_dim, &mut dim);
+            this.check_list(&mut dim, Self::check_unpacked_dim);
             let ports = this.parse_args(ArgOption::Port);
             Some(HierInst {
                 name,
@@ -2034,7 +2046,7 @@ impl<'a> Parser<'a> {
     fn parse_loop_gen(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         // Eat the for keyword
         self.consume();
-        let (genvar, id, init, cond, update) = 
+        let (genvar, id, init, cond, update) =
             self.parse_delim(Delim::Paren, |this| {
                 let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
                 let id = this.expect_id();
@@ -2106,7 +2118,7 @@ impl<'a> Parser<'a> {
                 } else { None }
             } else { None }
         } else { None };
-        
+
         let begin = match self.consume_if(TokenKind::Keyword(Keyword::Begin)) {
             None => return GenBlock {
                 name: None,
@@ -2148,7 +2160,7 @@ impl<'a> Parser<'a> {
 
         let name = name.or(label);
         let items = self.parse_list(Self::parse_item_opt);
-        
+
         self.expect(TokenKind::Keyword(Keyword::End));
         self.parse_end_annotation(name.as_ref());
 
@@ -2219,7 +2231,7 @@ impl<'a> Parser<'a> {
         }
 
         let items = self.parse_list(Self::parse_stmt_opt);
-        
+
         self.expect(TokenKind::Keyword(Keyword::End));
         self.parse_end_annotation(label.as_ref());
         StmtKind::SeqBlock(items)
@@ -2609,7 +2621,7 @@ impl<'a> Parser<'a> {
             Some(expr)
         }
     }
-    
+
     /// Parse binary expression using precedence climing method which saves stack space.
     fn parse_bin_expr(&mut self, prec: i32) -> Option<Expr> {
         let mut expr = match self.parse_unary_expr() {
@@ -2795,7 +2807,7 @@ impl<'a> Parser<'a> {
             TokenKind::IntegerLiteral(_) |
             TokenKind::TimeLiteral(_) |
             TokenKind::UnbasedLiteral(_) |
-            TokenKind::StringLiteral(_) | 
+            TokenKind::StringLiteral(_) |
             TokenKind::Dollar |
             TokenKind::Keyword(Keyword::Null) => {
                 let tok = self.consume();
@@ -2910,7 +2922,7 @@ impl<'a> Parser<'a> {
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);
                     let mut expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), span);
-                    
+
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
                         TokenKind::DelimGroup(Delim::TickBrace, _) => {
@@ -3046,7 +3058,7 @@ impl<'a> Parser<'a> {
     /// Parse scope. This is more generous than any scoped names in SystemVerilog spec.
     /// ```bnf
     /// [ local :: | $unit :: ] [ identifier [ parameter_value_assignment ] :: ]
-    /// ``` 
+    /// ```
     fn parse_scope(&mut self) -> Option<Scope> {
         let mut scope = None;
         loop {
