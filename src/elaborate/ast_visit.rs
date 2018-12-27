@@ -16,6 +16,11 @@ pub trait AstVisitor {
                     self.visit_item(item)
                 }
             }
+            Item::PkgDecl(decl) => {
+                for item in &mut decl.items {
+                    self.visit_item(item)
+                }
+            }
             Item::PkgImport(_) => (),
             Item::ParamDecl(decl) => {
                 self.visit_param_decl(decl)

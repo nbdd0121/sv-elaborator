@@ -403,6 +403,7 @@ impl fmt::Display for BinaryOp {
 #[derive(Debug, Clone)]
 pub enum Item {
     DesignDecl(Box<DesignDecl>),
+    PkgDecl(Box<PkgDecl>),
     PkgImport(Vec<PkgImportItem>),
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
@@ -431,7 +432,7 @@ impl AstNode for Item {
     fn name() -> &'static str { "item" }
 }
 
-/// Declaration of module, interface, program or package
+/// Declaration of module, interface or program
 #[derive(Debug, Clone)]
 pub struct DesignDecl {
     pub attr: Option<Box<AttrInst>>,
@@ -441,6 +442,15 @@ pub struct DesignDecl {
     pub pkg_import: Vec<Vec<PkgImportItem>>,
     pub param: Option<Vec<ParamDecl>>,
     pub port: Vec<PortDecl>,
+    pub items: Vec<Item>,
+}
+
+/// Declaration of package
+#[derive(Debug, Clone)]
+pub struct PkgDecl {
+    pub attr: Option<Box<AttrInst>>,
+    pub lifetime: Lifetime,
+    pub name: Ident,
     pub items: Vec<Item>,
 }
 

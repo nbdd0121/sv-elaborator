@@ -596,7 +596,19 @@ impl<'a> Parser<'a> {
             }
             // package_declaration
             TokenKind::Keyword(Keyword::Package) => {
-                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Package, Keyword::Endpackage))))
+                self.consume();
+                let lifetime = self.parse_lifetime();
+                let name = self.expect_id();
+                self.expect(TokenKind::Semicolon);
+                let items = self.parse_list(Self::parse_item_opt);
+                self.expect(TokenKind::Keyword(Keyword::Endpackage));
+                self.parse_end_annotation(Some(&name));
+                Some(Item::PkgDecl(Box::new(PkgDecl {
+                    attr,
+                    lifetime,
+                    name,
+                    items: items,
+                })))
             }
             // parameter_override
             TokenKind::Keyword(Keyword::Defparam) => {
@@ -732,6 +744,27 @@ impl<'a> Parser<'a> {
         list
     }
 
+    /// Parse a end identifier annotation. Raises error for mismatch
+    fn parse_end_annotation(&mut self, exp: Option<&Ident>) {
+        if self.check(TokenKind::Colon) {
+            let id = self.expect_id();
+            match exp {
+                None => self.report_span(
+                    Severity::Error,
+                    "identifer annotation at end does match declaration, should be empty",
+                    id.span
+                ),
+                Some(v) => if **v != *id {
+                    self.report_span(
+                        Severity::Error,
+                        format!("identifer annotation at end does match declaration, should be '{}'", v),
+                        id.span
+                    )
+                }
+            }
+        }
+    }
+
     /// Parse a module, interface or program. We processed attributes in parse_item_opt, and
     /// externs will not be processed here.
     ///
@@ -774,18 +807,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Semicolon);
         let items = self.parse_list(Self::parse_item_opt);
         self.expect(TokenKind::Keyword(end_kw));
-
-        if self.consume_if(TokenKind::Colon).is_some() {
-            let id = self.expect_id();
-            if *id != *name {
-                self.report_span(
-                    Severity::Error,
-                    format!("identifer annotation at end does match declaration, should be '{}'", name),
-                    id.span
-                );
-            }
-        }
-
+        self.parse_end_annotation(Some(&name));
         DesignDecl {
             attr,
             kw,
@@ -2128,24 +2150,7 @@ impl<'a> Parser<'a> {
         let items = self.parse_list(Self::parse_item_opt);
         
         self.expect(TokenKind::Keyword(Keyword::End));
-
-        if self.check(TokenKind::Colon) {
-            let id = self.expect_id();
-            match &name {
-                None => self.report_span(
-                    Severity::Error,
-                    "identifer annotation at end does match declaration, should be empty",
-                    id.span
-                ),
-                Some(v) => if **v != *id {
-                    self.report_span(
-                        Severity::Error,
-                        format!("identifer annotation at end does match declaration, should be '{}'", v),
-                        id.span
-                    )
-                }
-            }
-        }
+        self.parse_end_annotation(name.as_ref());
 
         GenBlock {
             name: name.map(Box::new),
@@ -2216,25 +2221,7 @@ impl<'a> Parser<'a> {
         let items = self.parse_list(Self::parse_stmt_opt);
         
         self.expect(TokenKind::Keyword(Keyword::End));
-
-        if self.check(TokenKind::Colon) {
-            let id = self.expect_id();
-            match label {
-                None => self.report_span(
-                    Severity::Error,
-                    "identifer annotation at end does match declaration, should be empty",
-                    id.span
-                ),
-                Some(v) => if **v != *id {
-                    self.report_span(
-                        Severity::Error,
-                        format!("identifer annotation at end does match declaration, should be '{}'", v),
-                        id.span
-                    )
-                }
-            }
-        }
-
+        self.parse_end_annotation(label.as_ref());
         StmtKind::SeqBlock(items)
     }
 

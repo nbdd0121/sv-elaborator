@@ -219,6 +219,22 @@ impl PrettyPrint {
         self.indent_append(format!("end{}", obj.kw));
     }
 
+    fn print_pkg_decl(&mut self, obj: &PkgDecl) {
+        self.append("package");
+        self.indent(4);
+        if obj.lifetime == Lifetime::Automatic {
+            self.append(" automatic");
+        }
+        self.append(format!(" {};\n", obj.name));
+        for item in &obj.items {
+            self.indent_append("");
+            self.print_item(item);
+            self.append("\n");
+        }
+        self.indent(-4);
+        self.indent_append("endpackage");
+    }
+
     fn print_hier_instantiation(&mut self, obj: &HierInstantiation) {
         self.append(format!("{}", obj.name));
         if let Some(v) = &obj.param {
@@ -279,6 +295,7 @@ impl PrettyPrint {
     pub fn print_item(&mut self, obj: &Item) {
         match obj {
             Item::DesignDecl(v) => self.print_module_decl(v),
+            Item::PkgDecl(v) => self.print_pkg_decl(v),
             Item::PkgImport(items) => {
                 self.append("import ");
                 self.print_comma_list(items, |this, PkgImportItem(pkg, item)| {
@@ -469,6 +486,7 @@ impl PrettyPrint {
                     self.append(format!("{}", v));
                 }
             }
+            DataTypeKind::String => self.append("string"),
             DataTypeKind::Aggr(aggr, dim) => {
                 self.append(format!("{}", aggr.kind));
                 if aggr.packed {

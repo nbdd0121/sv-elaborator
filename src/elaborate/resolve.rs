@@ -214,8 +214,6 @@ impl<'a> Resolver<'a> {
                             Keyword::Interface => {
                                 self.add_to_scope(&mut decl.name, SymbolKind::Interface);
                             }
-                            // Package are very special and are not dealt here.
-                            Keyword::Package => (),
                             _ => unreachable!(),
                         }
                     }
@@ -318,18 +316,11 @@ impl<'a> AstVisitor for Resolver<'a> {
         match item {
             Item::DesignDecl(decl) => {
                 // If name is not yet resolved (i.e. not top-level), add it to the scope.
-                if let Keyword::Package = decl.kw {
-                    if self.scopes.len() != 2 {
-                        // TODO: This should actually be checked in parser.
-                        self.diag.report_fatal("package can only appear in compilation-unit level", decl.name.span);
-                    }
-                } else {
-                    if decl.name.symbol == SymbolId::DUMMY {
-                        self.add_to_scope(
-                            &mut decl.name,
-                            if let Keyword::Interface = decl.kw { SymbolKind::Interface } else { SymbolKind::Design }
-                        );
-                    }
+                if decl.name.symbol == SymbolId::DUMMY {
+                    self.add_to_scope(
+                        &mut decl.name,
+                        if let Keyword::Interface = decl.kw { SymbolKind::Interface } else { SymbolKind::Design }
+                    );
                 }
 
                 // Introduce new scope
@@ -384,14 +375,27 @@ impl<'a> AstVisitor for Resolver<'a> {
                 }
 
                 // Leave the namespace
-                let scope = self.scopes.pop().unwrap();
-                if let Keyword::Package = decl.kw {
-                    let name = Rc::new(decl.name.value.to_owned());
-                    for (_, (id, _)) in &scope.map {
-                        self.pkg_ref.insert(*id, name.clone());
-                    }
-                    self.pkg.insert(name, scope.map);
+                self.scopes.pop();
+                return;
+            }
+            Item::PkgDecl(decl) => {
+                if self.scopes.len() != 2 {
+                    // TODO: This should actually be checked in parser.
+                    self.diag.report_fatal("package can only appear in compilation-unit level", decl.name.span);
                 }
+
+                // Introduce new scope
+                self.scopes.push(Scope::new());
+                for item in &mut decl.items {
+                    self.visit_item(item)
+                }
+                // Leave the namespace
+                let scope = self.scopes.pop().unwrap();
+                let name = Rc::new(decl.name.value.to_owned());
+                for (_, (id, _)) in &scope.map {
+                    self.pkg_ref.insert(*id, name.clone());
+                }
+                self.pkg.insert(name, scope.map);
                 return;
             }
             Item::PkgImport(import) => {
