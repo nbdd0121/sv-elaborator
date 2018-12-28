@@ -3206,11 +3206,12 @@ impl<'a> Parser<'a> {
                     }
                 }
                 TokenKind::Id(_) => {
-                    id = Some(HierId::Name(
-                        // Hack to move id out temporarily
-                        mem::replace(&mut id, None).map(Box::new),
-                        Box::new(this.expect_id())
-                    ))
+                    ::util::replace_with(&mut id, |id| {
+                        Some(HierId::Name(
+                            id.map(Box::new),
+                            Box::new(this.expect_id())
+                        ))
+                    })
                 }
                 _ => return false
             }
