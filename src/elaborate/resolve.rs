@@ -13,6 +13,7 @@ use super::ast_visit::AstVisitor;
 
 use std::rc::Rc;
 use std::collections::HashMap;
+use num::ToPrimitive;
 
 pub fn resolve(diag: &DiagMgr, units: &mut Vec<Vec<Item>>) {
     let mut resolver = Resolver::new(diag);
@@ -564,12 +565,55 @@ impl<'a> AstVisitor for Resolver<'a> {
         if let Some(v) = &mut en.ty {
             self.visit_ty(v);
         }
-        for assign in &mut en.members {
-            self.add_to_scope(&mut assign.name, SymbolKind::Param);
-            if let Some(v) = &mut assign.init {
-                self.visit_expr(v);
-            }
-        }
+        ::util::replace_with(&mut en.members, |members| {
+            members.into_iter().flat_map(|mut assign| {
+                if assign.dim.is_empty() {
+                    // A standard enum definition
+                    vec![assign]
+                } else {
+                    // De-sugar generated name constants
+                    let (start, end) = match assign.dim.pop().unwrap().value {
+                        DimKind::Value(end) => (0, {
+                            let vec = if let ExprKind::Literal(Spanned {
+                                value: TokenKind::IntegerLiteral(val), ..
+                            }) = end.value { val.value } else { unreachable!(); };
+                            vec.get_two_state().unwrap().to_usize().unwrap() - 1
+                        }),
+                        DimKind::Range(start, end) => ({
+                            let vec = if let ExprKind::Literal(Spanned {
+                                value: TokenKind::IntegerLiteral(val), ..
+                            }) = start.value { val.value } else { unreachable!(); };
+                            vec.get_two_state().unwrap().to_usize().unwrap()
+                        }, {
+                            let vec = if let ExprKind::Literal(Spanned {
+                                value: TokenKind::IntegerLiteral(val), ..
+                            }) = end.value { val.value } else { unreachable!(); };
+                            vec.get_two_state().unwrap().to_usize().unwrap()
+                        }),
+                        _ => unreachable!(),
+                    };
+                    let ident = assign.name;
+                    let mut list = Vec::new();
+                    // Handle first element (we need to use the init)
+                    assign.name = Ident::new(format!("{}{}", ident.value, start), ident.span);
+                    list.push(assign);
+                    for val in (start + 1) ..= end {
+                        list.push(DeclAssign {
+                            name: Ident::new(format!("{}{}", ident.value, val), ident.span),
+                            dim: Vec::new(),
+                            init: None,
+                        });
+                    }
+                    list
+                }
+            }).map(|mut assign| {
+                self.add_to_scope(&mut assign.name, SymbolKind::Param);
+                if let Some(v) = &mut assign.init {
+                    self.visit_expr(v);
+                }
+                assign
+            }).collect()
+        });
     }
 
     fn visit_ty(&mut self, ty: &mut DataType) {
