@@ -1622,28 +1622,73 @@ impl<'a> Parser<'a> {
                 }
                 DimKind::Value(ref v) => {
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(_), ..
-                    }) = v.value {} else {
+                        value: TokenKind::IntegerLiteral(ref val), ..
+                    }) = v.value {
+                        if !val.value.is_two_state() {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be two state",
+                                v.span
+                            );
+                        }
+                        if val.value.cmp_with_zero() != std::cmp::Ordering::Greater {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be positive",
+                                v.span
+                            );
+                        }
+                    } else {
                         self.report_span(
                             Severity::Error,
-                            "only integral literals are allowed in enumeration",
+                            "only integral literals are allowed in generated names",
                             v.span
                         );
                     }
                 }
                 DimKind::Range(ref ub, ref lb) => {
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(_), ..
-                    }) = ub.value {} else {
+                        value: TokenKind::IntegerLiteral(ref val), ..
+                    }) = ub.value {
+                        if !val.value.is_two_state() {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be two state",
+                                ub.span
+                            );
+                        }
+                        if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be non-negative",
+                                ub.span
+                            );
+                        }
+                    } else {
                         self.report_span(
                             Severity::Error,
-                            "only integral literals are allowed in enumeration",
+                            "only integral literals are allowed in generated names",
                             ub.span
                         );
                     }
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(_), ..
-                    }) = lb.value {} else {
+                        value: TokenKind::IntegerLiteral(ref val), ..
+                    }) = lb.value {
+                        if !val.value.is_two_state() {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be two state",
+                                lb.span
+                            );
+                        }
+                        if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
+                            self.report_span(
+                                Severity::Error,
+                                "integral literals in generated names must be non-negative",
+                                ub.span
+                            );
+                        }
+                    } else {
                         self.report_span(
                             Severity::Error,
                             "only integral literals are allowed in enumeration",

@@ -213,6 +213,16 @@ impl LogicVec {
             xz: self.xz.duplicate(count),
         }
     }
+
+    pub fn cmp_with_zero(&self) -> cmp::Ordering {
+        if self.value.is_zero() {
+            cmp::Ordering::Equal
+        } else if self.signed && self.value.sign_bit() {
+            return cmp::Ordering::Less;
+        } else {
+            cmp::Ordering::Greater
+        }
+    }
 }
 
 impl From<LogicValue> for LogicVec {
