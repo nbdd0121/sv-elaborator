@@ -3,8 +3,8 @@ use std::fmt;
 use std::ops;
 use std::cmp;
 
-pub mod int;
-use self::int::Int;
+mod int;
+pub use self::int::Int;
 
 /// Represntation of Verilog's 4-state logic
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +66,26 @@ pub struct LogicVec {
 
 impl LogicVec {
 
+    /// Construct a LogicVec from Int's
+    pub fn new(signed: bool, value: Int, xz: Int) -> LogicVec {
+        assert!(value.width() == xz.width());
+        LogicVec {
+            signed,
+            value,
+            xz,
+        }
+    }
+
+    /// Construct a two-state LogicVec from Int
+    pub fn from_int(signed: bool, value: Int) -> LogicVec {
+        let xz = Int::zero(value.width());
+        LogicVec {
+            signed,
+            value,
+            xz,
+        }
+    }
+
     /// Construct a 4-state logic array from 2-state logic.
     pub fn new_xz(width: usize, signed: bool, value: BigUint, xz: BigUint) -> LogicVec {
         LogicVec {
@@ -76,7 +96,7 @@ impl LogicVec {
     }
 
     /// Construct a 4-state logic array from 2-state logic.
-    pub fn new(width: usize, signed: bool, mut value: BigUint) -> LogicVec {
+    pub fn from_biguint(width: usize, signed: bool, mut value: BigUint) -> LogicVec {
         if width < value.bits() {
             let mut val = BigUint::one();
             val <<= width;
@@ -105,7 +125,7 @@ impl LogicVec {
         } else {
             value.to_biguint().unwrap()
         };
-        Self::new(width, signed, value)
+        Self::new_xz(width, signed, value, BigUint::zero())
     }
 
     /// Fill a vector with a value
