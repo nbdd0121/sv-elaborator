@@ -226,6 +226,12 @@ impl LogicVec {
         }
     }
 
+    pub fn concat_assign(&mut self, another: &Self) {
+        self.signed = false;
+        self.value.concat_assign(&another.value);
+        self.xz.concat_assign(&another.xz);
+    }
+
     pub fn duplicate(&self, count: usize) -> Self {
         Self {
             signed: self.signed,

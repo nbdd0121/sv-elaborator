@@ -167,6 +167,13 @@ impl Int {
             value,
         }
     }
+
+    /// Concatenate two int
+    pub fn concat_assign(&mut self, another: &Self) {
+        self.width += another.width;
+        self.value <<= another.width;
+        self.value |= &another.value;
+    }
 }
 
 //
@@ -314,16 +321,22 @@ impl Not for Int {
     }
 }
 
-impl<'a> ShlAssign<&'a Int> for Int {
-    fn shl_assign(&mut self, rhs: &Self) {
-        // Prepare RHS
-        let rhs = rhs.value.to_usize().unwrap_or(std::usize::MAX);
+impl ShlAssign<usize> for Int {
+    fn shl_assign(&mut self, rhs: usize) {
         // Guard against corner case (e.g. super large RHS)
         if rhs > self.width {
             self.value = BigUint::zero();
             return;
         }
         self.value <<= rhs;
+    }
+}
+
+impl<'a> ShlAssign<&'a Int> for Int {
+    fn shl_assign(&mut self, rhs: &Self) {
+        // Prepare RHS
+        let rhs = rhs.value.to_usize().unwrap_or(std::usize::MAX);
+        *self <<= rhs;
     }
 }
 
