@@ -569,10 +569,17 @@ impl PrettyPrint {
         }
     }
 
-    fn get_hier_id(obj: &HierId) -> String {
+    fn print_hier_id(&mut self, obj: &HierId) {
         match obj {
-            HierId::Name(None, id) => format!("{}", id),
-            HierId::Name(Some(name), id) => format!("{}.{}", Self::get_hier_id(name), id),
+            HierId::Name(id) => self.append(format!("{}", id)),
+            HierId::Member(name, id) => {
+                self.print_hier_id(name);
+                self.append(format!(".{}", id));
+            }
+            HierId::Select(name, sel) => {
+                self.print_hier_id(name);
+                self.print_dim(sel);
+            }
             _ => unimplemented!(),
         }
     }
@@ -604,7 +611,7 @@ impl PrettyPrint {
                     self.append(Self::get_scope(scope));
                     self.append("::");
                 }
-                self.append(Self::get_hier_id(name));
+                self.print_hier_id(name);
             }
             ExprKind::Concat(list, select) => {
                 self.append("{");
@@ -682,14 +689,6 @@ impl PrettyPrint {
                 self.append("(");
                 self.print_expr(v);
                 self.append(")");
-            }
-            ExprKind::Member(lhs, id) => {
-                self.print_expr(lhs);
-                self.append(format!(".{}", id));
-            }
-            ExprKind::Select(lhs, sel) => {
-                self.print_expr(lhs);
-                self.print_dim(sel);
             }
             ExprKind::Cond(cond, _attr, t, f) => {
                 self.print_expr(cond);

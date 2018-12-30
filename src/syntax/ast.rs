@@ -816,12 +816,6 @@ pub enum ExprKind {
     /// Assignment pattern expression
     AssignPattern(Option<Box<DataType>>, AssignPattern),
 
-    /// Element select
-    Select(Box<Expr>, Dim),
-
-    /// Member access
-    Member(Box<Expr>, Ident),
-
     // Subroutine calls
     /// Call to system task
     SysTfCall(Box<SysTfCall>),
@@ -895,8 +889,12 @@ pub enum HierId {
     This,
     /// super or this.super
     Super,
-    /// a named identifier, can possibily has a parent id
-    Name(Option<Box<HierId>>, Box<Ident>)
+    /// a name
+    Name(Box<Ident>),
+    /// a member select
+    Member(Box<Spanned<HierId>>, Box<Ident>),
+    /// a index select
+    Select(Box<Spanned<HierId>>, Box<Dim>),
 }
 
 impl AstNode for HierId {

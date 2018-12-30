@@ -1207,19 +1207,13 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expr();
         // This is a type import
         match expr.value {
-            ExprKind::Member(intf, ty) => {
+            ExprKind::HierName(None, HierId::Member(intf, ty)) => {
+                let intf = *intf;
                 let id = self.expect_id();
                 self.expect(TokenKind::Semicolon);
-                Item::TypedefIntf(attr, intf, Box::new(ty), Box::new(id))
-            }
-            ExprKind::HierName(None, HierId::Name(Some(intf), ty)) => {
-                let id = self.expect_id();
-                self.expect(TokenKind::Semicolon);
-                // TODO: Better span
-                let span = expr.span.start.span_to(Pos(ty.span.start.0 - 1));
                 Item::TypedefIntf(
                     attr,
-                    Box::new(Spanned::new(ExprKind::HierName(None, *intf), span)),
+                    Box::new(Spanned::new(ExprKind::HierName(None, intf.value), intf.span)),
                     ty,
                     Box::new(id)
                 )
@@ -1715,28 +1709,24 @@ impl<'a> Parser<'a> {
     fn conv_expr_to_type(&mut self, expr: Expr) -> Option<DataType> {
         match expr.value {
             ExprKind::Type(ty) => Some(*ty),
-            ExprKind::HierName(scope, id) => {
+            ExprKind::HierName(scope, mut id) => {
+                // Convert select expression into dimension list.
+                let mut dimlist = Vec::new();
+                if let HierId::Select(name, dim) = id {
+                    dimlist.push(*dim);
+                    id = name.value;
+                }
+                dimlist.reverse();
+
                 // In data type, hierachical identifier is not allowed. It can only be
                 let name = match id {
-                    HierId::Name(None, name) => *name,
+                    HierId::Name(name) => *name,
                     _ => {
                         self.diag.report_error("hierachical identifier cannot appear in data type", expr.span);
                         Ident::new_unspanned("".to_owned())
                     }
                 };
-                Some(Spanned::new(DataTypeKind::HierName(scope, name, Vec::new()), expr.span))
-            }
-            ExprKind::Select(ty, dim) => {
-                let mut ty = match self.conv_expr_to_type(*ty) {
-                    None => return None,
-                    Some(v) => v,
-                };
-                match *ty {
-                    DataTypeKind::HierName(_, _, ref mut dimlist) => dimlist.push(dim),
-                    // If this is a keyword typename, the dimension should already be handled.
-                    _ => unreachable!(),
-                };
-                Some(ty)
+                Some(Spanned::new(DataTypeKind::HierName(scope, name, dimlist), expr.span))
             }
             _ => None,
         }
@@ -2447,7 +2437,7 @@ impl<'a> Parser<'a> {
                         let scope = self.parse_scope();
                         let id = self.parse_unwrap(Self::parse_hier_id);
                         TimingCtrl::NameEventCtrl(
-                            scope, id
+                            scope, id.value
                         )
                     }
                 }
@@ -3027,11 +3017,11 @@ impl<'a> Parser<'a> {
                         let span = self.peek().span;
                         self.report_span(Severity::Error, "expected identifiers after scope", span);
                         // Error recovery
-                        id = Some(HierId::Name(None, Box::new(Ident::new_unspanned("".to_owned()))))
+                        id = Some(Spanned::new(HierId::Name(Box::new(Ident::new_unspanned("".to_owned()))), Span::none()))
                     }
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);
-                    let mut expr = Spanned::new(ExprKind::HierName(scope, id.unwrap()), span);
+                    let mut expr = Spanned::new(ExprKind::HierName(scope, id.unwrap().value), span);
 
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
@@ -3064,36 +3054,9 @@ impl<'a> Parser<'a> {
                             self.report_span(Severity::Fatal, "function call not finished yet", span);
                             unreachable!();
                         }
-                        // Bit select
-                        TokenKind::DelimGroup(Delim::Bracket, _) => Some(self.parse_select(expr)),
                         _ => Some(expr)
                     }
                 }
-            }
-        }
-    }
-
-    /// Parse select expression
-    /// select ::=
-    ///   [ { . member_identifier bit_select } . member_identifier ] bit_select
-    /// | [ [ part_select_range ] ]
-    fn parse_select(&mut self, mut expr: Expr) -> Expr {
-        loop {
-            match **self.peek() {
-                // Bit select
-                TokenKind::DelimGroup(Delim::Bracket, _) => {
-                    let sel = self.parse_dim_opt().unwrap();
-                    // TODO better end span
-                    let span = expr.span.end.span_to(self.peek().span.start);
-                    expr = Spanned::new(ExprKind::Select(Box::new(expr), sel), span);
-                }
-                TokenKind::Dot => {
-                    self.consume();
-                    let id = self.expect_id();
-                    let span = expr.span.merge(id.span);
-                    expr = Spanned::new(ExprKind::Member(Box::new(expr), id), span);
-                }
-                _ => return expr
             }
         }
     }
@@ -3223,47 +3186,53 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse hierachical identifier
-    fn parse_hier_id(&mut self) -> Option<HierId> {
-        let mut id = None;
-        self.parse_sep_list_unit(TokenKind::Dot, true, false, |this| {
-            match **this.peek() {
-                TokenKind::Keyword(Keyword::This) => {
-                    let tok = this.consume();
-                    if let Some(_) = id {
-                        this.report_span(Severity::Error, "this can only be the outermost identifier", tok.span);
+    fn parse_hier_id(&mut self) -> Option<Spanned<HierId>> {
+        // Parse the leading hierachical name
+        let mut id = match **self.peek() {
+            TokenKind::Keyword(Keyword::This) => {
+                let token = self.consume();
+                if let TokenKind::Dot = self.peek().value {
+                    if let TokenKind::Keyword(Keyword::Super) = self.peek_n(1).value {
+                        self.consume();
+                        let token2 = self.consume();
+                        Spanned::new(HierId::Super, token.span.merge(token2.span))
                     } else {
-                        id = Some(HierId::This)
+                        Spanned::new(HierId::This, token.span)
                     }
+                } else {
+                    Spanned::new(HierId::This, token.span)
                 }
-                TokenKind::Keyword(Keyword::Super) => {
-                    let tok = this.consume();
-                    match id {
-                        None | Some(HierId::This) => id = Some(HierId::Super),
-                        Some(_) => {
-                            this.report_span(Severity::Error, "super can only be the outermost identifier", tok.span);
-                        }
-                    }
-                }
-                TokenKind::Keyword(Keyword::Root) => {
-                    let tok = this.consume();
-                    if let Some(_) = id {
-                        this.report_span(Severity::Error, "$root can only be the outermost identifier", tok.span);
-                    } else {
-                        id = Some(HierId::Root)
-                    }
-                }
-                TokenKind::Id(_) => {
-                    ::util::replace_with(&mut id, |id| {
-                        Some(HierId::Name(
-                            id.map(Box::new),
-                            Box::new(this.expect_id())
-                        ))
-                    })
-                }
-                _ => return false
             }
-            true
-        });
-        id
+            TokenKind::Keyword(Keyword::Super) => {
+                let token = self.consume();
+                Spanned::new(HierId::Super, token.span)
+            }
+            TokenKind::Keyword(Keyword::Root) => {
+                let token = self.consume();
+                Spanned::new(HierId::Root, token.span)
+            }
+            TokenKind::Id(_) => {
+                let span = self.peek().span;
+                Spanned::new(HierId::Name(Box::new(self.expect_id())), span)
+            }
+            _ => return None,
+        };
+
+        loop {
+            match **self.peek() {
+                TokenKind::DelimGroup(Delim::Bracket, _) => {
+                    let sel = self.parse_dim_opt().unwrap();
+                    let span = id.span.merge(sel.span);
+                    id = Spanned::new(HierId::Select(Box::new(id), Box::new(sel)), span);
+                }
+                TokenKind::Dot => {
+                    self.consume();
+                    let subid = self.expect_id();
+                    let span = id.span.merge(subid.span);
+                    id = Spanned::new(HierId::Member(Box::new(id), Box::new(subid)), span);
+                }
+                _ => return Some(id)
+            }
+        }
     }
 }

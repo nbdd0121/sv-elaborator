@@ -294,8 +294,8 @@ impl<'a> Resolver<'a> {
     fn visit_hier_name(&mut self, scope: &mut Option<ast::Scope>, id: &mut HierId) {
         // We only resolve the top-most one
         match id {
-            HierId::Name(Some(sup), _) => self.visit_hier_name(scope, sup),
-            HierId::Name(None, id) => self.visit_scoped_id(scope, id),
+            HierId::Name(id) => self.visit_scoped_id(scope, id),
+            HierId::Member(sup, _) => self.visit_hier_name(scope, sup),
             _ => (),
         }
     }

@@ -311,11 +311,6 @@ pub trait AstVisitor {
                     }
                 }
             }
-            ExprKind::Select(expr, dim) => {
-                self.visit_expr(expr);
-                self.visit_dim(dim);
-            }
-            ExprKind::Member(expr, _) => self.visit_expr(expr),
             ExprKind::SysTfCall(call) => self.visit_sys_tf_call(call),
             // ConstCast(Box<Expr>),
             // SignCast(Signing, Box<Expr>),
