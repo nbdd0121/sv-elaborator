@@ -2551,7 +2551,7 @@ impl<'a> Parser<'a> {
                 TokenKind::DelimGroup(Delim::Paren, _) => {
                     let repeated = this.parse_expr();
                     let list = match repeated.value {
-                        ExprKind::Concat(list) => list,
+                        ExprKind::Concat(list, None) => list,
                         _ => {
                             this.report_span(
                                 Severity::Error,
@@ -2941,7 +2941,8 @@ impl<'a> Parser<'a> {
                             if let TokenKind::DelimGroup(Delim::Brace, _) = **this.peek() {
                                 // This is a multiple concatenation
                                 let concat = this.parse_unwrap(Self::parse_primary_nocast);
-                                ExprKind::MultConcat(Box::new(expr), Box::new(concat))
+                                let select = this.parse_dim_opt().map(Box::new);
+                                ExprKind::MultConcat(Box::new(expr), Box::new(concat), select)
                             } else {
                                 let mut list = vec![expr];
                                 if this.check(TokenKind::Comma) {
@@ -2955,7 +2956,8 @@ impl<'a> Parser<'a> {
                                         }
                                     });
                                 }
-                                ExprKind::Concat(list)
+                                let select = this.parse_dim_opt().map(Box::new);
+                                ExprKind::Concat(list, select)
                             }
                         }
                     }

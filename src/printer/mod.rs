@@ -606,16 +606,22 @@ impl PrettyPrint {
                 }
                 self.append(Self::get_hier_id(name));
             }
-            ExprKind::Concat(list) => {
+            ExprKind::Concat(list, select) => {
                 self.append("{");
                 self.print_comma_list(list, |this, v| this.print_expr(v));
                 self.append("}");
+                if let Some(select) = select {
+                    self.print_dim(select);
+                }
             }
-            ExprKind::MultConcat(mult, concat) => {
+            ExprKind::MultConcat(mult, concat, select) => {
                 self.append("{");
                 self.print_expr(mult);
                 self.print_expr(concat);
                 self.append("}");
+                if let Some(select) = select {
+                    self.print_dim(select);
+                }
             }
             ExprKind::AssignPattern(ty, pat) => {
                 if let Some(v) = ty {

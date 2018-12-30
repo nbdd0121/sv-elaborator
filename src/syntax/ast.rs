@@ -67,6 +67,12 @@ impl<T: fmt::Display> fmt::Display for Spanned<T> {
     }
 }
 
+impl<T: AstNode> AstNode for Spanned<T> {
+    fn name() -> &'static str {
+        T::name()
+    }
+}
+
 
 //
 // Keyword enums
@@ -519,7 +525,7 @@ pub enum DataTypeKind {
 /// Should be boxed when nested in other AST structure.
 pub type DataType = Spanned<DataTypeKind>;
 
-impl AstNode for DataType {
+impl AstNode for DataTypeKind {
     fn name() -> &'static str {
         "data type"
     }
@@ -802,10 +808,10 @@ pub enum ExprKind {
     EmptyQueue,
 
     /// Concatenation
-    Concat(Vec<Expr>),
+    Concat(Vec<Expr>, Option<Box<Dim>>),
 
     /// Multiple concatenation
-    MultConcat(Box<Expr>, Box<Expr>),
+    MultConcat(Box<Expr>, Box<Expr>, Option<Box<Dim>>),
 
     /// Assignment pattern expression
     AssignPattern(Option<Box<DataType>>, AssignPattern),
@@ -846,7 +852,7 @@ pub enum ExprKind {
 
 pub type Expr = Spanned<ExprKind>;
 
-impl AstNode for Expr {
+impl AstNode for ExprKind {
     fn name() -> &'static str {
         "expression"
     }

@@ -277,12 +277,18 @@ pub trait AstVisitor {
             ExprKind::Literal(_) |
             ExprKind::HierName(..) => (),
             // EmptyQueue,
-            ExprKind::Concat(list) => {
+            ExprKind::Concat(list, select) => {
                 for expr in list { self.visit_expr(expr); }
+                if let Some(select) = select {
+                    self.visit_dim(select);
+                }
             }
-            ExprKind::MultConcat(mul, list) => {
+            ExprKind::MultConcat(mul, list, select) => {
                 self.visit_expr(mul);
                 self.visit_expr(list);
+                if let Some(select) = select {
+                    self.visit_dim(select);
+                }
             }
             ExprKind::AssignPattern(ty, pattern) => {
                 if let Some(v) = ty {
