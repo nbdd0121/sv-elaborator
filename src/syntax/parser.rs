@@ -19,12 +19,6 @@ struct Parser<'a> {
 //
 // Data types internal to parser
 //
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ArgOption {
-    Param,
-    Port,
-    Arg,
-}
 
 /// Disambiguated item that can possibly start with identifier.
 enum ItemDAB {
@@ -2009,7 +2003,7 @@ impl<'a> Parser<'a> {
 
         // Parse parameter value assignment
         let param = if self.check(TokenKind::Hash) {
-            Some(self.parse_args(ArgOption::Param))
+            Some(self.parse_unwrap(|this| this.parse_args_opt(true)))
         } else {
             None
         };
@@ -2022,7 +2016,7 @@ impl<'a> Parser<'a> {
 
             let mut dim = this.parse_list(Self::parse_dim_opt);
             this.check_list(&mut dim, Self::check_unpacked_dim);
-            let ports = this.parse_args(ArgOption::Port);
+            let ports = this.parse_port_conn();
             Some(HierInst {
                 name,
                 dim,
@@ -2056,8 +2050,8 @@ impl<'a> Parser<'a> {
     ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
     /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
     /// ```
-    fn parse_args_opt(&mut self, option: ArgOption) -> Option<Args> {
-        self.parse_if_delim(Delim::Paren, |this| {
+    fn parse_port_conn(&mut self) -> PortConn {
+        self.parse_delim(Delim::Paren, |this| {
             // One list for each type of argument.
             let mut ordered = Vec::new();
             let mut named = Vec::new();
@@ -2065,21 +2059,7 @@ impl<'a> Parser<'a> {
 
             this.parse_comma_list_unit(true, false, |this| {
                 let attr = this.parse_attr_inst_opt();
-                if option != ArgOption::Port && attr.is_some() {
-                    this.report_span(
-                        Severity::Error,
-                        "attribute instances on argument is not allowed",
-                        attr.as_ref().unwrap().span
-                    );
-                }
                 if let Some(v) = this.consume_if(TokenKind::WildPattern) {
-                    if option != ArgOption::Port {
-                        this.report_span(
-                            Severity::Error,
-                            ".* not allowed as argument",
-                            v.span
-                        );
-                    }
                     if has_wildcard {
                         this.report_span(
                             Severity::Error,
@@ -2087,23 +2067,24 @@ impl<'a> Parser<'a> {
                             v.span
                         );
                     }
+                    named.push((attr, NamedPortConn::Wildcard));
                     has_wildcard = true;
                     true
                 } else if let Some(v) = this.consume_if(TokenKind::Dot) {
                     let name = this.expect_id();
                     let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
-                    if !ordered.is_empty() && option != ArgOption::Arg {
+                    if !ordered.is_empty() {
                         this.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(expr.span)
                         );
                     }
-                    named.push((attr, Box::new(name), expr.value.map(Box::new)));
+                    named.push((attr, NamedPortConn::Explicit(name, expr.value.map(Box::new))));
                     true
                 } else {
                     let expr = this.parse_expr_opt().map(Box::new);
-                    if !named.is_empty() || has_wildcard {
+                    if !named.is_empty() {
                         if let Some(expr) = &expr {
                             this.report_span(
                                 Severity::Error,
@@ -2120,16 +2101,71 @@ impl<'a> Parser<'a> {
                 }
             });
 
-            Args {
-                ordered,
-                named,
-                has_wildcard,
+            if !named.is_empty() {
+                PortConn::Named(named)
+            } else {
+                PortConn::Ordered(ordered)
             }
         })
     }
 
-    fn parse_args(&mut self, option: ArgOption) -> Args {
-        self.parse_unwrap(|this| this.parse_args_opt(option))
+    /// Combined parser of parameter value assignment, port connections, and method argument list.
+    ///
+    /// ```bnf
+    /// list_of_parameter_assignments ::=
+    ///   ordered_parameter_assignment { , ordered_parameter_assignment }
+    /// | named_parameter_assignment { , named_parameter_assignment }
+    /// ordered_parameter_assignment ::=
+    ///   param_expression
+    /// named_parameter_assignment ::=
+    ///   . parameter_identifier ( [ param_expression ] )
+    /// list_of_arguments ::=
+    ///   [ expression ] { , [ expression ] } { , . identifier ( [ expression ] ) }
+    /// | . identifier ( [ expression ] ) { , . identifier ( [ expression ] ) }
+    /// ```
+    fn parse_args_opt(&mut self, is_param: bool) -> Option<Args> {
+        self.parse_if_delim(Delim::Paren, |this| {
+            // One list for each type of argument.
+            let mut ordered = Vec::new();
+            let mut named = Vec::new();
+
+            this.parse_comma_list_unit(true, false, |this| {
+                if let Some(v) = this.consume_if(TokenKind::Dot) {
+                    let name = this.expect_id();
+                    let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
+                    if !ordered.is_empty() && is_param {
+                        this.report_span(
+                            Severity::Error,
+                            "mixture of ordered and named argument is not allowed",
+                            v.span.merge(expr.span)
+                        );
+                    }
+                    named.push((Box::new(name), expr.value.map(Box::new)));
+                    true
+                } else {
+                    let expr = this.parse_expr_opt().map(Box::new);
+                    if !named.is_empty() {
+                        if let Some(expr) = &expr {
+                            this.report_span(
+                                Severity::Error,
+                                "ordered argument cannot appear after named argument",
+                                expr.span
+                            );
+                        } else {
+                            // Return None so error message will be about trailing comma.
+                            return false
+                        }
+                    }
+                    ordered.push(expr);
+                    true
+                }
+            });
+
+            Args {
+                ordered,
+                named,
+            }
+        })
     }
 
     //
@@ -2572,7 +2608,7 @@ impl<'a> Parser<'a> {
                 _ => unreachable!(),
             }
         };
-        let args = self.parse_args_opt(ArgOption::Arg);
+        let args = self.parse_args_opt(false);
         SysTfCall {
             task,
             args,

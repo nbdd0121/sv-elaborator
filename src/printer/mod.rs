@@ -249,8 +249,46 @@ impl PrettyPrint {
             for dim in &item.dim {
                 self.print_dim(dim);
             }
-            self.append(" ");
-            self.print_args(&item.ports, false);
+            self.append(" (\n");
+            self.indent(4);
+            match item.ports {
+                PortConn::Ordered(ref list) => {
+                    for ((_, v), _, last) in list.iter().identify_first_last() {
+                        self.indent_append("");
+                        if let Some(v) = v {
+                            self.print_expr(v);
+                        }
+                        if !last {
+                            self.append(",\n");
+                        }
+                    }
+                }
+                PortConn::Named(ref list) => {
+                    for ((_, conn), _, last) in list.iter().identify_first_last() {
+                        match conn {
+                            NamedPortConn::Explicit(name, expr) => {
+                                self.indent_append(format!(".{}(", name));
+                                if let Some(v) = expr {
+                                    self.print_expr(v);
+                                }
+                                self.append(")");
+                            }
+                            NamedPortConn::Implicit(name) => {
+                                self.indent_append(format!(".{}", name));
+                            }
+                            NamedPortConn::Wildcard => {
+                                self.indent_append(".*");
+                            }
+                        }
+                        if !last {
+                            self.append(",\n");
+                        }
+                    }
+                }
+            }
+            self.append("\n");
+            self.indent(-4);
+            self.indent_append(")");
         }
         self.append(";");
     }
@@ -261,7 +299,7 @@ impl PrettyPrint {
             self.append("\n");
             self.indent(4);
         }
-        for ((_, v), _, last) in obj.ordered.iter().identify_first_last() {
+        for (v, _, last) in obj.ordered.iter().identify_first_last() {
             if !inline { self.indent_append(""); }
             if let Some(v) = v {
                 self.print_expr(v);
@@ -270,19 +308,16 @@ impl PrettyPrint {
                 self.append(if inline { ", " } else { ",\n" });
             }
         }
-        for ((_, id, v), _, last) in obj.named.iter().identify_first_last() {
+        for ((id, v), _, last) in obj.named.iter().identify_first_last() {
             if !inline { self.indent_append(""); }
             self.append(format!(".{}(", id));
             if let Some(v) = v {
                 self.print_expr(v);
             }
             self.append(")");
-            if !last || !obj.has_wildcard {
+            if !last {
                 self.append(if inline { ", " } else { ",\n" });
             }
-        }
-        if obj.has_wildcard {
-            self.indent_append(".*");
         }
         if !inline {
             self.append("\n");

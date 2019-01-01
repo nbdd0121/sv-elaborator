@@ -58,7 +58,23 @@ pub trait AstVisitor {
                     for dim in &mut single_inst.dim {
                         self.visit_dim(dim);
                     }
-                    self.visit_args(&mut single_inst.ports);
+                    match &mut single_inst.ports {
+                        PortConn::Ordered(list) => {
+                             for (_, expr) in list {
+                                if let Some(v) = expr { self.visit_expr(v); }
+                            }
+                        }
+                        PortConn::Named(list) => {
+                            for (_, conn) in list {
+                                match conn {
+                                    NamedPortConn::Explicit(_, expr) => {
+                                        if let Some(v) = expr { self.visit_expr(v); }
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Item::GenRegion(item) => {
@@ -169,10 +185,10 @@ pub trait AstVisitor {
     }
 
     fn visit_args(&mut self, arg: &mut Args) {
-        for (_, expr) in &mut arg.ordered {
+        for expr in &mut arg.ordered {
             if let Some(v) = expr { self.visit_expr(v); }
         }
-        for (_, _, expr) in &mut arg.named {
+        for (_, expr) in &mut arg.named {
             if let Some(v) = expr { self.visit_expr(v); }
         }
     }

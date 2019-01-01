@@ -666,7 +666,7 @@ pub enum ModportSimplePort {
 pub struct HierInst {
     pub name: Ident,
     pub dim: Vec<Dim>,
-    pub ports: Args,
+    pub ports: PortConn,
 }
 
 #[derive(Debug, Clone)]
@@ -678,10 +678,22 @@ pub struct HierInstantiation {
 }
 
 #[derive(Debug, Clone)]
+pub enum NamedPortConn {
+    Explicit(Ident, Option<Box<Expr>>),
+    Implicit(Ident),
+    Wildcard,
+}
+
+#[derive(Debug, Clone)]
+pub enum PortConn {
+    Ordered(Vec<(Option<Box<AttrInst>>, Option<Box<Expr>>)>),
+    Named(Vec<(Option<Box<AttrInst>>, NamedPortConn)>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Args {
-    pub ordered: Vec<(Option<Box<AttrInst>>, Option<Box<Expr>>)>,
-    pub named: Vec<(Option<Box<AttrInst>>, Box<Ident>, Option<Box<Expr>>)>,
-    pub has_wildcard: bool,
+    pub ordered: Vec<Option<Box<Expr>>>,
+    pub named: Vec<(Box<Ident>, Option<Box<Expr>>)>,
 }
 
 impl AstNode for Args {
