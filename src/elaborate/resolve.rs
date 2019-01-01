@@ -21,12 +21,13 @@ pub fn resolve(diag: &DiagMgr, units: &mut Vec<Vec<Item>>) {
 }
 
 /// Describe what does this symbol mean.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum SymbolKind {
-    /// All kind of top-level design unit except interface and program
-    Design,
-    /// An interface type. Treated differently due to interface ports.
-    Interface,
+    /// All kind of top-level design unit
+    Design {
+        interface: bool,
+        ports: Rc<Vec<String>>
+    },
     /// A hierachical instance.
     Instance,
     /// Symbol introduced by typedef or type parameter
@@ -64,12 +65,11 @@ impl Scope {
 
     fn resolve(&mut self, name: &String) -> Option<(SymbolId, SymbolKind)> {
         if let Some(v) = self.map.get(name) {
-            return Some(*v)
+            return Some(v.clone())
         }
-        if let Some(v) = self.weak.get(name).map(|v| *v) {
+        if let Some(v) = self.weak.remove(name) {
             // If a symbol is found in weak hashmap, move it to strong one.
-            self.map.insert(name.to_owned(), v);
-            self.weak.remove(name);
+            self.map.insert(name.to_owned(), v.clone());
             return Some(v)
         }
         None
@@ -193,10 +193,43 @@ impl<'a> Resolver<'a> {
                 self.diag.report_error("cannot find the name in package", ident.span);
                 (SymbolId::DUMMY, SymbolKind::Error)
             }
-            Some(ret) => *ret,
+            Some(ret) => ret.clone(),
         };
         ident.symbol = symbol.0;
         symbol.1
+    }
+
+    /// Resolve a symbol without possibly introducing a wildcard-imported symbol.
+    fn resolve_strong(&mut self, ident: &mut Ident) -> Option<SymbolKind> {
+        let ret = 'block: loop {
+            for scope in self.scopes.iter_mut().rev() {
+                if let Some(v) = scope.map.get(&ident.value) {
+                    break 'block v.clone()
+                }
+            }
+            return None
+        };
+        ident.symbol = ret.0;
+        Some(ret.1)
+    }
+
+    /// Read a list of PortDecl and generate a list of ports
+    fn port_list(ports: &Vec<PortDecl>) -> Vec<String> {
+        let mut port_list = Vec::new();
+        for port in ports {
+            match port {
+                PortDecl::Data(.., list) |
+                PortDecl::Interface(.., list) => {
+                    for assign in list {
+                        port_list.push(assign.name.value.clone());
+                    }
+                }
+                PortDecl::Explicit(_, name, _) => {
+                    port_list.push(name.value.clone());
+                }
+            }
+        }
+        port_list
     }
 
     /// Build global symbols.
@@ -233,17 +266,11 @@ impl<'a> Resolver<'a> {
             for item in items {
                 match item {
                     Item::DesignDecl(decl) => {
-                        match decl.kw {
-                            Keyword::Module |
-                            Keyword::Primitive |
-                            Keyword::Program => {
-                                self.add_to_scope(&mut decl.name, SymbolKind::Design);
-                            }
-                            Keyword::Interface => {
-                                self.add_to_scope(&mut decl.name, SymbolKind::Interface);
-                            }
-                            _ => unreachable!(),
-                        }
+                        let symbol = SymbolKind::Design {
+                            interface: decl.kw == Keyword::Interface,
+                            ports: Rc::new(Self::port_list(&decl.port)),
+                        };
+                        self.add_to_scope(&mut decl.name, symbol);
                     }
                     _ => (),
                 }
@@ -266,21 +293,22 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    fn desugar_pkg(&self, scope: &mut Option<ast::Scope>, id: &Ident) {
+        // If this name comes from a package, desugar it.
+        if let Some(pkg) = self.pkg_ref.get(&id.symbol) {
+            *scope = Some(ast::Scope::Name(None, Box::new(Ident::new_unspanned(String::clone(pkg)))));
+        }
+    }
+
     fn visit_scoped_id(&mut self, scope: &mut Option<ast::Scope>, id: &mut Ident) {
         match scope {
             None => {
                 self.resolve(id);
-                // If this name comes from a package, desugar it.
-                if let Some(pkg) = self.pkg_ref.get(&id.symbol) {
-                    *scope = Some(ast::Scope::Name(None, Box::new(Ident::new_unspanned(String::clone(pkg)))));
-                }
+                self.desugar_pkg(scope, id);
             }
             Some(ast::Scope::Unit) => {
                 self.resolve_unit(id);
-                // If this name comes from a package, desugar it.
-                if let Some(pkg) = self.pkg_ref.get(&id.symbol) {
-                    *scope = Some(ast::Scope::Name(None, Box::new(Ident::new_unspanned(String::clone(pkg)))));
-                }
+                self.desugar_pkg(scope, id);
             }
             Some(ast::Scope::Name(None, pkg)) => {
                 // We did extra checking here by checking if the thing exists in package. This is
@@ -319,7 +347,7 @@ impl<'a> Resolver<'a> {
                 // This is a wildcard import. Add them to weak list.
                 let scope = self.scopes.last_mut().unwrap();
                 for (name, (id, kind)) in pkg_items {
-                    if let Some(_) = scope.weak.insert(name.to_owned(), (*id, *kind)) {
+                    if let Some(_) = scope.weak.insert(name.to_owned(), (*id, kind.clone())) {
                         scope.weak.insert(name.to_owned(), (SymbolId::DUMMY, SymbolKind::Conflict));
                     }
                 }
@@ -345,9 +373,13 @@ impl<'a> AstVisitor for Resolver<'a> {
             Item::DesignDecl(decl) => {
                 // If name is not yet resolved (i.e. not top-level), add it to the scope.
                 if decl.name.symbol == SymbolId::DUMMY {
+                    let symbol = SymbolKind::Design {
+                        interface: decl.kw == Keyword::Interface,
+                        ports: Rc::new(Self::port_list(&decl.port)),
+                    };
                     self.add_to_scope(
                         &mut decl.name,
-                        if let Keyword::Interface = decl.kw { SymbolKind::Interface } else { SymbolKind::Design }
+                        symbol
                     );
                 }
 
@@ -378,7 +410,10 @@ impl<'a> AstVisitor for Resolver<'a> {
                             if let Some(v) = intf {
                                 match (modport.is_some(), self.resolve(v)) {
                                     (false, SymbolKind::Type) => panic!("aww!! this should be a data port instead!"),
-                                    (_, SymbolKind::Interface) => (),
+                                    (_, SymbolKind::Design {
+                                        interface: true,
+                                        ..
+                                    }) => (),
                                     (_, SymbolKind::Error) => (),
                                     _ => {
                                         self.diag.report_fatal(format!("name {} is not an interface", v.value), v.span);
@@ -449,15 +484,17 @@ impl<'a> AstVisitor for Resolver<'a> {
             Item::Initial(_) |
             Item::Always(..) => (),
             Item::HierInstantiation(inst) => {
-                let kind = self.resolve(&mut inst.name);
-                match kind {
-                    SymbolKind::Design |
-                    SymbolKind::Interface |
-                    SymbolKind::Error => (),
+                let ports = match self.resolve(&mut inst.name) {
+                    SymbolKind::Design { ports, ..} => ports,
+                    SymbolKind::Error => return,
                     _ => {
-                        self.diag.report_fatal("only design units can appear in hierachical instantiation", inst.name.span);
+                        self.diag.report_error(
+                            "only design units can appear in hierachical instantiation",
+                            inst.name.span
+                        );
+                        return;
                     }
-                }
+                };
                 if let Some(param) = &mut inst.param {
                     self.visit_args(param);
                 }
@@ -466,21 +503,104 @@ impl<'a> AstVisitor for Resolver<'a> {
                     for dim in &mut single_inst.dim {
                         self.visit_dim(dim);
                     }
-                    match &mut single_inst.ports {
-                        PortConn::Ordered(list) => {
-                             for (_, expr) in list {
+                    match single_inst.ports {
+                        PortConn::Ordered(ref mut list) => {
+                             for (_, expr) in list.iter_mut() {
                                 if let Some(v) = expr { self.visit_expr(v); }
                             }
-                        }
-                        PortConn::Named(list) => {
-                            for (_, conn) in list {
-                                match conn {
-                                    NamedPortConn::Explicit(_, expr) => {
-                                        if let Some(v) = expr { self.visit_expr(v); }
-                                    }
-                                    _ => unimplemented!(),
-                                }
+                            if list.len() > ports.len() {
+                                self.diag.report_error(
+                                    "instantiation contains more ports connections than declared",
+                                    single_inst.name.span
+                                );
                             }
+                            list.resize(ports.len(), (None, None));
+                        }
+                        PortConn::Named(ref mut list) => {
+                            // For named port connections, we will reorder them to match declared
+                            // order. This will make task later slightly easier. We don't really
+                            // need to do this in resolver but as resolver need to de-sugar
+                            // implicit and wildcard anyway, we just do it here.
+                            ::util::replace_with(list, |list| {
+                                let mut new_list = vec![None; ports.len()];
+                                let mut has_wildcard = false;
+                                for (attr, conn) in list {
+                                    // Find the corresponding index in the port list.
+                                    let id = match conn {
+                                        NamedPortConn::Explicit(ref name, _) |
+                                        NamedPortConn::Implicit(ref name) => {
+                                            let id = match ports.iter().position(|port_name| port_name == &name.value) {
+                                                None => {
+                                                    self.diag.report_error(
+                                                        format!("no port declaration named {} is declared", name),
+                                                        name.span
+                                                    );
+                                                    continue
+                                                }
+                                                Some(id) => id,
+                                            };
+                                            if !new_list[id].is_none() {
+                                                self.diag.report_error(
+                                                    "duplicate port connections",
+                                                    name.span
+                                                )
+                                            }
+                                            id
+                                        }
+                                        NamedPortConn::Wildcard => {
+                                            has_wildcard = true;
+                                            continue;
+                                        }
+                                    };
+                                    match conn {
+                                        NamedPortConn::Explicit(name, mut expr) => {
+                                            // Explicit port - just visit the expression and return as is.
+                                            if let Some(v) = &mut expr { self.visit_expr(v) };
+                                            new_list[id] = Some((attr, NamedPortConn::Explicit(name, expr)));
+                                        }
+                                        NamedPortConn::Implicit(mut name) => {
+                                            // Implicit port - desugar to explicit port
+                                            let mut scope = None;
+                                            self.visit_scoped_id(&mut scope, &mut name);
+                                            let span = name.span;
+                                            new_list[id] = Some((attr, NamedPortConn::Explicit(
+                                                name.clone(),
+                                                Some(Box::new(Spanned::new(ExprKind::HierName(
+                                                    scope, HierId::Name(Box::new(name))
+                                                ), span)))
+                                            )));
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                }
+                                if has_wildcard {
+                                    new_list.iter_mut().enumerate().for_each(|(id, v)| {
+                                        if !v.is_none() { return; }
+                                        let mut name = Ident::new_unspanned(ports[id].clone());
+                                        // Failure to resolve isn't an error for wildcard port
+                                        // connection - it shall fall back to default value.
+                                        match self.resolve_strong(&mut name) {
+                                            None => return,
+                                            _ => (),
+                                        }
+                                        let mut scope = None;
+                                        self.desugar_pkg(&mut scope, &name);
+                                        *v = Some((None, NamedPortConn::Explicit(
+                                            name.clone(),
+                                            Some(Box::new(Spanned::new_unspanned(ExprKind::HierName(
+                                                scope, HierId::Name(Box::new(name))
+                                            ))))
+                                        )));
+                                    });
+                                }
+                                // For everything left unconnected, use default value.
+                                new_list.into_iter().enumerate().map(|(id, v)| v.unwrap_or_else(|| {
+                                    (None, NamedPortConn::Explicit(
+                                        Ident::new_unspanned(ports[id].clone()),
+                                        None
+                                    ))
+                                })).collect()
+                            });
                         }
                     }
                 }

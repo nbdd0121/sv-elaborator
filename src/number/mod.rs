@@ -271,6 +271,16 @@ impl<'a> ops::AddAssign<&'a LogicVec> for LogicVec {
     }
 }
 
+impl ops::AddAssign<i32> for LogicVec {
+    fn add_assign(&mut self, rhs: i32) {
+        if !self.is_two_state() {
+            return self.replace_with_x();
+        }
+        let v = Int::from_bigint(self.width(), rhs.into());
+        self.value += &v;
+    }
+}
+
 impl<'a> ops::SubAssign<&'a LogicVec> for LogicVec {
     fn sub_assign(&mut self, rhs: &Self) {
         assert!(self.signed == rhs.signed);

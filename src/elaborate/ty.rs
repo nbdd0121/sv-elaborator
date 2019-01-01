@@ -3,6 +3,7 @@
 
 use std::cmp;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use number::LogicVec;
 use syntax::ast::{Ident, RealTy};
@@ -111,7 +112,8 @@ impl cmp::Eq for Struct {}
 #[derive(Debug)]
 pub struct Enum {
     pub base: IntTy,
-    pub elements: Vec<(Ident, LogicVec)>,
+    /// This has to be a RefCell because elements of enum can refer to another elements.
+    pub elements: RefCell<Vec<(Ident, LogicVec)>>,
 }
 
 impl cmp::PartialEq for Enum {
