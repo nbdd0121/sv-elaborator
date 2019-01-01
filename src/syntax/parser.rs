@@ -2072,15 +2072,21 @@ impl<'a> Parser<'a> {
                     true
                 } else if let Some(v) = this.consume_if(TokenKind::Dot) {
                     let name = this.expect_id();
-                    let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
+                    let expr = this.parse_if_delim_spanned(Delim::Paren, Self::parse_expr_opt);
                     if !ordered.is_empty() {
                         this.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
-                            v.span.merge(expr.span)
+                            v.span.merge(match expr {
+                                None => name.span,
+                                Some(ref expr) => expr.span
+                            })
                         );
                     }
-                    named.push((attr, NamedPortConn::Explicit(name, expr.value.map(Box::new))));
+                    named.push((attr, match expr {
+                        None => NamedPortConn::Implicit(name),
+                        Some(expr) => NamedPortConn::Explicit(name, expr.value.map(Box::new)),
+                    }));
                     true
                 } else {
                     let expr = this.parse_expr_opt().map(Box::new);
