@@ -449,6 +449,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                 }
                 return;
             }
+            Item::FuncDecl(_) => unimplemented!(),
             Item::PkgImport(import) => {
                 self.visit_import(import);
                 return;

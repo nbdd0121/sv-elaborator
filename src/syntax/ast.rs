@@ -411,6 +411,7 @@ pub enum Item {
     DesignDecl(Box<DesignDecl>),
     PkgDecl(Box<PkgDecl>),
     PkgImport(Vec<PkgImportItem>),
+    FuncDecl(Box<FuncDecl>),
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
 
@@ -636,9 +637,21 @@ pub enum DimKind {
     AssocWild,
 }
 
-
 /// Should be boxed when nested in other AST structure.
 pub type Dim = Spanned<DimKind>;
+
+//
+// A.2.6 Function declarations
+//
+#[derive(Debug, Clone)]
+pub struct FuncDecl {
+    pub attr: Option<Box<AttrInst>>,
+    pub lifetime: Lifetime,
+    pub ty: DataType,
+    pub name: Ident,
+    pub ports: Vec<PortDecl>,
+    pub stmts: Vec<Stmt>,
+}
 
 //
 // A.2.9 Interface declarations
@@ -737,8 +750,15 @@ pub enum StmtKind {
     Empty,
     TimingCtrl(TimingCtrl, Box<Stmt>),
     If(Option<UniqPrio>, Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    Case {
+        uniq: Option<UniqPrio>,
+        kw: CaseKw,
+        expr: Box<Expr>,
+        items: Vec<(Vec<Expr>, Stmt)>,
+    },
     SeqBlock(Vec<Stmt>),
     Expr(Box<Expr>),
+    DataDecl(Box<DataDecl>),
 }
 
 #[derive(Debug, Clone)]
@@ -831,6 +851,11 @@ pub enum ExprKind {
     // Subroutine calls
     /// Call to system task
     SysTfCall(Box<SysTfCall>),
+    FuncCall {
+        expr: Box<Expr>,
+        attr: Option<Box<AttrInst>>,
+        args: Option<Box<Args>>,
+    },
 
     // Casts
     ConstCast(Box<Expr>),

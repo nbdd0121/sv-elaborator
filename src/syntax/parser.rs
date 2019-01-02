@@ -604,6 +604,8 @@ impl<'a> Parser<'a> {
                     items: items,
                 })))
             }
+            // function_declaration
+            TokenKind::Keyword(Keyword::Function) => Some(self.parse_func_decl(attr)),
             // parameter_override
             TokenKind::Keyword(Keyword::Defparam) => {
                 // We've decided not to support defparam at all ever even though the standard
@@ -674,6 +676,8 @@ impl<'a> Parser<'a> {
             // data_declaration. Either begin with const/var or explicit data type.
             TokenKind::Keyword(Keyword::Const) |
             TokenKind::Keyword(Keyword::Var) |
+            TokenKind::Keyword(Keyword::Automatic) |
+            TokenKind::Keyword(Keyword::Static) |
             TokenKind::IntAtomTy(_) |
             TokenKind::IntVecTy(_) |
             TokenKind::Keyword(Keyword::Reg) |
@@ -1886,6 +1890,31 @@ impl<'a> Parser<'a> {
     }
 
     //
+    // A.2.6 Function declarations
+    //
+
+    fn parse_func_decl(&mut self, attr: Option<Box<AttrInst>>) -> Item {
+        self.consume();
+        let lifetime = self.parse_lifetime();
+        let ty = self.parse_data_type();
+        // TODO: [ interface_identifier . | class_scope ]
+        let name = self.expect_id();
+        let ports = self.parse_port_list();
+        self.expect(TokenKind::Semicolon);
+        let stmts = self.parse_list(Self::parse_stmt_opt);
+        self.expect(TokenKind::Keyword(Keyword::Endfunction));
+        self.parse_end_annotation(Some(&name));
+        Item::FuncDecl(Box::new(FuncDecl {
+            attr,
+            lifetime,
+            ty,
+            name,
+            ports: ports.unwrap_or_else(|| Vec::new()),
+            stmts,
+        }))
+    }
+
+    //
     // A.2.9 Interface declarations
     //
 
@@ -2396,6 +2425,7 @@ impl<'a> Parser<'a> {
 
         let kind = match **self.peek() {
             TokenKind::Keyword(Keyword::End) => return None,
+            TokenKind::Keyword(Keyword::Endfunction) => return None,
             // null_statement
             TokenKind::Semicolon => {
                 self.consume();
@@ -2406,7 +2436,7 @@ impl<'a> Parser<'a> {
                 let prio = self.consume();
                 match **self.peek() {
                     TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(Some(uniq)),
-                    // TODO: case
+                    TokenKind::CaseKw(_) => self.parse_case_stmt(Some(uniq)),
                     _ => {
                         self.report_span(
                             Severity::Error,
@@ -2420,6 +2450,7 @@ impl<'a> Parser<'a> {
             }
             // conditional_statement
             TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(None),
+            TokenKind::CaseKw(_) => self.parse_case_stmt(None),
             // seq_block
             TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label),
             // procedural_timing_control_statement
@@ -2427,6 +2458,27 @@ impl<'a> Parser<'a> {
             TokenKind::CycleDelay |
             TokenKind::AtStar |
             TokenKind::At => self.parse_timing_ctrl_stmt(),
+            // block_item_declaration -> data_declaration
+            // data_declaration. Either begin with const/var or explicit data type.
+            TokenKind::Keyword(Keyword::Const) |
+            TokenKind::Keyword(Keyword::Var) |
+            TokenKind::Keyword(Keyword::Automatic) |
+            TokenKind::Keyword(Keyword::Static) |
+            TokenKind::IntAtomTy(_) |
+            TokenKind::IntVecTy(_) |
+            TokenKind::Keyword(Keyword::Reg) |
+            TokenKind::RealTy(_) |
+            TokenKind::Keyword(Keyword::Struct) |
+            TokenKind::Keyword(Keyword::Union) |
+            TokenKind::Keyword(Keyword::Enum) |
+            TokenKind::Keyword(Keyword::String) |
+            TokenKind::Keyword(Keyword::Chandle) |
+            TokenKind::Keyword(Keyword::Virtual) |
+            TokenKind::Keyword(Keyword::Event) |
+            TokenKind::Keyword(Keyword::Type) |
+            TokenKind::Keyword(Keyword::Void) => {
+                StmtKind::DataDecl(Box::new(self.parse_data_decl(None)))
+            }
             _ => {
                 let expr = self.parse_unwrap(Self::parse_assign_expr);
                 self.expect(TokenKind::Semicolon);
@@ -2537,6 +2589,42 @@ impl<'a> Parser<'a> {
             None
         };
         StmtKind::If(uniq, cond, true_stmt, false_stmt)
+    }
+
+    fn parse_case_stmt(&mut self, uniq: Option<UniqPrio>) -> StmtKind {
+        let kw = if let TokenKind::CaseKw(kw) = *self.consume() { kw } else { unreachable!() };
+        let expr = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr));
+        match **self.peek() {
+            TokenKind::Keyword(Keyword::Matches) |
+            TokenKind::Keyword(Keyword::Inside) => {
+                self.unimplemented()
+            }
+            _ => (),
+        }
+        let items = self.parse_list(|this| {
+            let arm = match **this.peek() {
+                TokenKind::Keyword(Keyword::Endcase) => return None,
+                TokenKind::Keyword(Keyword::Default) => {
+                    // Default match arm
+                    this.consume();
+                    Vec::new()
+                }
+                _ => {
+                    // Expression match arms
+                    this.parse_comma_list(false, false, Self::parse_expr_opt)
+                }
+            };
+            this.expect(TokenKind::Colon);
+            let stmt = this.parse_stmt();
+            Some((arm, stmt))
+        });
+        self.expect(TokenKind::Keyword(Keyword::Endcase));
+        StmtKind::Case {
+            uniq,
+            kw,
+            expr,
+            items,
+        }
     }
 
     //
@@ -3083,18 +3171,27 @@ impl<'a> Parser<'a> {
                         // This can be either function call or inc/dec expression, peek ahead
                         TokenKind::DelimGroup(Delim::Attr, _) => {
                             if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(1) {
-                                let span = self.peek().span;
-                                self.report_span(Severity::Fatal, "function call not finished yet", span);
-                                unreachable!();
+                                let span = expr.span.merge(self.peek().span);
+                                let attr = self.parse_attr_inst_opt();
+                                let args = self.parse_args_opt(false).map(Box::new);
+                                Some(Spanned::new(ExprKind::FuncCall {
+                                    expr: Box::new(expr),
+                                    attr,
+                                    args,
+                                }, span))
                             } else {
                                 Some(expr)
                             }
                         }
                         // Function call
                         TokenKind::DelimGroup(Delim::Paren, _) => {
-                            let span = self.peek().span;
-                            self.report_span(Severity::Fatal, "function call not finished yet", span);
-                            unreachable!();
+                            let span = expr.span.merge(self.peek().span);
+                            let args = self.parse_args_opt(false).map(Box::new);
+                            Some(Spanned::new(ExprKind::FuncCall {
+                                expr: Box::new(expr),
+                                attr: None,
+                                args,
+                            }, span))
                         }
                         _ => Some(expr)
                     }

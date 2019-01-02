@@ -22,20 +22,18 @@ pub trait AstVisitor {
                 }
             }
             Item::PkgImport(_) => (),
+            Item::FuncDecl(decl) => {
+                for port in &mut decl.ports {
+                    self.visit_port_decl(port)
+                }
+                for stmt in &mut decl.stmts {
+                    self.visit_stmt(stmt);
+                }
+            }
             Item::ParamDecl(decl) => {
                 self.visit_param_decl(decl)
             }
-            Item::DataDecl(decl) => {
-                self.visit_ty(&mut decl.ty);
-                for assign in &mut decl.list {
-                    for dim in &mut assign.dim {
-                        self.visit_dim(dim);
-                    }
-                    if let Some(v) = &mut assign.init {
-                        self.visit_expr(v);
-                    }
-                }
-            }
+            Item::DataDecl(decl) => self.visit_data_decl(decl),
             Item::Typedef(_, ty, _, dim) => {
                 self.visit_ty(ty);
                 for dim in dim {
@@ -184,6 +182,18 @@ pub trait AstVisitor {
         }
     }
 
+    fn visit_data_decl(&mut self, decl: &mut DataDecl) {
+        self.visit_ty(&mut decl.ty);
+        for assign in &mut decl.list {
+            for dim in &mut assign.dim {
+                self.visit_dim(dim);
+            }
+            if let Some(v) = &mut assign.init {
+                self.visit_expr(v);
+            }
+        }
+    }
+
     fn visit_args(&mut self, arg: &mut Args) {
         for expr in &mut arg.ordered {
             if let Some(v) = expr { self.visit_expr(v); }
@@ -270,6 +280,15 @@ pub trait AstVisitor {
                 self.visit_stmt(tst);
                 if let Some(v) = fst { self.visit_stmt(v); }
             }
+            StmtKind::Case {
+                uniq: _, kw: _, expr, items
+            } => {
+                self.visit_expr(expr);
+                for (cond, stmt) in items {
+                    for expr in cond { self.visit_expr(expr); }
+                    self.visit_stmt(stmt);
+                }
+            }
             StmtKind::SeqBlock(stmts) => {
                 for stmt in stmts {
                     self.visit_stmt(stmt);
@@ -278,6 +297,7 @@ pub trait AstVisitor {
             StmtKind::Expr(expr) => {
                 self.visit_expr(expr);
             }
+            StmtKind::DataDecl(decl) => self.visit_data_decl(decl),
         }
     }
 
@@ -328,6 +348,12 @@ pub trait AstVisitor {
                 }
             }
             ExprKind::SysTfCall(call) => self.visit_sys_tf_call(call),
+            ExprKind::FuncCall { expr, attr: _, args } => {
+                self.visit_expr(expr);
+                if let Some(v) = args {
+                    self.visit_args(v);
+                }
+            }
             // ConstCast(Box<Expr>),
             // SignCast(Signing, Box<Expr>),
             ExprKind::TypeCast(target, expr) => {

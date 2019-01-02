@@ -235,6 +235,50 @@ impl PrettyPrint {
         self.indent_append("endpackage");
     }
 
+    fn print_func_decl(&mut self, obj: &FuncDecl) {
+        self.append("function");
+        self.indent(4);
+        if obj.lifetime == Lifetime::Automatic {
+            self.append(" automatic");
+        }
+        self.append(format!(" {}", obj.name));
+        if obj.ports.len() != 0 {
+            self.append(format!(" (\n"));
+            for (item, _, last) in obj.ports.iter().identify_first_last() {
+                self.print_port_decl(item);
+                self.append(format!("{}\n", if { last } { "" } else { "," }));
+            }
+            self.append(format!(")"));
+        }
+        self.append(";\n");
+        for stmt in &obj.stmts {
+            self.indent_append("");
+            self.print_stmt(stmt);
+            self.append("\n");
+        }
+        self.indent(-4);
+        self.indent_append("endfunction");
+    }
+
+    fn print_data_decl(&mut self, obj: &DataDecl) {
+        self.append("");
+        if obj.has_const {
+            self.append("const ");
+        }
+        if let DataTypeKind::Implicit(..) = *obj.ty {
+            self.append("var ");
+        }
+        self.print_type(&obj.ty);
+        self.append(" ");
+        for (item, _, last) in obj.list.iter().identify_first_last() {
+            self.print_decl_assign(item);
+            if !last {
+                self.append(format!(", "));
+            }
+        }
+        self.append(";");
+    }
+
     fn print_hier_instantiation(&mut self, obj: &HierInstantiation) {
         self.append(format!("{}", obj.name));
         if let Some(v) = &obj.param {
@@ -331,6 +375,7 @@ impl PrettyPrint {
         match obj {
             Item::DesignDecl(v) => self.print_module_decl(v),
             Item::PkgDecl(v) => self.print_pkg_decl(v),
+            Item::FuncDecl(v) => self.print_func_decl(v),
             Item::PkgImport(items) => {
                 self.append("import ");
                 self.print_comma_list(items, |this, PkgImportItem(pkg, item)| {
@@ -420,24 +465,7 @@ impl PrettyPrint {
                 }
                 self.append(";");
             }
-            Item::DataDecl(decl) => {
-                self.append("");
-                if decl.has_const {
-                    self.append("const ");
-                }
-                if let DataTypeKind::Implicit(..) = *decl.ty {
-                    self.append("var ");
-                }
-                self.print_type(&decl.ty);
-                self.append(" ");
-                for (item, _, last) in decl.list.iter().identify_first_last() {
-                    self.print_decl_assign(item);
-                    if !last {
-                        self.append(format!(", "));
-                    }
-                }
-                self.append(";");
-            }
+            Item::DataDecl(decl) => self.print_data_decl(decl),
             Item::TypedefIntf(_attr, intf, ty, id) => {
                 self.append("typedef ");
                 self.print_expr(intf);
@@ -691,6 +719,12 @@ impl PrettyPrint {
                 self.append("}");
             }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
+            ExprKind::FuncCall { expr, attr: _, args } => {
+                self.print_expr(expr);
+                if let Some(args) = args {
+                    self.print_args(args, true);
+                }
+            }
             ExprKind::TypeCast(ty, expr) => {
                 self.print_expr(ty);
                 self.append("'(");
@@ -815,6 +849,7 @@ impl PrettyPrint {
                 self.print_expr(&expr);
                 self.append(";");
             }
+            StmtKind::DataDecl(decl) => self.print_data_decl(decl),
             _ => {
                 eprintln!("{:?}", obj);
                 unimplemented!();
