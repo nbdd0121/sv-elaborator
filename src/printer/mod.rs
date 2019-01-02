@@ -16,13 +16,13 @@ impl PrettyPrint {
         }
     }
 
-    fn indent(&mut self, i: isize) {
-        if i > 0 {
-            self.indent.push_str(&" ".repeat(i as usize))
-        } else {
-            let newlen = (self.indent.len() as isize + i) as usize;
-            self.indent.truncate(newlen)
-        }
+    fn indent(&mut self) {
+        self.indent.push_str(&"    ");
+    }
+
+    fn unindent(&mut self) {
+        let newlen = self.indent.len() - 4;
+        self.indent.truncate(newlen)
     }
 
     pub fn append<T: Into<String>>(&mut self, str: T) {
@@ -176,7 +176,7 @@ impl PrettyPrint {
 
     fn print_module_decl(&mut self, obj: &DesignDecl) {
         self.append(format!("{}", obj.kw));
-        self.indent(4);
+        self.indent();
         if obj.lifetime == Lifetime::Automatic {
             self.append(format!(" automatic"));
         }
@@ -215,13 +215,13 @@ impl PrettyPrint {
             self.print_item(item);
             self.append("\n");
         }
-        self.indent(-4);
+        self.unindent();
         self.indent_append(format!("end{}", obj.kw));
     }
 
     fn print_pkg_decl(&mut self, obj: &PkgDecl) {
         self.append("package");
-        self.indent(4);
+        self.indent();
         if obj.lifetime == Lifetime::Automatic {
             self.append(" automatic");
         }
@@ -231,13 +231,13 @@ impl PrettyPrint {
             self.print_item(item);
             self.append("\n");
         }
-        self.indent(-4);
+        self.unindent();
         self.indent_append("endpackage");
     }
 
     fn print_func_decl(&mut self, obj: &FuncDecl) {
         self.append("function");
-        self.indent(4);
+        self.indent();
         if obj.lifetime == Lifetime::Automatic {
             self.append(" automatic");
         }
@@ -256,7 +256,7 @@ impl PrettyPrint {
             self.print_stmt(stmt);
             self.append("\n");
         }
-        self.indent(-4);
+        self.unindent();
         self.indent_append("endfunction");
     }
 
@@ -294,7 +294,7 @@ impl PrettyPrint {
                 self.print_dim(dim);
             }
             self.append(" (\n");
-            self.indent(4);
+            self.indent();
             match item.ports {
                 PortConn::Ordered(ref list) => {
                     for ((_, v), _, last) in list.iter().identify_first_last() {
@@ -331,7 +331,7 @@ impl PrettyPrint {
                 }
             }
             self.append("\n");
-            self.indent(-4);
+            self.unindent();
             self.indent_append(")");
         }
         self.append(";");
@@ -341,7 +341,7 @@ impl PrettyPrint {
         self.append("(");
         if !inline {
             self.append("\n");
-            self.indent(4);
+            self.indent();
         }
         for (v, _, last) in obj.ordered.iter().identify_first_last() {
             if !inline { self.indent_append(""); }
@@ -365,7 +365,7 @@ impl PrettyPrint {
         }
         if !inline {
             self.append("\n");
-            self.indent(-4);
+            self.unindent();
             self.indent_append("");
         }
         self.append(")");
@@ -409,13 +409,13 @@ impl PrettyPrint {
             }
             Item::GenRegion(list) => {
                 self.append("generate\n");
-                self.indent(4);
+                self.indent();
                 for item in list {
                     self.indent_append("");
                     self.print_item(item);
                     self.append("\n");
                 }
-                self.indent(-4);
+                self.unindent();
                 self.indent_append("endgenerate");
             }
             Item::LoopGen(gen) => {
@@ -484,7 +484,7 @@ impl PrettyPrint {
                 self.append("modport ");
                 self.print_comma_list(decl, |this, decl| {
                     this.append(format!("{} (\n", decl.0));
-                    this.indent(4);
+                    this.indent();
                     this.print_comma_list_newline(&decl.1, |this, item| {
                         match item {
                             ModportPortDecl::Simple(_attr, dir, list) => {
@@ -503,7 +503,7 @@ impl PrettyPrint {
                             _ => unimplemented!(),
                         }
                     });
-                    this.indent(-4);
+                    this.unindent();
                     this.indent_append(")");
                 });
                 self.append(";");
@@ -517,13 +517,13 @@ impl PrettyPrint {
             self.append(format!(": {}", v));
         }
         self.append("\n");
-        self.indent(4);
+        self.indent();
         for item in &obj.items {
             self.indent_append("");
             self.print_item(item);
             self.append("\n");
         }
-        self.indent(-4);
+        self.unindent();
         self.indent_append("end");
     }
 
@@ -559,7 +559,7 @@ impl PrettyPrint {
                     self.append(" signed");
                 }
                 self.append(" {\n");
-                self.indent(4);
+                self.indent();
                 for member in &aggr.members {
                     self.indent_append("");
                     self.print_type(&member.ty);
@@ -567,7 +567,7 @@ impl PrettyPrint {
                     self.print_comma_list(&member.list, Self::print_decl_assign);
                     self.append(";\n");
                 }
-                self.indent(-4);
+                self.unindent();
                 self.indent_append("}");
                 for dim in dim {
                     self.print_dim(dim);
@@ -580,9 +580,9 @@ impl PrettyPrint {
                     self.append(" ");
                 }
                 self.append("{\n");
-                self.indent(4);
+                self.indent();
                 self.print_comma_list_newline(&en.members, Self::print_decl_assign);
-                self.indent(-4);
+                self.unindent();
                 self.indent_append("}");
                 for dim in dim {
                     self.print_dim(dim);
@@ -830,19 +830,43 @@ impl PrettyPrint {
                     self.print_stmt(&v);
                 }
             }
+            StmtKind::Case { uniq, kw, expr, items } => {
+                if let Some(v) = uniq {
+                    self.append(format!("{} ", v));
+                }
+                self.append(format!("{} (", kw));
+                self.print_expr(&expr);
+                self.append(")\n");
+                self.indent();
+                for (cond, stmt) in items {
+                    self.indent_append("");
+                    if cond.is_empty() {
+                        self.append("default: ");
+                    } else {
+                        self.print_comma_list(cond, |this, expr| {
+                            this.print_expr(expr);
+                        });
+                        self.append(": ");
+                    }
+                    self.print_stmt(stmt);
+                    self.append("\n");
+                }
+                self.unindent();
+                self.indent_append("endcase");
+            }
             StmtKind::SeqBlock(list) => {
                 self.append("begin");
                 if let Some(v) = &obj.label {
                     self.append(format!(": {}", v));
                 }
                 self.append("\n");
-                self.indent(4);
+                self.indent();
                 for item in list {
                     self.indent_append("");
                     self.print_stmt(item);
                     self.append("\n");
                 }
-                self.indent(-4);
+                self.unindent();
                 self.indent_append("end");
             }
             StmtKind::Expr(expr) => {
