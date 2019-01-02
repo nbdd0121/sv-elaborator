@@ -1211,7 +1211,7 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::Semicolon);
                 Item::TypedefIntf(
                     attr,
-                    Box::new(Spanned::new(ExprKind::HierName(None, intf.value), intf.span)),
+                    Box::new(intf),
                     ty,
                     Box::new(id)
                 )

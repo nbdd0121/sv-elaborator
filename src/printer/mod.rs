@@ -468,7 +468,7 @@ impl PrettyPrint {
             Item::DataDecl(decl) => self.print_data_decl(decl),
             Item::TypedefIntf(_attr, intf, ty, id) => {
                 self.append("typedef ");
-                self.print_expr(intf);
+                self.print_hier_id(intf);
                 self.append(format!(".{} {};", ty, id));
             }
             Item::Typedef(_attr, ty, id, dim) => {

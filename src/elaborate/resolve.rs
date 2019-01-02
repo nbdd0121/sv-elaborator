@@ -319,15 +319,6 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn visit_hier_name(&mut self, scope: &mut Option<ast::Scope>, id: &mut HierId) {
-        // We only resolve the top-most one
-        match id {
-            HierId::Name(id) => self.visit_scoped_id(scope, id),
-            HierId::Member(sup, _) => self.visit_hier_name(scope, sup),
-            _ => (),
-        }
-    }
-
     fn visit_import(&mut self, import: &mut Vec<PkgImportItem>) {
         for import in import {
             if let Some(v) = &mut import.1 {
@@ -498,8 +489,8 @@ impl<'a> AstVisitor for Resolver<'a> {
                 self.add_to_scope(name, SymbolKind::Type);
                 return;
             }
-            Item::TypedefIntf(_, expr, _, target) => {
-                self.visit_expr(expr);
+            Item::TypedefIntf(_, intf, _, target) => {
+                self.visit_hier_name(&mut None, intf);
                 self.add_to_scope(target, SymbolKind::Type);
                 return;
             }
@@ -784,12 +775,13 @@ impl<'a> AstVisitor for Resolver<'a> {
         self.do_visit_ty(ty);
     }
 
-    fn visit_expr(&mut self, expr: &mut Expr) {
-        if let ExprKind::HierName(scope, id) = &mut expr.value {
-            self.visit_hier_name(scope, id);
-            return;
+    fn visit_hier_name(&mut self, scope: &mut Option<ast::Scope>, id: &mut HierId) {
+        // We only resolve the top-most one
+        match id {
+            HierId::Name(id) => self.visit_scoped_id(scope, id),
+            HierId::Member(sup, _) => self.visit_hier_name(scope, sup),
+            _ => (),
         }
-        self.do_visit_expr(expr);
     }
 
     fn visit_stmt(&mut self, stmt: &mut Stmt) {

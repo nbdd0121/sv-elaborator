@@ -419,7 +419,7 @@ pub enum Item {
     Typedef(Option<Box<AttrInst>>, Box<DataType>, Box<Ident>, Vec<Dim>),
 
     /// Typedef that imports data types from interface
-    TypedefIntf(Option<Box<AttrInst>>, Box<Expr>, Box<Ident>, Box<Ident>),
+    TypedefIntf(Option<Box<AttrInst>>, Box<Spanned<HierId>>, Box<Ident>, Box<Ident>),
 
     ContinuousAssign(Vec<Expr>),
     Initial(Box<Stmt>),

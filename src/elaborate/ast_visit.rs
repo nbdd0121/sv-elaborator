@@ -40,7 +40,7 @@ pub trait AstVisitor {
                     self.visit_dim(dim);
                 }
             }
-            Item::TypedefIntf(_, expr, _, _) => self.visit_expr(expr),
+            Item::TypedefIntf(_, id, _, _) => self.visit_hier_name(&mut None, id),
             Item::ContinuousAssign(list) => {
                 for expr in list {
                     self.visit_expr(expr)
@@ -311,11 +311,24 @@ pub trait AstVisitor {
         }
     }
 
+    fn visit_hier_name(&mut self, scope: &mut Option<Scope>, id: &mut HierId) {
+        match id {
+            HierId::Member(id, _) => {
+                self.visit_hier_name(scope, id);
+            }
+            HierId::Select(id, dim) => {
+                self.visit_hier_name(scope, id);
+                self.visit_dim(dim);
+            }
+            _ => (),
+        }
+    }
+
     fn do_visit_expr(&mut self, expr: &mut Expr) {
         match &mut expr.value {
             ExprKind::Type(ty) => self.visit_ty(ty),
-            ExprKind::Literal(_) |
-            ExprKind::HierName(..) => (),
+            ExprKind::Literal(_) => (),
+            ExprKind::HierName(scope, id) => self.visit_hier_name(scope, id),
             // EmptyQueue,
             ExprKind::Concat(list, select) => {
                 for expr in list { self.visit_expr(expr); }
