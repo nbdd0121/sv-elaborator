@@ -263,7 +263,7 @@ pub trait AstVisitor {
         self.do_visit_ty(ty);
     }
 
-    fn visit_stmt(&mut self, stmt: &mut Stmt) {
+    fn do_visit_stmt(&mut self, stmt: &mut Stmt) {
         match &mut stmt.value {
             StmtKind::Empty => (),
             StmtKind::TimingCtrl(timing, substmt) => {
@@ -299,6 +299,10 @@ pub trait AstVisitor {
             }
             StmtKind::DataDecl(decl) => self.visit_data_decl(decl),
         }
+    }
+
+    fn visit_stmt(&mut self, stmt: &mut Stmt) {
+        self.do_visit_stmt(stmt);
     }
 
     fn visit_sys_tf_call(&mut self, call: &mut SysTfCall) {

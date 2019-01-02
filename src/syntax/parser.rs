@@ -1899,6 +1899,7 @@ impl<'a> Parser<'a> {
         let ty = self.parse_data_type();
         // TODO: [ interface_identifier . | class_scope ]
         let name = self.expect_id();
+        // TODO: tf_port is different from module port
         let ports = self.parse_port_list();
         self.expect(TokenKind::Semicolon);
         let stmts = self.parse_list(Self::parse_stmt_opt);
