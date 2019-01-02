@@ -1,4 +1,4 @@
-use num::{BigUint, BigInt, bigint::Sign, One, Zero};
+use num::{BigUint, BigInt, bigint::Sign, One, Zero, FromPrimitive};
 use std::fmt;
 use std::ops;
 use std::cmp;
@@ -126,6 +126,11 @@ impl LogicVec {
             value.to_biguint().unwrap()
         };
         Self::new_xz(width, signed, value, BigUint::zero())
+    }
+
+    /// Convert from i32 to integer
+    pub fn from_integer(value: i32) -> LogicVec {
+        Self::from(32, true, BigInt::from_i32(value).unwrap())
     }
 
     /// Fill a vector with a value

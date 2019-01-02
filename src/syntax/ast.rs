@@ -994,11 +994,7 @@ impl fmt::Debug for Ident {
 
 impl fmt::Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.symbol == SymbolId::DUMMY {
-            write!(f, "/*unresolved*/{}", self.value)
-        } else {
-            self.value.fmt(f)
-        }
+        self.value.fmt(f)
     }
 }
 

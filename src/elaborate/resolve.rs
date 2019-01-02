@@ -623,11 +623,11 @@ impl<'a> AstVisitor for Resolver<'a> {
                 if let Some(name) = &mut gen.block.name {
                     self.add_to_scope(name, SymbolKind::GenBlock);
                 }
+                self.visit_expr(&mut gen.init);
                 self.scopes.push(Scope::new());
                 if gen.genvar {
                     self.add_to_scope(&mut gen.id, SymbolKind::Var);
                 }
-                self.visit_expr(&mut gen.init);
                 self.visit_expr(&mut gen.cond);
                 self.visit_expr(&mut gen.update);
                 for item in &mut gen.block.items {
@@ -780,6 +780,10 @@ impl<'a> AstVisitor for Resolver<'a> {
         match id {
             HierId::Name(id) => self.visit_scoped_id(scope, id),
             HierId::Member(sup, _) => self.visit_hier_name(scope, sup),
+            HierId::Select(sup, dim) => {
+                self.visit_hier_name(scope, sup);
+                self.visit_dim(dim);
+            },
             _ => (),
         }
     }

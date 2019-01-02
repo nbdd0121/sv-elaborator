@@ -236,21 +236,24 @@ impl PrettyPrint {
     }
 
     fn print_func_decl(&mut self, obj: &FuncDecl) {
-        self.append("function");
-        self.indent();
+        self.append("function ");
         if obj.lifetime == Lifetime::Automatic {
-            self.append(" automatic");
+            self.append("automatic ");
         }
+        self.print_type(&obj.ty);
         self.append(format!(" {}", obj.name));
         if obj.ports.len() != 0 {
             self.append(format!(" (\n"));
+            self.indent();
             for (item, _, last) in obj.ports.iter().identify_first_last() {
                 self.print_port_decl(item);
                 self.append(format!("{}\n", if { last } { "" } else { "," }));
             }
-            self.append(format!(")"));
+            self.unindent();
+            self.indent_append(format!(")"));
         }
         self.append(";\n");
+        self.indent();
         for stmt in &obj.stmts {
             self.indent_append("");
             self.print_stmt(stmt);
