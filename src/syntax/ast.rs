@@ -433,6 +433,9 @@ pub enum Item {
     SysTfCall(Box<SysTfCall>),
 
     ModportDecl(Option<Box<AttrInst>>, Vec<(Ident, Vec<ModportPortDecl>)>),
+
+    /// Useful for injecting information into generated ASTs.
+    Comment(String),
 }
 
 impl AstNode for Item {

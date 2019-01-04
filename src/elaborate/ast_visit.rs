@@ -121,6 +121,7 @@ pub trait AstVisitor {
                     }
                 }
             }
+            Item::Comment(_) => (),
         }
     }
 

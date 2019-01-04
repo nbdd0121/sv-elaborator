@@ -3,6 +3,8 @@ use syntax::tokens::{TokenKind, Keyword};
 
 use util::IdentifyFirstLast;
 
+use std::convert::AsRef;
+
 pub struct PrettyPrint {
     output: String,
     indent: String,
@@ -25,11 +27,11 @@ impl PrettyPrint {
         self.indent.truncate(newlen)
     }
 
-    pub fn append<T: Into<String>>(&mut self, str: T) {
-        self.output.push_str(&str.into());
+    pub fn append(&mut self, str: impl AsRef<str>) {
+        self.output.push_str(str.as_ref());
     }
 
-    fn indent_append<T: Into<String>>(&mut self, str: T) {
+    fn indent_append(&mut self, str: impl AsRef<str>) {
         self.output.push_str(&self.indent);
         self.append(str);
     }
@@ -510,6 +512,11 @@ impl PrettyPrint {
                     this.indent_append(")");
                 });
                 self.append(";");
+            }
+            Item::Comment(str) => {
+                self.indent_append("/* ");
+                self.append(str);
+                self.append("*/");
             }
         }
     }

@@ -70,18 +70,53 @@ fn main() {
     }
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() {
-        return;
-    }
+    if diag_mgr.has_error() { return; }
 
     elaborate::resolve(&diag_mgr, &mut files);
 
-    let mut printer = PrettyPrint::new();
-    for list in &files {
+    // Abort elaboration when there are syntax errors.
+    if diag_mgr.has_error() { return; }
+
+    if false {
+        let mut printer = PrettyPrint::new();
+        for list in &files {
+            for i in list {
+                printer.print_item(&i);
+                printer.append("\n");
+            }
+        }
+        println!("{}", printer.take());
+    }
+
+    let elaborated = elaborate::elaborate(&diag_mgr, &files);
+
+    // Abort elaboration when there are syntax errors.
+    if diag_mgr.has_error() { return; }
+
+    let files = elaborate::reconstruct(&elaborated);
+
+    {
+        let list = files.first().unwrap();
+        println!("/* packages */");
+        let mut printer = PrettyPrint::new();
         for i in list {
             printer.print_item(&i);
             printer.append("\n");
         }
+        println!("{}", printer.take());
     }
-    println!("{}", printer.take());
+
+    for (list, name) in files.iter().skip(1).zip(files_to_test.iter()) {
+        println!("/* file: {} */", name);
+        if list.is_empty() {
+
+        } else {
+            let mut printer = PrettyPrint::new();
+            for i in list {
+                printer.print_item(&i);
+                printer.append("\n");
+            }
+            println!("{}", printer.take());
+        }
+    }
 }

@@ -704,6 +704,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                 }
                 return;
             }
+            Item::Comment(_) => (),
         }
         // If code reaches here it means this is not a definition. So follow normal visiting procedure.
         self.do_visit_item(item);
