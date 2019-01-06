@@ -56,6 +56,9 @@ struct Elaborator<'a> {
     /// All packages
     pkgs: HashMap<String, hier::PkgDecl>,
 
+    /// Top-level instance
+    toplevel: Option<Rc<hier::DesignInstantiation>>,
+
     /// All elaborated structures.
     structs: Vec<Rc<Struct>>,
     enums: Vec<Rc<ty::Enum>>,
@@ -72,6 +75,7 @@ impl<'a> Elaborator<'a> {
 
             units: Vec::new(),
             pkgs: HashMap::new(),
+            toplevel: None,
             structs: Vec::new(),
             enums: Vec::new(),
         }
@@ -395,6 +399,83 @@ impl<'a> Elaborator<'a> {
         }
     }
 
+    fn elaborate_toplevel(&mut self, module: Rc<hier::DesignDecl>) {
+        // First we are going to evaluate parameters.
+        // Introduce a temporary scope for dependent parameters.
+        self.scopes.push(HierScope::new());
+        self.symbols.push(HashMap::new());
+
+        if let Some(param) = &module.ast.param {
+            for param in param {
+                // Evaluate the type of this parameter
+                let ty = param.ty.as_ref().map(|ty| self.eval_ty(ty));
+                for assign in &param.list {
+                    // It's an error if there's no initialiser
+                    let expr = if let Some(v) = assign.init.as_ref() { v } else {
+                        self.diag.report_error(
+                            "parameter of top-level module has no default assignment",
+                            assign.name.span
+                        );
+                        return;
+                    };
+
+                    // Evaluate the expression
+                    let (ty, val) = self.eval_expr(expr, ty.as_ref());
+
+                    // Add it to a temporary scope.
+                    let declitem = HierItem::Param(Rc::new(hier::ParamDecl {
+                        kw: param.kw,
+                        name: assign.name.clone(),
+                        ty,
+                        init: val,
+                    }));
+                    self.add_to_scope(&assign.name, declitem);
+                }
+            }
+        }
+
+        // Now tear down the temporary scope and use its content to build a parameter map.
+        // This avoids having to clone the values.
+        self.symbols.pop();
+        // The following two statements must not be combined as we need scope.names to be dropped
+        // before calling unwrap on Rc.
+        let items = self.scopes.pop().unwrap().items;
+        let map = Rc::new(items.into_iter().map(|x| {
+            if let HierItem::Param(v) = x {
+                Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
+            } else { unreachable!() }
+        }).collect());
+
+        // Check that there are no interface ports
+        for port in &module.ast.port {
+            match port {
+                PortDecl::Interface(.., list) => {
+                    for assign in list {
+                        self.diag.report_fatal("top-level module cannot have interface ports", assign.name.span);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        let map = hier::DesignParam {
+            param: Rc::clone(&map),
+            intf: HashMap::new(),
+        };
+
+        // Search for existing instances.
+        let design_inst = 'outer2: loop {
+            for (inst_map, inst) in module.instances.borrow().iter() {
+                if &**inst_map == &map {
+                    break 'outer2 Rc::clone(inst);
+                }
+            }
+            break self.instantiate_design(module, map);
+        };
+
+        self.toplevel = Some(design_inst);
+    }
+
     pub fn elaborate_item(&mut self, item: &Item) {
         match item {
             Item::DesignDecl(decl) => {
@@ -697,8 +778,10 @@ impl<'a> Elaborator<'a> {
         }
 
         // Pop the scope out. Leave the global symbol list in though.
-        let mut scope = self.scopes.pop().unwrap().items;
-        scope.reverse();
+        let scope = self.scopes.pop().unwrap();
+        let modules_map = scope.names;
+        let mut modules_list = scope.items;
+        modules_list.reverse();
 
         for items in items {
             self.scopes.push(HierScope::new());
@@ -708,7 +791,7 @@ impl<'a> Elaborator<'a> {
                     // This is processed already in the first iteration, so do not elaborate them
                     // again. But do pop them from global item list and add them to compilation-
                     // unit local item list.
-                    self.scopes.last_mut().unwrap().items.push(scope.pop().unwrap());
+                    self.scopes.last_mut().unwrap().items.push(modules_list.pop().unwrap());
                 } else {
                     self.elaborate_item(&item);
                 }
@@ -716,6 +799,17 @@ impl<'a> Elaborator<'a> {
             self.symbols.pop();
             self.units.push(self.scopes.pop().unwrap());
         }
+
+        // Find the top-level module
+        let item = match modules_map.get("chip_top") {
+            Some(HierItem::Design(item)) => item.clone(),
+            _ => {
+                self.diag.report_error("cannot find toplevel module", Span::none());
+                return;
+            }
+        };
+
+        self.elaborate_toplevel(item);
     }
 
     //
