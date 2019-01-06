@@ -10,12 +10,17 @@ use super::expr::Val;
 use super::hier::{self, HierItem};
 
 pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
-    let reconstructor = Reconstructor { source };
+    let mut reconstructor = Reconstructor {
+        source,
+        global_qualify: false,
+    };
     reconstructor.reconstruct()
 }
 
 struct Reconstructor<'a> {
     source: &'a hier::Source,
+    /// Whether reference to structs and enums need to be qualified by "global_types::"
+    global_qualify: bool,
 }
 
 impl<'a> Reconstructor<'a> {
@@ -136,10 +141,26 @@ impl<'a> Reconstructor<'a> {
                 )
             }
             IntTy::Struct(struc) => {
-                DataTypeKind::HierName(None, Ident::new(format!("struct_{}", self.source.structs.iter().position(|x| x == struc).unwrap()), Span::none()), dim)
+                DataTypeKind::HierName(
+                    if self.global_qualify {
+                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned()))))
+                    } else {
+                        None
+                    },
+                    Ident::new_unspanned(format!("struct_{}", self.source.structs.iter().position(|x| x == struc).unwrap())),
+                    dim
+                )
             }
             IntTy::Enum(enu) => {
-                DataTypeKind::HierName(None, Ident::new(format!("enum_{}", self.source.enums.iter().position(|x| x == enu).unwrap()), Span::none()), dim)
+                DataTypeKind::HierName(
+                    if self.global_qualify {
+                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned()))))
+                    } else {
+                        None
+                    },
+                    Ident::new_unspanned(format!("enum_{}", self.source.enums.iter().position(|x| x == enu).unwrap())),
+                    dim
+                )
             }
         };
         Spanned::new(kind, span)
@@ -253,7 +274,7 @@ impl<'a> Reconstructor<'a> {
                     }],
                     else_block: None,
                 })));
-            },
+            }
             HierItem::LoopGenBlock(loopgenblk) => {
                 for (_, genblk) in loopgenblk.instances.borrow().iter() {
                     // Reconstruct all interior items
@@ -274,7 +295,24 @@ impl<'a> Reconstructor<'a> {
                 }
             }
             HierItem::Modport(_) => (),
-            HierItem::Enum(..) => (),
+            HierItem::Enum(enu, index) => {
+                let enum_index = self.source.enums.iter().position(|x| x == enu).unwrap();
+                let element_name = enu.elements.borrow()[*index].0.clone();
+                let expr = Box::new(Spanned::new_unspanned(ExprKind::HierName(
+                    Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
+                    HierId::Name(Box::new(Ident::new_unspanned(format!("enum_{}_{}", enum_index, element_name)))),
+                )));
+
+                list.push(Item::ParamDecl(Box::new(ParamDecl {
+                    kw: Keyword::Parameter,
+                    ty: None,
+                    list: vec![DeclAssign {
+                        name: element_name,
+                        dim: Vec::new(),
+                        init: Some(expr),
+                    }]
+                })));
+            }
             v => unimplemented!("{:?}", std::mem::discriminant(v)),
         }
     }
@@ -334,24 +372,34 @@ impl<'a> Reconstructor<'a> {
         }))
     }
 
-    pub fn reconstruct(&self) -> Vec<Vec<Item>> {
+    pub fn reconstruct(&mut self) -> Vec<Vec<Item>> {
         let mut units = Vec::new();
 
         // Build global unit: contain packages and typedefs
         let mut list = Vec::new();
-        list.extend(self.source.enums.iter().enumerate().map(|(index, enu)| {
-            let prefix = format!("enum_{}", index);
-            let enu = self.reconstruct_enum(enu, &prefix);
-            let ty = Spanned::new(DataTypeKind::Enum(enu, Vec::new()), Span::none());
-            let name = Ident::new(prefix, Span::none());
-            Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
-        }));
-        list.extend(self.source.structs.iter().enumerate().map(|(index, struc)| {
-            let struc = self.reconstruct_struct(struc);
-            let ty = Spanned::new(DataTypeKind::Aggr(struc, Vec::new()), Span::none());
-            let name = Ident::new(format!("struct_{}", index), Span::none());
-            Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
-        }));
+        list.push({
+            let mut types = Vec::new();
+            types.extend(self.source.enums.iter().enumerate().map(|(index, enu)| {
+                let prefix = format!("enum_{}", index);
+                let enu = self.reconstruct_enum(enu, &prefix);
+                let ty = Spanned::new(DataTypeKind::Enum(enu, Vec::new()), Span::none());
+                let name = Ident::new(prefix, Span::none());
+                Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
+            }));
+            types.extend(self.source.structs.iter().enumerate().map(|(index, struc)| {
+                let struc = self.reconstruct_struct(struc);
+                let ty = Spanned::new(DataTypeKind::Aggr(struc, Vec::new()), Span::none());
+                let name = Ident::new(format!("struct_{}", index), Span::none());
+                Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
+            }));
+            self.global_qualify = true;
+            Item::PkgDecl(Box::new(PkgDecl {
+                attr: None,
+                lifetime: Lifetime::Static,
+                name: Ident::new_unspanned("global_types".to_owned()),
+                items: types
+            }))
+        });
         list.extend(self.source.pkgs.iter().map(|(_, decl)| {
             let mut list = Vec::new();
             for item in &decl.scope.items {
