@@ -161,7 +161,7 @@ impl Diagnostic {
             None => {
                 // If the message has no associated file, just print it
                 if color {
-                    eprintln!("{}{}", severity, self.message.bold());
+                    eprintln!("{}{}", severity.bold(), self.message.bold());
                 } else {
                     eprintln!("{}{}", severity, self.message);
                 }
@@ -277,15 +277,11 @@ impl DiagMgr {
         }
     }
 
-    /// Add a new diagnostic. Returns `Err` for fatal errors.
+    /// Add a new diagnostic.
     pub fn report(&self, diag: Diagnostic) {
         let mut m = self.mutable.borrow_mut();
         diag.print(&m.src, true, 4);
-        let severity = diag.severity;
         m.diagnostics.push(diag);
-        if severity == Severity::Fatal {
-            panic!(Severity::Fatal);
-        }
     }
 
     /// Create a errpr diagnostic from message and span and report it.
@@ -306,14 +302,15 @@ impl DiagMgr {
         ));
     }
 
-    /// Create a fatal diagnostic from message and span and report it.
+    /// Create a fatal diagnostic from message and span and report it. In addition, abort
+    /// execution with a panic.
     pub fn report_fatal<M: Into<String>>(&self, msg: M, span: Span) -> ! {
         self.report(Diagnostic::new(
             Severity::Fatal,
             msg.into(),
             span,
         ));
-        unreachable!()
+        panic!(Severity::Fatal);
     }
 
     /// Clear exsting diagnostics

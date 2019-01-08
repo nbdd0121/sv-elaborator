@@ -182,7 +182,7 @@ impl<'a> Parser<'a> {
         match self.consume_if_delim(expected) {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected open delimiter {:#?}", expected), span.clone());
+                self.diag.report_span(Severity::Error, format!("expected open delimiter {:#?}", expected), span.clone());
                 // Error recovery
                 let fake_open = Spanned::new(TokenKind::Unknown, span);
                 let fake_close = Spanned::new(TokenKind::Unknown, span);
@@ -199,7 +199,7 @@ impl<'a> Parser<'a> {
     fn expect_eof(&mut self) {
         if let TokenKind::Eof = self.peek().value {} else {
             let span = self.peek().span;
-            self.report_span(Severity::Error, "unexpected extra token", span);
+            self.diag.report_span(Severity::Error, "unexpected extra token", span);
         }
     }
 
@@ -207,7 +207,7 @@ impl<'a> Parser<'a> {
         match self.consume_if_id() {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, "expected identifier", span.clone());
+                self.diag.report_span(Severity::Error, "expected identifier", span.clone());
                 // Error recovery
                 Ident::new("".to_owned(), span)
             }
@@ -220,7 +220,7 @@ impl<'a> Parser<'a> {
         match self.consume_if(token) {
             None => {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, format!("expected token {:?}", token), span.clone());
+                self.diag.report_span(Severity::Error, format!("expected token {:?}", token), span.clone());
                 // Error recovery
                 Spanned::new(TokenKind::Unknown, span)
             }
@@ -228,22 +228,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) {
-        self.report_diag(Diagnostic::new(
-            severity,
-            msg.into(),
-            span,
-        ))
-    }
-
-    fn report_diag(&self, diag: Diagnostic) {
-        self.diag.report(diag)
-    }
-
     fn unimplemented(&mut self) -> ! {
         let span = self.peek().span;
-        self.report_span(Severity::Fatal, "not yet implemented", span);
-        unreachable!();
+        self.diag.report_fatal("not yet implemented", span);
     }
 
     //
@@ -257,16 +244,13 @@ impl<'a> Parser<'a> {
                 let span = self.peek().span;
                 match T::recovery(span) {
                     None => {
-                        self.report_span(
-                            Severity::Fatal,
+                        self.diag.report_fatal(
                             format!("{} support is not completed yet", T::name()),
                             span
                         );
-                        unreachable!()
                     }
                     Some(v) => {
-                        self.report_span(
-                            Severity::Error,
+                        self.diag.report_error(
                             format!("expected {}", T::name()),
                             span
                         );
@@ -361,7 +345,7 @@ impl<'a> Parser<'a> {
                 // If we failed and this is the first element, then we get an empty list
                 if !empty {
                     let span = self.peek().span.clone();
-                    self.report_span(Severity::Error, "empty list not allowed", span);
+                    self.diag.report_span(Severity::Error, "empty list not allowed", span);
                 }
                 return vec
             }
@@ -379,7 +363,7 @@ impl<'a> Parser<'a> {
                 None => {
                     if !trail {
                         // TODO: We could place a FixItHint here.
-                        self.report_span(
+                        self.diag.report_span(
                             Severity::Error,
                             "trailing comma is not allowed; consider removing it",
                             comma.span
@@ -406,7 +390,7 @@ impl<'a> Parser<'a> {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span.clone();
-                self.report_span(Severity::Error, "empty list not allowed", span);
+                self.diag.report_span(Severity::Error, "empty list not allowed", span);
             }
             return
         }
@@ -420,7 +404,7 @@ impl<'a> Parser<'a> {
             if !f(self) {
                 if !trail {
                     // TODO: We could place a FixItHint here.
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Error,
                         "trailing comma is not allowed; consider removing it",
                         comma.span
@@ -440,7 +424,7 @@ impl<'a> Parser<'a> {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span;
-                self.report_span(Severity::Error, "empty list not allowed", span);
+                self.diag.report_span(Severity::Error, "empty list not allowed", span);
             }
             return
         }
@@ -454,7 +438,7 @@ impl<'a> Parser<'a> {
             if !f(self) {
                 if !trail {
                     // TODO: We could place a FixItHint here.
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Error,
                         format!("trailing {:#?} is not allowed; consider removing it", sep),
                         comma.span
@@ -561,8 +545,7 @@ impl<'a> Parser<'a> {
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "extern is not supported", span);
-                unreachable!()
+                self.diag.report_fatal("extern is not supported", span);
             }
             TokenKind::Keyword(Keyword::Import) => {
                 // IMP: This can also be DPI import
@@ -612,8 +595,7 @@ impl<'a> Parser<'a> {
                 // still requires tools to support it. Defparam is a disaster to implement
                 // properly.
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "defparam is deprecated, and is not supported by this tool.", span);
-                unreachable!()
+                self.diag.report_fatal("defparam is deprecated, and is not supported by this tool.", span);
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Some(self.parse_continuous_assign()),
@@ -628,7 +610,7 @@ impl<'a> Parser<'a> {
             // generate_region
             TokenKind::Keyword(Keyword::Generate) => {
                 let kw = self.consume();
-                self.report_span(Severity::Warning, "there is no need for generate region", kw.span);
+                self.diag.report_span(Severity::Warning, "there is no need for generate region", kw.span);
                 let list = self.parse_list(Self::parse_item_opt);
                 self.expect(TokenKind::Keyword(Keyword::Endgenerate));
                 Some(Item::GenRegion(list))
@@ -640,8 +622,7 @@ impl<'a> Parser<'a> {
             // case_generate_construct
             TokenKind::CaseKw(CaseKw::Case) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "case_generate_construct is not supported", span);
-                unreachable!()
+                self.diag.report_fatal("case_generate_construct is not supported", span);
             }
             // elaboration_system_task
             TokenKind::SystemTask(_) => {
@@ -699,15 +680,13 @@ impl<'a> Parser<'a> {
                     ItemDAB::DataDecl => Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)))),
                     _ => {
                         let clone = self.peek().span.clone();
-                        self.report_span(Severity::Fatal, "not implemented", clone);
-                        unreachable!()
+                        self.diag.report_fatal("not implemented", clone);
                     }
                 }
             }
             _ => {
                 let clone = self.peek().span.clone();
-                self.report_span(Severity::Fatal, "not implemented", clone);
-                unreachable!()
+                self.diag.report_fatal("not implemented", clone);
             }
         }
     }
@@ -747,13 +726,13 @@ impl<'a> Parser<'a> {
         if self.check(TokenKind::Colon) {
             let id = self.expect_id();
             match exp {
-                None => self.report_span(
+                None => self.diag.report_span(
                     Severity::Error,
                     "identifer annotation at end does match declaration, should be empty",
                     id.span
                 ),
                 Some(v) => if **v != *id {
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Error,
                         format!("identifer annotation at end does match declaration, should be '{}'", v),
                         id.span
@@ -928,8 +907,7 @@ impl<'a> Parser<'a> {
     fn parse_port_list(&mut self) -> Option<Vec<PortDecl>> {
         self.parse_if_delim(Delim::Paren, |this| {
             if let Some(v) = this.consume_if(TokenKind::WildPattern) {
-                this.report_span(Severity::Fatal, "(.*) port declaration is not supported", v.span);
-                unreachable!();
+                this.diag.report_fatal("(.*) port declaration is not supported", v.span);
             }
 
             // If there are no ports, it doesn't matter about which style we're using.
@@ -1023,7 +1001,7 @@ impl<'a> Parser<'a> {
                 if let Some((a, b)) = is_intf {
                     // Interface should not be specified with direction
                     if !dir.is_none() {
-                        this.report_span(
+                        this.diag.report_span(
                             Severity::Error,
                             "interface declaration should not be specified together with direction",
                             dirsp
@@ -1105,8 +1083,7 @@ impl<'a> Parser<'a> {
 
             if !ansi {
                 let span = this.peek().span.clone();
-                this.report_span(Severity::Fatal, "non-ANSI port declaration is not yet supported", span);
-                unreachable!();
+                this.diag.report_fatal("non-ANSI port declaration is not yet supported", span);
             }
 
             if let Some(v) = prev {
@@ -1220,9 +1197,8 @@ impl<'a> Parser<'a> {
                 let span = expr.span;
                 let ty = match self.conv_expr_to_type(expr) {
                     None => {
-                        self.report_span(Severity::Fatal, "expected data type", span);
+                        self.diag.report_fatal("expected data type", span);
                         // TODO: Error recovery
-                        unreachable!();
                     },
                     Some(v) => v,
                 };
@@ -1292,7 +1268,7 @@ impl<'a> Parser<'a> {
         match self.conv_expr_to_type(expr) {
             Some(v) => v,
             None => {
-                self.report_span(Severity::Error, "expected data type", span);
+                self.diag.report_span(Severity::Error, "expected data type", span);
                 // Error recovery
                 Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), span)
             }
@@ -1305,9 +1281,8 @@ impl<'a> Parser<'a> {
         let span = expr.span;
         let dtype = match self.conv_expr_to_type(expr) {
             None => {
-                self.report_span(Severity::Fatal, "expected data type or identifier", span);
+                self.diag.report_fatal("expected data type or identifier", span);
                 // TODO: Do error recovery here.
-                unreachable!()
             }
             Some(v) => v,
         };
@@ -1339,9 +1314,8 @@ impl<'a> Parser<'a> {
                         })
                     }
                     None => {
-                        self.report_span(Severity::Fatal, "data type should be followed by an identifier", span);
+                        self.diag.report_fatal("data type should be followed by an identifier", span);
                         // TODO: Error recovery
-                        unreachable!()
                     }
                 }
             }
@@ -1546,9 +1520,8 @@ impl<'a> Parser<'a> {
                 this.expect(TokenKind::Semicolon);
                 let ty = match ty {
                     None => {
-                        this.report_span(Severity::Fatal, "data type of aggregate member cannot be implicit", span);
+                        this.diag.report_fatal("data type of aggregate member cannot be implicit", span);
                         // TODO: Error recovery
-                        unreachable!();
                     }
                     Some(v) => v,
                 };
@@ -1606,7 +1579,7 @@ impl<'a> Parser<'a> {
                 DimKind::PlusRange(..) |
                 DimKind::MinusRange(..) |
                 DimKind::Unsized => {
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Error,
                         "this type of dimension is not allowed in enumeration",
                         assign.dim[0].span
@@ -1617,21 +1590,21 @@ impl<'a> Parser<'a> {
                         value: TokenKind::IntegerLiteral(ref val), ..
                     }) = v.value {
                         if !val.value.is_two_state() {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
                                 v.span
                             );
                         }
                         if val.value.cmp_with_zero() != std::cmp::Ordering::Greater {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be positive",
                                 v.span
                             );
                         }
                     } else {
-                        self.report_span(
+                        self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in generated names",
                             v.span
@@ -1643,21 +1616,21 @@ impl<'a> Parser<'a> {
                         value: TokenKind::IntegerLiteral(ref val), ..
                     }) = ub.value {
                         if !val.value.is_two_state() {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
                                 ub.span
                             );
                         }
                         if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be non-negative",
                                 ub.span
                             );
                         }
                     } else {
-                        self.report_span(
+                        self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in generated names",
                             ub.span
@@ -1667,21 +1640,21 @@ impl<'a> Parser<'a> {
                         value: TokenKind::IntegerLiteral(ref val), ..
                     }) = lb.value {
                         if !val.value.is_two_state() {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
                                 lb.span
                             );
                         }
                         if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
-                            self.report_span(
+                            self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be non-negative",
                                 ub.span
                             );
                         }
                     } else {
-                        self.report_span(
+                        self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in enumeration",
                             lb.span
@@ -1771,7 +1744,7 @@ impl<'a> Parser<'a> {
         // If we see another ID here, it means that the ID we seen previously are probably a
         // type name that isn't declared. Raise a sensible warning here.
         if let Some(id) = self.consume_if_id() {
-            self.report_span(
+            self.diag.report_span(
                 Severity::Error,
                 "this looks like a data type but it is not declared",
                 ident.span
@@ -1860,7 +1833,7 @@ impl<'a> Parser<'a> {
             DimKind::PlusRange(..) |
             DimKind::MinusRange(..) |
             DimKind::Unsized => {
-                self.report_span(
+                self.diag.report_span(
                     Severity::Error,
                     "this type of range is not allowed in unpacked dimension context",
                     dim.span
@@ -1878,7 +1851,7 @@ impl<'a> Parser<'a> {
             DimKind::PlusRange(..) |
             DimKind::MinusRange(..) |
             DimKind::Value(_) => {
-                self.report_span(
+                self.diag.report_span(
                     Severity::Error,
                     "this type of range is not allowed in packed dimension context",
                     dim.span
@@ -2091,7 +2064,7 @@ impl<'a> Parser<'a> {
                 let attr = this.parse_attr_inst_opt();
                 if let Some(v) = this.consume_if(TokenKind::WildPattern) {
                     if has_wildcard {
-                        this.report_span(
+                        this.diag.report_span(
                             Severity::Error,
                             ".* can only appear once in an argument list",
                             v.span
@@ -2104,7 +2077,7 @@ impl<'a> Parser<'a> {
                     let name = this.expect_id();
                     let expr = this.parse_if_delim_spanned(Delim::Paren, Self::parse_expr_opt);
                     if !ordered.is_empty() {
-                        this.report_span(
+                        this.diag.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(match expr {
@@ -2122,7 +2095,7 @@ impl<'a> Parser<'a> {
                     let expr = this.parse_expr_opt().map(Box::new);
                     if !named.is_empty() {
                         if let Some(expr) = &expr {
-                            this.report_span(
+                            this.diag.report_span(
                                 Severity::Error,
                                 "ordered argument cannot appear after named argument",
                                 expr.span
@@ -2170,7 +2143,7 @@ impl<'a> Parser<'a> {
                     let name = this.expect_id();
                     let expr = this.parse_delim_spanned(Delim::Paren, Self::parse_expr_opt);
                     if !ordered.is_empty() && is_param {
-                        this.report_span(
+                        this.diag.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(expr.span)
@@ -2182,7 +2155,7 @@ impl<'a> Parser<'a> {
                     let expr = this.parse_expr_opt().map(Box::new);
                     if !named.is_empty() {
                         if let Some(expr) = &expr {
-                            this.report_span(
+                            this.diag.report_span(
                                 Severity::Error,
                                 "ordered argument cannot appear after named argument",
                                 expr.span
@@ -2306,20 +2279,20 @@ impl<'a> Parser<'a> {
         if let (Some(l), Some(n)) = (&label, &name) {
             if **l != **n {
                 // IMP: Add a span about previous name
-                self.report_span(
+                self.diag.report_span(
                     Severity::Error,
                     "block identifiers before and after 'begin' are not identical",
                     n.span
                 );
             } else {
-                self.report_span(
+                self.diag.report_span(
                     Severity::Warning,
                     "duplicate block identifiers before and after 'begin'",
                     n.span
                 );
             }
         } else if let (Some(l), None) = (&label, &name) {
-            self.report_diag(
+            self.diag.report(
                 Diagnostic::new(
                     Severity::Warning,
                     "it is suggested to place block identifier after 'begin'",
@@ -2376,13 +2349,13 @@ impl<'a> Parser<'a> {
             if let Some(v) = label {
                 if *id != **v {
                     // IMP: Add a span about previous name
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Error,
                         "block identifiers before and after 'begin' are not identical",
                         id.span
                     );
                 } else {
-                    self.report_span(
+                    self.diag.report_span(
                         Severity::Warning,
                         "duplicate block identifiers before and after 'begin'",
                         id.span
@@ -2391,7 +2364,7 @@ impl<'a> Parser<'a> {
             }
             *label = Some(id);
         } else if let Some(v) = label {
-            self.report_diag(
+            self.diag.report(
                 Diagnostic::new(
                     Severity::Warning,
                     "it is suggested to place block identifier after 'begin'",
@@ -2439,7 +2412,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(Some(uniq)),
                     TokenKind::CaseKw(_) => self.parse_case_stmt(Some(uniq)),
                     _ => {
-                        self.report_span(
+                        self.diag.report_span(
                             Severity::Error,
                             "expected if or case statement after unique, unique0 or priority",
                             prio.span
@@ -2637,7 +2610,7 @@ impl<'a> Parser<'a> {
             let expr = match this.parse_expr_opt() {
                 None => {
                     let span = this.peek().span;
-                    this.report_span(
+                    this.diag.report_span(
                         Severity::Error,
                         "assignment pattern cannot be empty",
                         span
@@ -2674,7 +2647,7 @@ impl<'a> Parser<'a> {
                     let list = match repeated.value {
                         ExprKind::Concat(list, None) => list,
                         _ => {
-                            this.report_span(
+                            this.diag.report_span(
                                 Severity::Error,
                                 "expected a simple list of expressions",
                                 repeated.span
@@ -2794,8 +2767,7 @@ impl<'a> Parser<'a> {
             TokenKind::BinaryOp(BinaryOp::Imply) |
             TokenKind::BinaryOp(BinaryOp::Equiv) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "-> and <-> not yet supported", span);
-                unreachable!();
+                self.diag.report_fatal("-> and <-> not yet supported", span);
             }
             _ => Some(lhs),
         }
@@ -2825,8 +2797,7 @@ impl<'a> Parser<'a> {
         let expr = self.parse_cond_pattern_opt()?;
         if self.check(TokenKind::TripleAnd) {
             let span = self.peek().span;
-            self.report_span(Severity::Fatal, "expression_or_cond_pattern not yet supported", span);
-            unreachable!();
+            self.diag.report_fatal("expression_or_cond_pattern not yet supported", span);
         } else {
             Some(expr)
         }
@@ -2837,15 +2808,13 @@ impl<'a> Parser<'a> {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
                 let span = self.peek().span;
-                self.report_span(Severity::Fatal, "tagged_union_expression not yet supported", span);
-                unreachable!();
+                self.diag.report_fatal("tagged_union_expression not yet supported", span);
             }
             _ => self.parse_bin_expr(0)?,
         };
         if self.check(TokenKind::Keyword(Keyword::Matches)) {
             let span = self.peek().span;
-            self.report_span(Severity::Fatal, "cond_pattern not yet supported", span);
-            unreachable!();
+            self.diag.report_fatal("cond_pattern not yet supported", span);
         } else {
             Some(expr)
         }
@@ -2877,8 +2846,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Keyword(Keyword::Dist) if 7 > prec => {
                     // 7 is the precedence of comparison operator.
                     let span = self.peek().span;
-                    self.report_span(Severity::Fatal, "inside & dist not yet supported", span);
-                    unreachable!();
+                    self.diag.report_fatal("inside & dist not yet supported", span);
                 }
                 _ => break,
             };
@@ -3054,8 +3022,7 @@ impl<'a> Parser<'a> {
                         TokenKind::BinaryOp(BinaryOp::LShr) |
                         TokenKind::LShl => {
                             let span = this.peek().span;
-                            this.report_span(Severity::Fatal, "streaming concat is not yet supported", span);
-                            unreachable!();
+                            this.diag.report_fatal("streaming concat is not yet supported", span);
                         }
                         _ => {
                             let expr = this.parse_expr();
@@ -3146,7 +3113,7 @@ impl<'a> Parser<'a> {
                     // If we've seen the scopes then we must need to see the id
                     if scope.is_some() && id.is_none() {
                         let span = self.peek().span;
-                        self.report_span(Severity::Error, "expected identifiers after scope", span);
+                        self.diag.report_span(Severity::Error, "expected identifiers after scope", span);
                         // Error recovery
                         id = Some(Spanned::new(HierId::Name(Box::new(Ident::new_unspanned("".to_owned()))), Span::none()))
                     }
@@ -3159,9 +3126,8 @@ impl<'a> Parser<'a> {
                         TokenKind::DelimGroup(Delim::TickBrace, _) => {
                             let ty = match self.conv_expr_to_type(expr) {
                                 None => {
-                                    self.report_span(Severity::Fatal, "expected data type", span);
+                                    self.diag.report_fatal("expected data type", span);
                                     // TODO: Error recovery
-                                    unreachable!();
                                 },
                                 Some(v) => v,
                             };
@@ -3279,7 +3245,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Keyword(Keyword::Local) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span);
+                        self.diag.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span);
                     } else {
                         scope = Some(Scope::Local)
                     }
@@ -3288,7 +3254,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Keyword(Keyword::Unit) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span);
+                        self.diag.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span);
                     } else {
                         scope = Some(Scope::Local)
                     }
@@ -3313,8 +3279,7 @@ impl<'a> Parser<'a> {
                     let ident = self.expect_id();
                     if self.consume_if(TokenKind::Hash).is_some() {
                         // TODO: Add parameter support
-                        self.report_span(Severity::Fatal, "class parameter scope is not yet supported", ident.span);
-                        unreachable!();
+                        self.diag.report_fatal("class parameter scope is not yet supported", ident.span);
                     }
                     self.expect(TokenKind::ScopeSep);
                     scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
