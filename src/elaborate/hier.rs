@@ -75,7 +75,6 @@ impl PartialEq for DesignInstantiation {
 }
 
 /// Represent a instance.
-#[derive(Clone)]
 pub struct InstanceDecl {
     pub inst: Rc<DesignInstantiation>,
     pub name: Ident,
@@ -84,8 +83,15 @@ pub struct InstanceDecl {
     pub port: ast::PortConn,
 }
 
+/// Represent a modport declaration
+pub struct Modport {
+    pub name: Ident,
+    pub scope: HierScope,
+}
+
 pub struct InterfacePortDecl {
     pub inst: Rc<DesignInstantiation>,
+    pub modport: Option<Rc<Modport>>,
     pub name: Ident,
     pub dim: Vec<(i32, i32)>,
 }
@@ -158,13 +164,15 @@ pub enum HierItem {
     InstancePart {
         /// Pointer to the instantiated design
         inst: Rc<DesignInstantiation>,
+        /// Modport reference
+        modport: Option<Rc<Modport>>,
         /// Remaining dimensions
         dim: Vec<(i32, i32)>,
     },
     GenBlock(Rc<GenBlock>),
     GenVar(Rc<GenVar>),
     LoopGenBlock(Rc<LoopGenBlock>),
-    Modport(()),
+    Modport(Rc<Modport>),
     // /// An array of HierItems. Could be module arrays or loop-generate items.
     // Array(Vec<HierItem>),
     /// A enum name. For actual name and value, use the second index to index into

@@ -97,6 +97,13 @@ impl<'a> Elaborator<'a> {
         }
     }
 
+    /// Insert item to scope but not symbol list.
+    pub fn add_to_scope_only(&mut self, ident: &str, item: HierItem) {
+        let scope = self.scopes.last_mut().unwrap();
+        scope.items.push(item.clone());
+        scope.names.insert(ident.to_owned(), item.clone());
+    }
+
     pub fn add_to_scope(&mut self, ident: &Ident, item: HierItem) {
         // Insert the identifier into scope.
         let scope = self.scopes.last_mut().unwrap();
@@ -143,12 +150,27 @@ impl<'a> Elaborator<'a> {
                         self.add_to_scope(&assign.name, declitem);
                     }
                 }
-                PortDecl::Interface(_intf, _modport, list) => {
+                PortDecl::Interface(_intf, modport, list) => {
                     for assign in list {
                         let instance = Rc::clone(&param.intf[&assign.name.value]);
+                        let modport = match modport {
+                            None => None,
+                            Some(modport) => {
+                                match instance.scope.names.get(&modport.value) {
+                                    Some(HierItem::Modport(modport)) => Some(modport.clone()),
+                                    _ => {
+                                        self.diag.report_fatal(
+                                            format!("cannot find modport {}", modport.value),
+                                            modport.span
+                                        );
+                                    }
+                                }
+                            }
+                        };
                         let dim = self.eval_const_unpacked_dim(&assign.dim);
                         let declitem = HierItem::InterfacePort(Rc::new(hier::InterfacePortDecl {
                             inst: instance,
+                            modport: modport,
                             name: assign.name.clone(),
                             dim: dim,
                         }));
@@ -752,9 +774,36 @@ impl<'a> Elaborator<'a> {
                 self.diag.report_span(severity, formatted, call.task.span);
             }
             Item::ModportDecl(_, list) => {
-                for (name, _decl) in list {
-                    // TODO: Ignore for now
-                    self.add_to_scope(name, HierItem::Modport(()));
+                for (name, decl) in list {
+                    self.scopes.push(HierScope::new());
+                    for port in decl {
+                        match port {
+                            ModportPortDecl::Simple(_, dir, list) => {
+                                for v in list {
+                                    match v {
+                                        ModportSimplePort::Named(name) => {
+                                            let item = Rc::new(hier::DataPortDecl {
+                                                dir: *dir,
+                                                net: NetPortType::Variable,
+                                                name: name.clone(),
+                                                ty: Ty::Void,
+                                                init: None,
+                                            });
+                                            self.add_to_scope_only(name, HierItem::DataPort(item));
+                                        }
+                                        ModportSimplePort::Explicit(..) => unimplemented!(),
+                                    }
+                                }
+                            }
+                            ModportPortDecl::Clocking(..) => unimplemented!(),
+                        }
+                    }
+                    let scope = self.scopes.pop().unwrap();
+                    let modport = Rc::new(hier::Modport {
+                        name: name.clone(),
+                        scope: scope,
+                    });
+                    self.add_to_scope(name, HierItem::Modport(modport));
                 }
             }
             v => {
@@ -1141,6 +1190,7 @@ impl<'a> Elaborator<'a> {
                                 }
                                 Ok(HierItem::InstancePart {
                                     inst: Rc::clone(&inst.inst),
+                                    modport: None,
                                     dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
                                 })
                             }
@@ -1162,6 +1212,7 @@ impl<'a> Elaborator<'a> {
                                 }
                                 Ok(HierItem::InstancePart {
                                     inst: Rc::clone(&decl.inst),
+                                    modport: decl.modport.clone(),
                                     dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
                                 })
                             }

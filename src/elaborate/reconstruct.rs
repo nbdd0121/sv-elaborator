@@ -294,7 +294,20 @@ impl<'a> Reconstructor<'a> {
                     })));
                 }
             }
-            HierItem::Modport(_) => (),
+            HierItem::Modport(modport) => {
+                let decl_list = modport.scope.items.iter().map(|item| {
+                    let item = match item {
+                        HierItem::DataPort(decl) => decl,
+                        _ => unreachable!(),
+                    };
+                    ModportPortDecl::Simple(
+                        None,
+                        item.dir,
+                        vec![ModportSimplePort::Named(item.name.clone())]
+                    )
+                }).collect();
+                list.push(Item::ModportDecl(None, vec![(modport.name.clone(), decl_list)]));
+            },
             HierItem::Enum(enu, index) => {
                 let enum_index = self.source.enums.iter().position(|x| x == enu).unwrap();
                 let element_name = enu.elements.borrow()[*index].0.clone();
@@ -344,7 +357,9 @@ impl<'a> Reconstructor<'a> {
                     }]));
                 }
                 HierItem::InterfacePort(decl) => {
-                    ports.push(PortDecl::Interface(Some(Box::new(decl.inst.name.clone())), None, vec![DeclAssign {
+                    let intf = Some(Box::new(decl.inst.name.clone()));
+                    let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
+                    ports.push(PortDecl::Interface(intf, modport, vec![DeclAssign {
                         name: decl.name.clone(),
                         dim: Vec::new(),
                         init: None,
