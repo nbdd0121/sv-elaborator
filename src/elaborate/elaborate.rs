@@ -32,8 +32,8 @@ use super::hier::{self, Ty, Val, HierItem, HierScope};
 use super::ty;
 use super::expr;
 
-pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>) -> hier::Source {
-    let mut elaborator = Elaborator::new(diag);
+pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>, toplevel: &str) -> hier::Source {
+    let mut elaborator = Elaborator::new(diag, toplevel);
     elaborator.elaborate(items);
     hier::Source {
         units: elaborator.units,
@@ -45,6 +45,7 @@ pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>) -> hier::Source {
 
 struct Elaborator<'a> {
     diag: &'a DiagMgr,
+    toplevel_name: &'a str,
 
     scopes: Vec<HierScope>,
     /// Lexical symbolic mapping. Necessary for nested modules which isn't instantiated at the
@@ -66,9 +67,10 @@ struct Elaborator<'a> {
 
 impl<'a> Elaborator<'a> {
 
-    pub fn new(diag: &'a DiagMgr) -> Elaborator<'a> {
+    pub fn new(diag: &'a DiagMgr, toplevel: &'a str) -> Elaborator<'a> {
         Elaborator {
             diag: diag,
+            toplevel_name: toplevel,
 
             scopes: Vec::new(),
             symbols: Vec::new(),
@@ -694,7 +696,9 @@ impl<'a> Elaborator<'a> {
                     let scope = self.scopes.pop().unwrap();
                     self.symbols.pop();
                     let genblk = Rc::new(hier::GenBlock {
-                        name: None,
+                        name: gen.block.name.as_ref().map(|name| {
+                            Box::new(Ident::new_unspanned(format!("{}_{}", name, val)))
+                        }),
                         scope
                     });
                     declitem.instances.borrow_mut().push((val, genblk));
@@ -850,10 +854,13 @@ impl<'a> Elaborator<'a> {
         }
 
         // Find the top-level module
-        let item = match modules_map.get("chip_top") {
+        let item = match modules_map.get(self.toplevel_name) {
             Some(HierItem::Design(item)) => item.clone(),
             _ => {
-                self.diag.report_error("cannot find toplevel module", Span::none());
+                self.diag.report_error(
+                    format!("cannot find toplevel module {}", self.toplevel_name),
+                    Span::none()
+                );
                 return;
             }
         };

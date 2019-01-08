@@ -5,6 +5,7 @@ extern crate lazycell;
 extern crate colored;
 #[macro_use]
 extern crate lazy_static;
+extern crate getopts;
 
 mod util;
 mod syntax;
@@ -22,13 +23,48 @@ use printer::PrettyPrint;
 // use lexer::TokenKind;
 use std::rc::Rc;
 
-fn main() {
-    let files_to_test = vec![
-        "test.sv",
-    ];
+fn print_help(opts: &getopts::Options, program: &str) {
+    let brief = format!("Usage: {} [options] FILES", program);
+    eprint!("{}", opts.usage(&brief));
+}
 
+fn main() {
+    //
+    // Argument parsing
+    //
+    let args: Vec<String> = std::env::args().collect();
+
+    let mut opts = getopts::Options::new();
+    opts.optopt("o", "", "set output file name", "FILE");
+    opts.optopt("t", "", "set toplevel module name", "MODULE");
+    opts.optflag("", "parse", "parse only, do not elaborate");
+    opts.optflag("h", "help", "print this help message");
+
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => { m }
+        Err(f) => {
+            eprintln!("{}", f.to_string());
+            return print_help(&opts, &args[0])
+        }
+    };
+
+    if matches.opt_present("h") {
+        return print_help(&opts, &args[0])
+    }
+
+    let mut out: Box<dyn Write> = match matches.opt_str("o") {
+        None => Box::new(std::io::stdout()),
+        Some(v) => Box::new(File::create(v).unwrap()),
+    };
+
+    // Initailise source manager and diagnostic manager first
     let src_mgr = Rc::new(SrcMgr::new());
     let diag_mgr = DiagMgr::new(src_mgr.clone());
+
+    if matches.free.is_empty() {
+        diag_mgr.report_span(Severity::Fatal, "no input files specified", source::Span::none());
+        return;
+    }
 
     // Register a new panic handler. If the panic is caused by throwing fatal error, we mute
     // Rust's built-in error message and stack trace.
@@ -43,7 +79,7 @@ fn main() {
 
     // Parse all files together
     let mut files = Vec::new();
-    'outer: for filename in &files_to_test {
+    'outer: for filename in &matches.free {
         let mut infile = File::open(filename).unwrap();
         let mut contents = String::new();
         infile.read_to_string(&mut contents).unwrap();
@@ -77,7 +113,7 @@ fn main() {
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { return; }
 
-    if false {
+    if matches.opt_present("parse") {
         let mut printer = PrettyPrint::new();
         for list in &files {
             for i in list {
@@ -86,9 +122,13 @@ fn main() {
             }
         }
         println!("{}", printer.take());
+        return;
     }
 
-    let elaborated = elaborate::elaborate(&diag_mgr, &files);
+    let elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
+        None => "chip_top",
+        Some(ref v) => v,
+    });
 
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { return; }
@@ -97,17 +137,17 @@ fn main() {
 
     {
         let list = files.first().unwrap();
-        println!("/* packages */");
+        writeln!(out, "/* packages */");
         let mut printer = PrettyPrint::new();
         for i in list {
             printer.print_item(&i);
             printer.append("\n");
         }
-        println!("{}", printer.take());
+        writeln!(out, "{}", printer.take());
     }
 
-    for (list, name) in files.iter().skip(1).zip(files_to_test.iter()) {
-        println!("/* file: {} */", name);
+    for (list, name) in files.iter().skip(1).zip(matches.free.iter()) {
+        writeln!(out, "/* file: {} */", name);
         if list.is_empty() {
 
         } else {
@@ -116,7 +156,7 @@ fn main() {
                 printer.print_item(&i);
                 printer.append("\n");
             }
-            println!("{}", printer.take());
+            writeln!(out, "{}", printer.take());
         }
     }
 }
