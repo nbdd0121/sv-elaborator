@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 pub use super::ty::{IntTy, Ty, Struct, Enum};
-pub use super::expr::Val;
+pub use super::expr::{Expr, Val};
 
 /// Resolved and evaluated parameter declaration
 #[derive(Debug, Clone, PartialEq)]
@@ -79,8 +79,7 @@ pub struct InstanceDecl {
     pub inst: Rc<DesignInstantiation>,
     pub name: Ident,
     pub dim: Vec<(i32, i32)>,
-    // not evaluated yet.
-    pub port: ast::PortConn,
+    pub port: Vec<Option<Expr>>,
 }
 
 /// Represent a modport declaration

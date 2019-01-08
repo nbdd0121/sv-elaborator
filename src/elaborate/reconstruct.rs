@@ -1,12 +1,12 @@
 //! Reconstruct AST from elaborated constructs.
 
-use syntax::ast::*;
+use syntax::ast::{self, *};
 use syntax::tokens::*;
 use source::Span;
 use num::{BigInt, Zero};
 use number::{LogicVec, LogicNumber, LogicValue};
 use super::ty::{Ty, IntTy, Struct, Enum};
-use super::expr::Val;
+use super::expr::{self, Val};
 use super::hier::{self, HierItem};
 
 pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
@@ -215,6 +215,38 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, span)
     }
 
+    pub fn reconstruct_expr(&self, expr: &expr::Expr) -> ast::Expr {
+        let kind = match expr.value {
+            expr::ExprKind::Const(..) => unimplemented!(),
+            expr::ExprKind::HierName(ref scope, ref name) => {
+                ast::ExprKind::HierName(scope.clone(), name.value.clone())
+            }
+            expr::ExprKind::EmptyQueue => unimplemented!(),
+            expr::ExprKind::Concat(..) => unimplemented!(),
+            expr::ExprKind::MultConcat(..) => unimplemented!(),
+            expr::ExprKind::AssignPattern(..) => unimplemented!(),
+            expr::ExprKind::Select(..) => unimplemented!(),
+            expr::ExprKind::Member(..) => unimplemented!(),
+            expr::ExprKind::SysTfCall(..) => unimplemented!(),
+            expr::ExprKind::ConstCast(..) => unimplemented!(),
+            expr::ExprKind::TypeCast(..) => unimplemented!(),
+            expr::ExprKind::SignCast(..) => unimplemented!(),
+            expr::ExprKind::WidthCast(..) => unimplemented!(),
+            expr::ExprKind::Unary(op, ref expr) => {
+                ast::ExprKind::Unary(op, None, Box::new(self.reconstruct_expr(expr)))
+            }
+            expr::ExprKind::Binary(..) => unimplemented!(),
+            expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
+            expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
+            expr::ExprKind::Assign(..) => unimplemented!(),
+            expr::ExprKind::BinaryAssign(..) => unimplemented!(),
+            expr::ExprKind::Paren(..) => unimplemented!(),
+            expr::ExprKind::MinTypMax(..) => unimplemented!(),
+            expr::ExprKind::Cond(..) => unimplemented!(),
+        };
+        Spanned::new(kind, expr.span)
+    }
+
     pub fn reconstruct_item(&self, item: &HierItem, list: &mut Vec<Item>) {
         match item {
             HierItem::Param(decl) => {
@@ -252,7 +284,9 @@ impl<'a> Reconstructor<'a> {
                             let lb_expr = self.reconstruct_int(*lb, Span::none());
                             Spanned::new(DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)), Span::none())
                         }).collect(),
-                        ports: decl.port.clone(),
+                        ports: PortConn::Ordered(decl.port.iter().map(|port| {
+                            (None, port.as_ref().map(|port| Box::new(self.reconstruct_expr(port))))
+                        }).collect()),
                     }]
                 })))
             }
@@ -359,9 +393,14 @@ impl<'a> Reconstructor<'a> {
                 HierItem::InterfacePort(decl) => {
                     let intf = Some(Box::new(decl.inst.name.clone()));
                     let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
+                    let dim = decl.dim.iter().map(|(ub, lb)| {
+                        let ub = self.reconstruct_int(*ub, Span::none());
+                        let lb = self.reconstruct_int(*lb, Span::none());
+                        Spanned::new_unspanned(DimKind::Range(Box::new(ub), Box::new(lb)))
+                    }).collect();
                     ports.push(PortDecl::Interface(intf, modport, vec![DeclAssign {
                         name: decl.name.clone(),
-                        dim: Vec::new(),
+                        dim,
                         init: None,
                     }]));
                 }

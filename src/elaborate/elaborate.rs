@@ -412,12 +412,16 @@ impl<'a> Elaborator<'a> {
                 break self.instantiate_design(Rc::clone(&item), map);
             };
 
+            let port_connections = port_list.iter().map(|(_, port)| {
+                port.as_ref().map(|port| self.type_check(port, None))
+            }).collect();
+
             let dim = self.eval_const_unpacked_dim(&inst.dim);
             let declitem = HierItem::Instance(Rc::new(hier::InstanceDecl {
                 name: inst.name.clone(),
                 inst: Rc::clone(&design_inst),
                 dim,
-                port: inst.ports.clone(),
+                port: port_connections,
             }));
             self.add_to_scope(&inst.name, declitem);
         }
@@ -1075,11 +1079,11 @@ impl<'a> Elaborator<'a> {
         match hier {
             HierItem::Param(decl) => decl.ty.clone(),
             HierItem::Type(_) => Ty::Type,
-            HierItem::DataPort(_) => unimplemented!(),
+            HierItem::DataPort(decl) => decl.ty.clone(),
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::Other(_) => unimplemented!(),
-            HierItem::OtherName => unimplemented!(),
+            HierItem::OtherName => Ty::Void, //TODO
             HierItem::Instance(_) => Ty::Void, // Not typable
             HierItem::InstancePart{ .. } => Ty::Void, // Not typable
             HierItem::GenBlock(_) => Ty::Void, // Not typable
@@ -1261,17 +1265,27 @@ impl<'a> Elaborator<'a> {
                         }
                     }
                     HierItem::LoopGenBlock(ref decl) => {
-                        match decl.instances.borrow().iter().find(|(num, _)| num == &value) {
+                        let genblk = match decl.instances.borrow().iter().find(|(num, _)| num == &value) {
                             None => {
                                 self.diag.report_fatal(
                                     "constant bit select outside range",
                                     dim.span
                                 );
                             },
-                            Some((_, genblk)) => {
-                                HierItem::GenBlock(Rc::clone(genblk))
-                            }
-                        }
+                            Some((_, genblk)) => Rc::clone(genblk),
+                        };
+                        // Loop generate block cannot be easily translated back to valid
+                        // SystemVerilog. Therefore when translating it to expr::Expr we will map
+                        // it to a concrete instance instead of leaving it in HierId::Select form.
+                        let expr = expr::Expr {
+                            value: expr::ExprKind::HierName(None, Spanned::new(
+                                HierId::Name(genblk.name.as_ref().unwrap().clone()),
+                                span
+                            )),
+                            ty: Ty::Void,
+                            span,
+                        };
+                        return (Some(HierItem::GenBlock(genblk)), expr)
                     }
                     ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
                 };
@@ -1350,7 +1364,7 @@ impl<'a> Elaborator<'a> {
                                 expr::ExprKind::Const(Val::Int(enu.elements.borrow()[index].1.clone())),
                             HierItem::GenVar(_) =>
                                 expr::ExprKind::HierName(scope.clone(), Spanned::new(name.clone(), expr.span)),
-                            _ => unimplemented!(),
+                            _ => expr.value,
                         };
                         expr::Expr {
                             value,
