@@ -759,6 +759,14 @@ pub enum StmtKind {
         expr: Box<Expr>,
         items: Vec<(Vec<Expr>, Stmt)>,
     },
+    Assert {
+        /// Kind of assertion. Currently we only support simple_immediate_assertion so we leasve
+        /// here (), but in the future we will extend it.
+        kind: (),
+        expr: Box<Expr>,
+        success: Option<Box<Stmt>>,
+        failure: Option<Box<Stmt>>,
+    },
     SeqBlock(Vec<Stmt>),
     Expr(Box<Expr>),
     DataDecl(Box<DataDecl>),

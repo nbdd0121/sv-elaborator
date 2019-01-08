@@ -822,6 +822,9 @@ impl PrettyPrint {
 
     pub fn print_stmt(&mut self, obj: &Stmt) {
         match &obj.value {
+            StmtKind::Empty => {
+                self.append(";");
+            }
             StmtKind::TimingCtrl(timing, stmt) => {
                 self.print_timing_ctrl(timing);
                 self.append(" ");
@@ -864,6 +867,18 @@ impl PrettyPrint {
                 self.unindent();
                 self.indent_append("endcase");
             }
+            StmtKind::Assert { kind: (), expr, success, failure } => {
+                self.append("assert (");
+                self.print_expr(expr);
+                self.append(")");
+                if let Some(v) = success {
+                    self.print_stmt(v);
+                }
+                if let Some(v) = failure {
+                    self.append(" else ");
+                    self.print_stmt(&v);
+                }
+            }
             StmtKind::SeqBlock(list) => {
                 self.append("begin");
                 if let Some(v) = &obj.label {
@@ -884,10 +899,6 @@ impl PrettyPrint {
                 self.append(";");
             }
             StmtKind::DataDecl(decl) => self.print_data_decl(decl),
-            _ => {
-                eprintln!("{:?}", obj);
-                unimplemented!();
-            }
         }
     }
 }

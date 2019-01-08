@@ -2398,8 +2398,9 @@ impl<'a> Parser<'a> {
         let attr = self.parse_attr_inst_opt();
 
         let kind = match **self.peek() {
-            TokenKind::Keyword(Keyword::End) => return None,
-            TokenKind::Keyword(Keyword::Endfunction) => return None,
+            TokenKind::Keyword(Keyword::End) |
+            TokenKind::Keyword(Keyword::Endfunction) |
+            TokenKind::Keyword(Keyword::Else) => return None,
             // null_statement
             TokenKind::Semicolon => {
                 self.consume();
@@ -2432,6 +2433,39 @@ impl<'a> Parser<'a> {
             TokenKind::CycleDelay |
             TokenKind::AtStar |
             TokenKind::At => self.parse_timing_ctrl_stmt(),
+            // simple_immediate_assertion_statement, deferred_immediate_assertion_statement
+            // or assert_property_statement
+            TokenKind::Keyword(Keyword::Assert) => {
+                let kw = self.consume();
+                match **self.peek() {
+                    // assert_property_statement
+                    TokenKind::Keyword(Keyword::Property) |
+                    // deferred_immediate_assertion_statement
+                    TokenKind::Hash => self.unimplemented(),
+                    // simple_immediate_assertion_statement
+                    _ => {
+                        let expr = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr));
+                        let success = self.parse_stmt_opt().map(Box::new);
+                        let failure = if self.check(TokenKind::Keyword(Keyword::Else)) {
+                            Some(Box::new(self.parse_stmt()))
+                        } else {
+                            None
+                        };
+                        if success.is_none() && failure.is_none() {
+                            self.diag.report_error(
+                                "assertion statement must be followed by action block",
+                                kw.span
+                            );
+                        }
+                        StmtKind::Assert {
+                            kind: (),
+                            expr,
+                            success,
+                            failure,
+                        }
+                    }
+                }
+            }
             // block_item_declaration -> data_declaration
             // data_declaration. Either begin with const/var or explicit data type.
             TokenKind::Keyword(Keyword::Const) |
@@ -2483,8 +2517,8 @@ impl<'a> Parser<'a> {
 
     fn parse_timing_ctrl(&mut self) -> TimingCtrl {
         match **self.peek() {
-            TokenKind::Hash => unimplemented!(),
-            TokenKind::CycleDelay => unimplemented!(),
+            TokenKind::Hash => self.unimplemented(),
+            TokenKind::CycleDelay => self.unimplemented(),
             TokenKind::AtStar => {
                 self.consume();
                 TimingCtrl::ImplicitEventCtrl

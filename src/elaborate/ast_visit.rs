@@ -281,14 +281,17 @@ pub trait AstVisitor {
                 self.visit_stmt(tst);
                 if let Some(v) = fst { self.visit_stmt(v); }
             }
-            StmtKind::Case {
-                uniq: _, kw: _, expr, items
-            } => {
+            StmtKind::Case { expr, items, .. } => {
                 self.visit_expr(expr);
                 for (cond, stmt) in items {
                     for expr in cond { self.visit_expr(expr); }
                     self.visit_stmt(stmt);
                 }
+            }
+            StmtKind::Assert { expr, success, failure, .. } => {
+                self.visit_expr(expr);
+                if let Some(stmt) = success { self.visit_stmt(stmt) }
+                if let Some(stmt) = failure { self.visit_stmt(stmt) }
             }
             StmtKind::SeqBlock(stmts) => {
                 for stmt in stmts {
