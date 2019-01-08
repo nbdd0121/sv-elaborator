@@ -1,5 +1,5 @@
 [package]
-name = "systemverilog"
+name = "sv-elaborator"
 version = "0.1.0"
 authors = ["Gary Guo <gary@garyguo.net>"]
 
