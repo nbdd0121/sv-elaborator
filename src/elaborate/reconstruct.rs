@@ -17,6 +17,21 @@ pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
     reconstructor.reconstruct()
 }
 
+/// Given a i32, reconstruct the corresponding corresponding constant value.
+pub fn reconstruct_int(val: i32, span: Span) -> Expr {
+    let expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
+        LogicNumber {
+            value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(val.abs()).unwrap()),
+            sized: false, 
+        }
+    ), span)), span);
+    if val >= 0 {
+        expr
+    } else {
+        Spanned::new(ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)), span)
+    }
+}
+
 struct Reconstructor<'a> {
     source: &'a hier::Source,
     /// Whether reference to structs and enums need to be qualified by "global_types::"
@@ -24,21 +39,6 @@ struct Reconstructor<'a> {
 }
 
 impl<'a> Reconstructor<'a> {
-    /// Given a i32, reconstruct the corresponding corresponding constant value.
-    pub fn reconstruct_int(&self, val: i32, span: Span) -> Expr {
-        let expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-            LogicNumber {
-                value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(val.abs()).unwrap()),
-                sized: false, 
-            }
-        ), span)), span);
-        if val >= 0 {
-            expr
-        } else {
-            Spanned::new(ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)), span)
-        }
-    }
-
     // Given a LogicVec, reconstruct the corresponding corresponding constant value.
     pub fn reconstruct_const(&self, val: &LogicVec, span: Span) -> Expr {
         Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
@@ -280,8 +280,8 @@ impl<'a> Reconstructor<'a> {
                         inst: vec![HierInst {
                         name: decl.name.clone(),
                         dim: decl.dim.iter().map(|(ub, lb)| {
-                            let ub_expr = self.reconstruct_int(*ub, Span::none());
-                            let lb_expr = self.reconstruct_int(*lb, Span::none());
+                            let ub_expr = reconstruct_int(*ub, Span::none());
+                            let lb_expr = reconstruct_int(*lb, Span::none());
                             Spanned::new(DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)), Span::none())
                         }).collect(),
                         ports: PortConn::Ordered(decl.port.iter().map(|port| {
@@ -394,8 +394,8 @@ impl<'a> Reconstructor<'a> {
                     let intf = Some(Box::new(decl.inst.name.clone()));
                     let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
                     let dim = decl.dim.iter().map(|(ub, lb)| {
-                        let ub = self.reconstruct_int(*ub, Span::none());
-                        let lb = self.reconstruct_int(*lb, Span::none());
+                        let ub = reconstruct_int(*ub, Span::none());
+                        let lb = reconstruct_int(*lb, Span::none());
                         Spanned::new_unspanned(DimKind::Range(Box::new(ub), Box::new(lb)))
                     }).collect();
                     ports.push(PortDecl::Interface(intf, modport, vec![DeclAssign {

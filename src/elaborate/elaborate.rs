@@ -1291,7 +1291,12 @@ impl<'a> Elaborator<'a> {
                 };
                 let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
                     expr::Expr {
-                        value: expr::ExprKind::HierName(scope, Spanned::new(HierId::Select(Box::new(id), dim.clone()), span)),
+                        value: expr::ExprKind::HierName(scope, Spanned::new(
+                            HierId::Select(Box::new(id), Box::new(Spanned::new(DimKind::Value(Box::new(
+                                super::reconstruct::reconstruct_int(value, dim.span)
+                            )), dim.span))),
+                            span
+                        )),
                         ty: Self::type_of_hier(&hier),
                         span,
                     }
