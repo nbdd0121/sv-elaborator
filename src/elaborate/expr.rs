@@ -43,7 +43,7 @@ pub enum ExprKind {
     Const(Val),
     
     /// A hierachical name
-    HierName(Option<Scope>, HierId),
+    HierName(Option<Scope>, Spanned<HierId>),
 
     /// Empty queue initializer ("{}")
     EmptyQueue,

@@ -358,9 +358,9 @@ impl<'a> Elaborator<'a> {
                                     continue 'next_instance;
                                 }
                             };
-                            let hier = match self.type_check_scoped_name(scope, name, conn.span) {
-                                Ok(hier) => hier,
-                                Err(_) => {
+                            let hier = match self.type_check_scoped_name(scope, name, conn.span).0 {
+                                Some(hier) => hier,
+                                None => {
                                     self.diag.report_error("expected interface instance", conn.span);
                                     continue 'next_instance;
                                 }
@@ -570,11 +570,11 @@ impl<'a> Elaborator<'a> {
             }
             Item::TypedefIntf(_, intf, ty, name) => {
                 // First evaluate intf to get an hierachical item
-                let item = match self.type_check_scoped_name(&None, &intf.value, intf.span) {
-                    Err(_) => {
+                let item = match self.type_check_scoped_name(&None, &intf.value, intf.span).0 {
+                    None => {
                         self.diag.report_fatal("this must be an interface port name", intf.span);
                     },
-                    Ok(item) => item,
+                    Some(item) => item,
                 };
                 // Check if this is an interface port
                 let inst = match item {
@@ -1071,22 +1071,41 @@ impl<'a> Elaborator<'a> {
     // The following section handles expression type check, evaulation and folding
     //
 
+    pub fn type_of_hier(hier: &HierItem) -> Ty {
+        match hier {
+            HierItem::Param(decl) => decl.ty.clone(),
+            HierItem::Type(_) => Ty::Type,
+            HierItem::DataPort(_) => unimplemented!(),
+            HierItem::InterfacePort(_) => Ty::Void, // Not typable
+            HierItem::Design(_) => unimplemented!(), // Not typable
+            HierItem::Other(_) => unimplemented!(),
+            HierItem::OtherName => unimplemented!(),
+            HierItem::Instance(_) => Ty::Void, // Not typable
+            HierItem::InstancePart{ .. } => Ty::Void, // Not typable
+            HierItem::GenBlock(_) => Ty::Void, // Not typable
+            HierItem::GenVar(_) => Ty::Int(IntTy::SimpleVec(32, false, true)),
+            HierItem::LoopGenBlock(_) => Ty::Void, // Not typable
+            HierItem::Modport(_) => Ty::Void, // Not typable
+            HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(Rc::clone(enu))),
+        }
+    }
+
     /// Try to parse the name as an hierachical item. If it happens to also contain member/index
     /// access, parse it as expression instead.
     pub fn type_check_scoped_name(
         &mut self, scope: &Option<Scope>, name: &HierId, span: Span
-    ) -> std::result::Result<HierItem, expr::Expr> {
+    ) -> (Option<HierItem>, expr::Expr) {
         match name {
             HierId::Name(name) => {
                 // Simple identifier name. Try to lookup it up.
-                match scope {
+                let hier = match scope {
                     Some(Scope::Name(None, pkg)) => {
                         // Packaged name, retrieve from package
-                        Ok(self.pkgs[&pkg.value].scope.names[&name.value].clone())
+                        self.pkgs[&pkg.value].scope.names[&name.value].clone()
                     }
                     None => {
                         // Lexical name
-                        Ok(self.resolve(name))
+                        self.resolve(name)
                     }
                     _ => {
                         self.diag.report_fatal(
@@ -1094,12 +1113,19 @@ impl<'a> Elaborator<'a> {
                             span
                         );
                     }
-                }
+                };
+                let expr = expr::Expr {
+                    value: expr::ExprKind::HierName(scope.clone(), Spanned::new(HierId::Name(name.clone()), span)),
+                    ty: Self::type_of_hier(&hier),
+                    span,
+                };
+                (Some(hier), expr)
             }
             HierId::Member(parent, name) => {
-                match self.type_check_scoped_name(scope, &parent.value, parent.span) {
-                    Ok(item) => {
-                        match item {
+                let (parent_hier, parent_expr) = self.type_check_scoped_name(scope, &parent.value, parent.span);
+                match parent_hier {
+                    Some(item) => {
+                        let hier = match item {
                             HierItem::InterfacePort(decl) => {
                                 if !decl.dim.is_empty() {
                                     self.diag.report_fatal(
@@ -1114,7 +1140,7 @@ impl<'a> Elaborator<'a> {
                                     ),
                                     Some(v) => v.clone(),
                                 };
-                                Ok(item)
+                                item
                             }
                             HierItem::InstancePart { inst, dim, ..} => {
                                 if !dim.is_empty() {
@@ -1130,7 +1156,7 @@ impl<'a> Elaborator<'a> {
                                     ),
                                     Some(v) => v.clone(),
                                 };
-                                Ok(item)
+                                item
                             }
                             HierItem::GenBlock(decl) => {
                                 let item = match decl.scope.names.get(&name.value) {
@@ -1140,19 +1166,28 @@ impl<'a> Elaborator<'a> {
                                     ),
                                     Some(v) => v.clone(),
                                 };
-                                Ok(item)
+                                item
                             }
                             _ => unimplemented!("{:?} {:?}", parent, name),
-                        }
+                        };
+                        let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
+                            expr::Expr {
+                                value: expr::ExprKind::HierName(scope, Spanned::new(HierId::Member(Box::new(id), name.clone()), span)),
+                                ty: Self::type_of_hier(&hier),
+                                span,
+                            }
+                        } else { unreachable!() };
+                        (Some(hier), expr)
                     }
-                    Err(_) => unimplemented!(),
+                    None => unimplemented!(),
                 }
             }
             HierId::Select(parent, dim) => {
-                let item = match self.type_check_scoped_name(scope, &parent.value, parent.span) {
+                let (parent_hier, parent_expr) = self.type_check_scoped_name(scope, &parent.value, parent.span);
+                let item = match parent_hier {
                     // If it is already an expression
-                    Err(_) => unimplemented!(),
-                    Ok(item) => item,
+                    None => unimplemented!(),
+                    Some(item) => item,
                 };
                 // Only constant bit select is valid for instance array
                 let value = match dim.value {
@@ -1180,13 +1215,13 @@ impl<'a> Elaborator<'a> {
                         dim.span
                     );
                 };
-                match item {
+                let hier = match item {
                     HierItem::Instance(ref inst) => {
                         match inst.dim.first() {
                             None => {
                                 self.diag.report_error("this is not an instance array", parent.span);
                                 // Error-recovery: return current instance
-                                Ok(item.clone())
+                                item.clone()
                             }
                             Some(range) => {
                                 if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
@@ -1195,11 +1230,11 @@ impl<'a> Elaborator<'a> {
                                         dim.span
                                     );
                                 }
-                                Ok(HierItem::InstancePart {
+                                HierItem::InstancePart {
                                     inst: Rc::clone(&inst.inst),
                                     modport: None,
                                     dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
-                                })
+                                }
                             }
                         }
                     }
@@ -1208,7 +1243,7 @@ impl<'a> Elaborator<'a> {
                             None => {
                                 self.diag.report_error("this is not an interface port array", parent.span);
                                 // Error-recovery: return current instance
-                                Ok(item.clone())
+                                item.clone()
                             }
                             Some(range) => {
                                 if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
@@ -1217,11 +1252,11 @@ impl<'a> Elaborator<'a> {
                                         dim.span
                                     );
                                 }
-                                Ok(HierItem::InstancePart {
+                                HierItem::InstancePart {
                                     inst: Rc::clone(&decl.inst),
                                     modport: decl.modport.clone(),
                                     dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
-                                })
+                                }
                             }
                         }
                     }
@@ -1234,36 +1269,22 @@ impl<'a> Elaborator<'a> {
                                 );
                             },
                             Some((_, genblk)) => {
-                                Ok(HierItem::GenBlock(Rc::clone(genblk)))
+                                HierItem::GenBlock(Rc::clone(genblk))
                             }
                         }
                     }
                     ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
-                }
+                };
+                let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
+                    expr::Expr {
+                        value: expr::ExprKind::HierName(scope, Spanned::new(HierId::Select(Box::new(id), dim.clone()), span)),
+                        ty: Self::type_of_hier(&hier),
+                        span,
+                    }
+                } else { unreachable!() };
+                (Some(hier), expr)
             }
             v => unimplemented!("{:?}", v),
-        }
-    }
-
-    pub fn self_type_check_name(&mut self, name: &HierId, span: Span) -> expr::Expr {
-        match name {
-            HierId::Name(name) => {
-                // Simple identifier name. Try to lookup it up.
-                let ty = {
-                    match self.resolve(name) {
-                        HierItem::Param(decl) => decl.ty.clone(),
-                        HierItem::Type(_) => Ty::Type,
-                        HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(enu)),
-                        _ => unimplemented!(),
-                    }
-                };
-                expr::Expr {
-                    value: expr::ExprKind::HierName(None, HierId::Name(name.clone())),
-                    span: span,
-                    ty: ty,
-                }
-            }
-            _ => unimplemented!(),
         }
     }
 
@@ -1318,34 +1339,26 @@ impl<'a> Elaborator<'a> {
                 }
             }
             ExprKind::HierName(ref scope, ref name) => {
-                match self.type_check_scoped_name(scope, name, expr.span) {
-                    Ok(hier) => {
+                let (hier, expr) = self.type_check_scoped_name(scope, name, expr.span);
+                match hier {
+                    Some(hier) => {
                         // Fold them into constant right away
-                        match hier {
-                            HierItem::Param(ref decl) => expr::Expr {
-                                value: expr::ExprKind::Const(decl.init.clone()),
-                                span: expr.span,
-                                ty: decl.ty.clone(),
-                            },
-                            HierItem::Type(ref decl) => expr::Expr {
-                                value: expr::ExprKind::Const(Val::Type(decl.ty.clone())),
-                                span: expr.span,
-                                ty: Ty::Type,
-                            },
-                            HierItem::Enum(ref enu, index) => expr::Expr {
-                                value: expr::ExprKind::Const(Val::Int(enu.elements.borrow()[index].1.clone())),
-                                span: expr.span,
-                                ty: Ty::Int(IntTy::Enum(Rc::clone(enu))),
-                            },
-                            HierItem::GenVar(_) => expr::Expr {
-                                value: expr::ExprKind::HierName(scope.clone(), name.clone()),
-                                span: expr.span,
-                                ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
-                            },
+                        let value = match hier {
+                            HierItem::Param(ref decl) => expr::ExprKind::Const(decl.init.clone()),
+                            HierItem::Type(ref decl) => expr::ExprKind::Const(Val::Type(decl.ty.clone())),
+                            HierItem::Enum(ref enu, index) =>
+                                expr::ExprKind::Const(Val::Int(enu.elements.borrow()[index].1.clone())),
+                            HierItem::GenVar(_) =>
+                                expr::ExprKind::HierName(scope.clone(), Spanned::new(name.clone(), expr.span)),
                             _ => unimplemented!(),
+                        };
+                        expr::Expr {
+                            value,
+                            ty: expr.ty,
+                            span: expr.span,
                         }
                     }
-                    Err(expr) => expr,
+                    None => expr,
                 }
             }
             // HierName(Option<Box<Scope>>, HierId)
@@ -1947,8 +1960,8 @@ impl<'a> Elaborator<'a> {
         match &expr.value {
             expr::ExprKind::Const(val) => val.clone(),
             expr::ExprKind::HierName(scope, name) => {
-                match self.type_check_scoped_name(scope, name, expr.span) {
-                    Ok(hier) => {
+                match self.type_check_scoped_name(scope, name, expr.span).0 {
+                    Some(hier) => {
                         match hier {
                             HierItem::GenVar(ref genvar) => {
                                 Val::Int(LogicVec::from_integer(*genvar.value.borrow()))
@@ -1956,7 +1969,7 @@ impl<'a> Elaborator<'a> {
                             _ => unimplemented!(),
                         }
                     }
-                    Err(_) => unreachable!(),
+                    None => unreachable!(),
                 }
             }
             // EmptyQueue,
@@ -2209,9 +2222,9 @@ impl<'a> Elaborator<'a> {
             // PrefixIncDec(IncDec, Option<Box<AttrInst>>, Box<Expr>),
             expr::ExprKind::PostfixIncDec(lhs, incdec) => {
                 if let expr::ExprKind::HierName(ref scope, ref name) = lhs.value {
-                    let hier = match self.type_check_scoped_name(scope, name, lhs.span) {
-                        Err(_) => unimplemented!(),
-                        Ok(hier) => hier,
+                    let hier = match self.type_check_scoped_name(scope, name, lhs.span).0 {
+                        None => unimplemented!(),
+                        Some(hier) => hier,
                     };
                     let var = match hier {
                         HierItem::GenVar(ref var) => &var.value,
