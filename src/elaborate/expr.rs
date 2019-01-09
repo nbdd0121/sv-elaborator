@@ -26,12 +26,12 @@ pub enum Val {
 pub enum DimKind {
     /// Represent bit-select of type `[ expression ]`.
     Value(Box<Expr>),
-    /// Represent bit-select of type `[ expression : expression ]`
-    Range(Box<Expr>, Box<Expr>),
-    /// Represent bit-select of type `[ expression +: expression ]`
-    PlusRange(Box<Expr>, Box<Expr>),
-    /// Represent bit-select of type `[ expression -: expression ]`
-    MinusRange(Box<Expr>, Box<Expr>),
+    /// Represent part-select of type `[ expression : expression ]`
+    Range(i32, i32),
+    /// Represent part-select of type `[ expression +: expression ]`
+    PlusRange(Box<Expr>, i32),
+    /// Represent part-select of type `[ expression -: expression ]`
+    MinusRange(Box<Expr>, i32),
 }
 
 /// Should be boxed when nested in other AST structure.

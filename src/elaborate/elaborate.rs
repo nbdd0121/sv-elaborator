@@ -1188,120 +1188,148 @@ impl<'a> Elaborator<'a> {
             }
             HierId::Select(parent, dim) => {
                 let (parent_hier, parent_expr) = self.type_check_scoped_name(scope, &parent.value, parent.span);
-                let item = match parent_hier {
-                    // If it is already an expression
-                    None => unimplemented!(),
-                    Some(item) => item,
-                };
-                // Only constant bit select is valid for instance array
-                let value = match dim.value {
-                    DimKind::Value(ref value) => value,
-                    _ => {
-                        self.diag.report_fatal(
-                            "only constant bit select is valid in this context",
-                            dim.span
-                        );
-                    }
-                };
-                let value = if let (_, Val::Int(val)) = self.eval_expr(value, None) {
-                    match val.get_two_state().and_then(|v| v.to_i32()) {
+                // In `type_of_hier` we set type of non-expression to void. If the type is not
+                // void, then this is an index expression.
+                if let Ty::Void = parent_expr.ty {
+                    let item = match parent_hier {
+                        // This is an expression that has void type
                         None => {
+                            self.diag.report_fatal("cannot index into void expression", parent_expr.span)
+                        },
+                        Some(item) => item,
+                    };
+                    // Only constant bit select is valid for instance array
+                    let value = match dim.value {
+                        DimKind::Value(ref value) => value,
+                        _ => {
                             self.diag.report_fatal(
-                                "constant bit select must evaluate to two-state number",
+                                "only constant bit select is valid in this context",
                                 dim.span
                             );
-                        },
-                        Some(v) => v,
-                    }
-                } else {
-                    self.diag.report_fatal(
-                        "constant bit select must evaluate to integral number",
-                        dim.span
-                    );
-                };
-                let hier = match item {
-                    HierItem::Instance(ref inst) => {
-                        match inst.dim.first() {
-                            None => {
-                                self.diag.report_error("this is not an instance array", parent.span);
-                                // Error-recovery: return current instance
-                                item.clone()
-                            }
-                            Some(range) => {
-                                if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
-                                    self.diag.report_fatal(
-                                        "constant bit select outside range",
-                                        dim.span
-                                    );
-                                }
-                                HierItem::InstancePart {
-                                    inst: Rc::clone(&inst.inst),
-                                    modport: None,
-                                    dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
-                                }
-                            }
                         }
-                    }
-                    HierItem::InterfacePort(ref decl) => {
-                        match decl.dim.first() {
-                            None => {
-                                self.diag.report_error("this is not an interface port array", parent.span);
-                                // Error-recovery: return current instance
-                                item.clone()
-                            }
-                            Some(range) => {
-                                if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
-                                    self.diag.report_fatal(
-                                        "constant bit select outside range",
-                                        dim.span
-                                    );
-                                }
-                                HierItem::InstancePart {
-                                    inst: Rc::clone(&decl.inst),
-                                    modport: decl.modport.clone(),
-                                    dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
-                                }
-                            }
-                        }
-                    }
-                    HierItem::LoopGenBlock(ref decl) => {
-                        let genblk = match decl.instances.borrow().iter().find(|(num, _)| num == &value) {
+                    };
+                    let value = if let (_, Val::Int(val)) = self.eval_expr(value, None) {
+                        match val.get_two_state().and_then(|v| v.to_i32()) {
                             None => {
                                 self.diag.report_fatal(
-                                    "constant bit select outside range",
+                                    "constant bit select must evaluate to two-state number",
                                     dim.span
                                 );
                             },
-                            Some((_, genblk)) => Rc::clone(genblk),
-                        };
-                        // Loop generate block cannot be easily translated back to valid
-                        // SystemVerilog. Therefore when translating it to expr::Expr we will map
-                        // it to a concrete instance instead of leaving it in HierId::Select form.
-                        let expr = expr::Expr {
-                            value: expr::ExprKind::HierName(None, Spanned::new(
-                                HierId::Name(genblk.name.as_ref().unwrap().clone()),
+                            Some(v) => v,
+                        }
+                    } else {
+                        self.diag.report_fatal(
+                            "constant bit select must evaluate to integral number",
+                            dim.span
+                        );
+                    };
+                    let hier = match item {
+                        HierItem::Instance(ref inst) => {
+                            match inst.dim.first() {
+                                None => {
+                                    self.diag.report_error("this is not an instance array", parent.span);
+                                    // Error-recovery: return current instance
+                                    item.clone()
+                                }
+                                Some(range) => {
+                                    if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
+                                        self.diag.report_fatal(
+                                            "constant bit select outside range",
+                                            dim.span
+                                        );
+                                    }
+                                    HierItem::InstancePart {
+                                        inst: Rc::clone(&inst.inst),
+                                        modport: None,
+                                        dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
+                                    }
+                                }
+                            }
+                        }
+                        HierItem::InterfacePort(ref decl) => {
+                            match decl.dim.first() {
+                                None => {
+                                    self.diag.report_error("this is not an interface port array", parent.span);
+                                    // Error-recovery: return current instance
+                                    item.clone()
+                                }
+                                Some(range) => {
+                                    if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
+                                        self.diag.report_fatal(
+                                            "constant bit select outside range",
+                                            dim.span
+                                        );
+                                    }
+                                    HierItem::InstancePart {
+                                        inst: Rc::clone(&decl.inst),
+                                        modport: decl.modport.clone(),
+                                        dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
+                                    }
+                                }
+                            }
+                        }
+                        HierItem::LoopGenBlock(ref decl) => {
+                            let genblk = match decl.instances.borrow().iter().find(|(num, _)| num == &value) {
+                                None => {
+                                    self.diag.report_fatal(
+                                        "constant bit select outside range",
+                                        dim.span
+                                    );
+                                },
+                                Some((_, genblk)) => Rc::clone(genblk),
+                            };
+                            // Loop generate block cannot be easily translated back to valid
+                            // SystemVerilog. Therefore when translating it to expr::Expr we will map
+                            // it to a concrete instance instead of leaving it in HierId::Select form.
+                            let expr = expr::Expr {
+                                value: expr::ExprKind::HierName(None, Spanned::new(
+                                    HierId::Name(genblk.name.as_ref().unwrap().clone()),
+                                    span
+                                )),
+                                ty: Ty::Void,
+                                span,
+                            };
+                            return (Some(HierItem::GenBlock(genblk)), expr)
+                        }
+                        ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
+                    };
+                    let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
+                        expr::Expr {
+                            value: expr::ExprKind::HierName(scope, Spanned::new(
+                                HierId::Select(Box::new(id), Box::new(Spanned::new(DimKind::Value(Box::new(
+                                    super::reconstruct::reconstruct_int(value, dim.span)
+                                )), dim.span))),
                                 span
                             )),
-                            ty: Ty::Void,
+                            ty: Self::type_of_hier(&hier),
                             span,
-                        };
-                        return (Some(HierItem::GenBlock(genblk)), expr)
-                    }
-                    ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
-                };
-                let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
-                    expr::Expr {
-                        value: expr::ExprKind::HierName(scope, Spanned::new(
-                            HierId::Select(Box::new(id), Box::new(Spanned::new(DimKind::Value(Box::new(
-                                super::reconstruct::reconstruct_int(value, dim.span)
-                            )), dim.span))),
-                            span
-                        )),
-                        ty: Self::type_of_hier(&hier),
+                        }
+                    } else { unreachable!() };
+                    (Some(hier), expr)
+                } else {
+                    let two_state = match parent_expr.ty {
+                        Ty::Int(ref intty) => intty.two_state(),
+                        _ => unimplemented!(),
+                    };
+                    let (dim, len) = match dim.value {
+                        DimKind::Value(ref value) => {
+                            let expr = self.type_check_int(value, None, None);
+                            (Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span), 1)
+                        }
+                        _ => {
+                            self.diag.report_fatal(
+                                "unimplemented dimension kind",
+                                dim.span
+                            );
+                        }
+                    };
+                    (None, expr::Expr {
+                        value: expr::ExprKind::Select(Box::new(parent_expr), dim),
+                        ty: Ty::Int(IntTy::SimpleVec(len, two_state, false)),
                         span,
-                    }
-                } else { unreachable!() };
-                (Some(hier), expr)
+                    })
+                }
             }
             v => unimplemented!("{:?}", v),
         }
@@ -1818,7 +1846,7 @@ impl<'a> Elaborator<'a> {
             expr::ExprKind::Concat(_) => (),
             // MultConcat(Box<Expr>, Box<Expr>),
             // AssignPattern(Option<Box<DataType>>, AssignPattern),
-            // Select(Box<Expr>, Dim),
+            expr::ExprKind::Select(..) => (),
             // Member(Box<Expr>, Ident),
             expr::ExprKind::SysTfCall(..) => (),
             // ConstCast(Box<Expr>),
