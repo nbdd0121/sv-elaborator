@@ -393,6 +393,18 @@ impl LogicVec {
     }
 }
 
+impl ops::Neg for LogicVec {
+    type Output = LogicVec;
+    fn neg(mut self) -> Self {
+        if !self.is_two_state() {
+            self.replace_with_x();
+            return self;
+        }
+        self.value = -self.value;
+        self
+    }
+}
+
 impl<'a> ops::ShlAssign<&'a LogicVec> for LogicVec {
     fn shl_assign(&mut self, rhs: &Self) {
         // The rhs should always be unsigned.

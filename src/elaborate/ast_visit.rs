@@ -288,6 +288,13 @@ pub trait AstVisitor {
                     self.visit_stmt(stmt);
                 }
             }
+            StmtKind::For { ty, init, cond, update, body } => {
+                if let Some(ty) = ty { self.visit_ty(ty); }
+                for expr in init { self.visit_expr(expr); }
+                if let Some(expr) = cond { self.visit_expr(expr); }
+                for expr in update { self.visit_expr(expr); }
+                self.visit_stmt(body);
+            }
             StmtKind::Assert { expr, success, failure, .. } => {
                 self.visit_expr(expr);
                 if let Some(stmt) = success { self.visit_stmt(stmt) }

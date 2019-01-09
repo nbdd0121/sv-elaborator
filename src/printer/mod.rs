@@ -867,6 +867,20 @@ impl PrettyPrint {
                 self.unindent();
                 self.indent_append("endcase");
             }
+            StmtKind::For { ty, init, cond, update, body } => {
+                self.append("for (");
+                if let Some(ty) = ty {
+                    self.print_type(ty);
+                    self.append(" ");
+                }
+                self.print_comma_list(init, Self::print_expr);
+                self.append("; ");
+                if let Some(expr) = cond { self.print_expr(expr); }
+                self.append("; ");
+                self.print_comma_list(update, Self::print_expr);
+                self.append(") ");
+                self.print_stmt(body);
+            }
             StmtKind::Assert { kind: (), expr, success, failure } => {
                 self.append("assert (");
                 self.print_expr(expr);

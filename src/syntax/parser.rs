@@ -2320,7 +2320,7 @@ impl<'a> Parser<'a> {
         self.consume();
         // IMP: Parse drive_strength
         // IMP: Parse delay control
-        let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr);
+        let assignments = self.parse_comma_list(false, false, Self::parse_assign_expr_opt);
         self.expect(TokenKind::Semicolon);
         Item::ContinuousAssign(assignments)
     }
@@ -2385,6 +2385,39 @@ impl<'a> Parser<'a> {
     //
 
     /// Parse a block item declaration, statement, or null statement.
+    /// According to the spec
+    /// ```bnf
+    /// block_item_declaration ::=
+    ///   { attribute_instance } data_declaration
+    /// | { attribute_instance } local_parameter_declaration ;
+    /// | { attribute_instance } parameter_declaration ;
+    /// | { attribute_instance } overload_declaration
+    /// | { attribute_instance } let_declaration
+    /// statement_or_null ::=
+    ///  statement | { attribute_instance } ;
+    /// statement ::=
+    ///  [ block_identifier : ] { attribute_instance } statement_item
+    /// statement_item ::=
+    ///   blocking_assignment ;
+    /// | nonblocking_assignment ;
+    /// | case_statement
+    /// | conditional_statement
+    /// | inc_or_dec_expression ;
+    /// | subroutine_call_statement
+    /// | disable_statement
+    /// | event_trigger
+    /// | loop_statement
+    /// | jump_statement
+    /// | par_block
+    /// | procedural_timing_control_statement
+    /// | seq_block
+    /// | wait_statement
+    /// | procedural_assertion_statement
+    /// | clocking_drive ;
+    /// | randsequence_statement
+    /// | randcase_statement
+    /// | expect_property_statement
+    /// ```
     fn parse_stmt_opt(&mut self) -> Option<Stmt> {
         // These are common to all statements:
         // an optional identifier and an attribute.
@@ -2426,13 +2459,34 @@ impl<'a> Parser<'a> {
             // conditional_statement
             TokenKind::Keyword(Keyword::If) => self.parse_if_stmt(None),
             TokenKind::CaseKw(_) => self.parse_case_stmt(None),
-            // seq_block
-            TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label),
+            // disable_statement
+            TokenKind::Keyword(Keyword::Disable) => self.unimplemented(),
+            // event_trigger
+            TokenKind::NonblockTrigger |
+            TokenKind::BinaryOp(BinaryOp::Imply) => self.unimplemented(),
+            // loop_statement
+            TokenKind::Keyword(Keyword::Forever) |
+            TokenKind::Keyword(Keyword::Repeat) |
+            TokenKind::Keyword(Keyword::While) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::For) => self.parse_for(),
+            TokenKind::Keyword(Keyword::Do) |
+            TokenKind::Keyword(Keyword::Foreach) => self.unimplemented(),
+            // jump_statement
+            TokenKind::Keyword(Keyword::Return) |
+            TokenKind::Keyword(Keyword::Break) |
+            TokenKind::Keyword(Keyword::Continue) => self.unimplemented(),
+            // par_block
+            TokenKind::Keyword(Keyword::Fork) => self.unimplemented(),
             // procedural_timing_control_statement
             TokenKind::Hash |
             TokenKind::CycleDelay |
             TokenKind::AtStar |
             TokenKind::At => self.parse_timing_ctrl_stmt(),
+            // seq_block
+            TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label),
+            // wait_statement
+            TokenKind::Keyword(Keyword::Wait) |
+            TokenKind::Keyword(Keyword::WaitOrder) => self.unimplemented(),
             // simple_immediate_assertion_statement, deferred_immediate_assertion_statement
             // or assert_property_statement
             TokenKind::Keyword(Keyword::Assert) => {
@@ -2466,6 +2520,15 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            TokenKind::Keyword(Keyword::Assume) |
+            TokenKind::Keyword(Keyword::Cover) |
+            TokenKind::Keyword(Keyword::Restrict) => self.unimplemented(),
+            // randsequence_statement
+            TokenKind::Keyword(Keyword::Randsequence) => self.unimplemented(),
+            // randcase_statement
+            TokenKind::Keyword(Keyword::Randcase) => self.unimplemented(),
+            // expect_property_statement
+            TokenKind::Keyword(Keyword::Expect) => self.unimplemented(),
             // block_item_declaration -> data_declaration
             // data_declaration. Either begin with const/var or explicit data type.
             TokenKind::Keyword(Keyword::Const) |
@@ -2488,7 +2551,7 @@ impl<'a> Parser<'a> {
                 StmtKind::DataDecl(Box::new(self.parse_data_decl(None)))
             }
             _ => {
-                let expr = self.parse_unwrap(Self::parse_assign_expr);
+                let expr = self.parse_unwrap(Self::parse_assign_expr_opt);
                 self.expect(TokenKind::Semicolon);
                 StmtKind::Expr(Box::new(expr))
             }
@@ -2636,6 +2699,111 @@ impl<'a> Parser<'a> {
     }
 
     //
+    // A.6.8 Looping statements
+    //
+
+    // ```bnf
+    /// for_initialization ::=
+    ///   list_of_variable_assignments | for_variable_declaration { , for_variable_declaration }
+    /// for_variable_declaration ::=
+    ///   [ var ] data_type variable_identifier = expression { , variable_identifier = expression }
+    /// for_step ::=
+    ///   for_step_assignment { , for_step_assignment }
+    /// for_step_assignment ::=
+    ///   operator_assignment | inc_or_dec_expression | function_subroutine_call
+    // ```
+    fn parse_for(&mut self) -> StmtKind {
+        self.consume();
+        let (ty, init, cond, update) = self.parse_delim(Delim::Paren, |this| {
+            // First parse initialisation list.
+            let (ty, init) = if let TokenKind::Semicolon = **this.peek() {
+                (None, Vec::new())
+            } else {
+                // Consume "var" keyword if any. This keyword serves no special purpose and thus is
+                // not reflected in AST.
+                let var_kw = this.check(TokenKind::Keyword(Keyword::Var));
+                // First try to parse as an assignment
+                let assign = this.parse_assign_expr();
+                let (ty, assign) = match assign.value {
+                    ExprKind::Assign(..) => {
+                        if var_kw {
+                            this.diag.report_error(
+                                "data type must follow 'var' inside for initialization",
+                                assign.span
+                            );
+                        }
+                        (None, assign)
+                    }
+                    _ => {
+                        // If we this is not an assignment, it must be a data type. Convert it and
+                        // parse a new assignment.
+                        let span = assign.span;
+                        let ty = match this.conv_expr_to_type(assign) {
+                            None => {
+                                this.diag.report_error("expected data type", span);
+                                // Error recovery
+                                None
+                            },
+                            Some(v) => Some(Box::new(v)),
+                        };
+                        let assign = this.parse_assign_expr();
+                        (ty, assign)
+                    }
+                };
+                let mut list = vec![assign];
+                while this.check(TokenKind::Comma) {
+                    list.push(this.parse_assign_expr());
+                }
+
+                // Now check expressions to make sure they are actually all proper assignment expressions
+                this.check_list(&mut list, |this, assign| {
+                    match assign.value {
+                        ExprKind::Assign(ref lhs, _) => {
+                            if ty.is_some() {
+                                // When type is specified this must be a simple name
+                                match lhs.value {
+                                    ExprKind::HierName(None, HierId::Name(_)) => (),
+                                    _ => {
+                                        this.diag.report_error(
+                                            "expecting loop variable name inside for initialization",
+                                            lhs.span
+                                        );
+                                        return false
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            this.diag.report_error(
+                                "expected assignment expression inside for initialization",
+                                assign.span
+                            );
+                            return false
+                        }
+                    }
+                    return true
+                });
+
+                (ty, list)
+            };
+
+            this.expect(TokenKind::Semicolon);
+            let cond = this.parse_expr_opt().map(Box::new);
+            this.expect(TokenKind::Semicolon);
+            let update = this.parse_comma_list(true, false, Self::parse_expr_opt);
+            (ty, init, cond, update)
+        });
+        let body = Box::new(self.parse_stmt());
+        StmtKind::For {
+            ty,
+            init,
+            cond,
+            update,
+            body,
+        }
+    }
+
+    //
     // A.6.7.1 Patterns
     //
 
@@ -2729,7 +2897,7 @@ impl<'a> Parser<'a> {
     ///   expression
     /// | expression assignment_operator expression
     /// ```
-    fn parse_assign_expr(&mut self) -> Option<Expr> {
+    fn parse_assign_expr_opt(&mut self) -> Option<Expr> {
         let expr = match self.parse_expr_opt() {
             None => return None,
             Some(v) => v,
@@ -2750,6 +2918,10 @@ impl<'a> Parser<'a> {
             }
             _ => Some(expr)
         }
+    }
+
+    fn parse_assign_expr(&mut self) -> Expr {
+        self.parse_unwrap(Self::parse_assign_expr_opt)
     }
 
     /// Parse an expression (or data_type)

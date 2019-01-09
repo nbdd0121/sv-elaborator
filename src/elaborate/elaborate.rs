@@ -2065,8 +2065,15 @@ impl<'a> Elaborator<'a> {
             expr::ExprKind::Unary(op, rhs) => {
                 let val = self.eval_checked_expr(rhs);
                 match op {
-                    UnaryOp::Add |
-                    UnaryOp::Sub |
+                    UnaryOp::Add => val,
+                    UnaryOp::Sub => {
+                        match val {
+                            Val::Int(val) => {
+                                Val::Int(-val)
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
                     UnaryOp::Not => unimplemented!(),
                     UnaryOp::LNot => {
                         match val {

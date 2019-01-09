@@ -791,6 +791,27 @@ impl<'a> AstVisitor for Resolver<'a> {
 
     fn visit_stmt(&mut self, stmt: &mut Stmt) {
         match stmt.value {
+            StmtKind::For {
+                // We only care for loops with variable declaration. If ty is None, then all
+                // loop variables are pre-declared and thus we don't care.
+                ty: Some(ref mut ty),
+                ref mut init, ref mut cond, ref mut update, ref mut body
+            } => {
+                self.visit_ty(ty);
+                self.scopes.push(Scope::new());
+                for expr in init {
+                    if let ExprKind::Assign(lhs, rhs) = &mut expr.value {
+                        if let ExprKind::HierName(None, HierId::Name(name)) = &mut lhs.value {
+                            self.add_to_scope(name, SymbolKind::Var);
+                        } else { unreachable!() }
+                        self.visit_expr(rhs);
+                    } else { unreachable!(); }
+                }
+                if let Some(expr) = cond { self.visit_expr(expr); }
+                for expr in update { self.visit_expr(expr); }
+                self.visit_stmt(body);
+                self.scopes.pop();
+            }
             StmtKind::SeqBlock(ref mut items) => {
                 self.scopes.push(Scope::new());
                 for item in items { self.visit_stmt(item); }
