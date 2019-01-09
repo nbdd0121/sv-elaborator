@@ -119,6 +119,7 @@ impl<'a> Reconstructor<'a> {
                     dim
                 )
             }
+            IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
