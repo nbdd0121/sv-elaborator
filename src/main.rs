@@ -52,11 +52,6 @@ fn main() {
         return print_help(&opts, &args[0])
     }
 
-    let mut out: Box<dyn Write> = match matches.opt_str("o") {
-        None => Box::new(std::io::stdout()),
-        Some(v) => Box::new(File::create(v).unwrap()),
-    };
-
     // Initailise source manager and diagnostic manager first
     let src_mgr = Rc::new(SrcMgr::new());
     let diag_mgr = DiagMgr::new(src_mgr.clone());
@@ -114,6 +109,11 @@ fn main() {
     if diag_mgr.has_error() { return; }
 
     if matches.opt_present("parse") {
+        let mut out: Box<dyn Write> = match matches.opt_str("o") {
+            None => Box::new(std::io::stdout()),
+            Some(v) => Box::new(File::create(v).unwrap()),
+        };
+
         let mut printer = PrettyPrint::new();
         for list in &files {
             for i in list {
@@ -121,7 +121,7 @@ fn main() {
                 printer.append("\n");
             }
         }
-        println!("{}", printer.take());
+        writeln!(out, "{}", printer.take()).unwrap();
         return;
     }
 
@@ -135,19 +135,24 @@ fn main() {
 
     let files = elaborate::reconstruct(&elaborated);
 
+    let mut out: Box<dyn Write> = match matches.opt_str("o") {
+        None => Box::new(std::io::stdout()),
+        Some(v) => Box::new(File::create(v).unwrap()),
+    };
+
     {
         let list = files.first().unwrap();
-        writeln!(out, "/* packages */");
+        writeln!(out, "/* packages */").unwrap();
         let mut printer = PrettyPrint::new();
         for i in list {
             printer.print_item(&i);
             printer.append("\n");
         }
-        writeln!(out, "{}", printer.take());
+        writeln!(out, "{}", printer.take()).unwrap();
     }
 
     for (list, name) in files.iter().skip(1).zip(matches.free.iter()) {
-        writeln!(out, "/* file: {} */", name);
+        writeln!(out, "/* file: {} */", name).unwrap();
         if list.is_empty() {
 
         } else {
@@ -156,7 +161,7 @@ fn main() {
                 printer.print_item(&i);
                 printer.append("\n");
             }
-            writeln!(out, "{}", printer.take());
+            writeln!(out, "{}", printer.take()).unwrap();
         }
     }
 }
