@@ -1015,11 +1015,17 @@ impl<'a> Parser<'a> {
                 }
 
                 // Parse net-type
-                let net = if this.consume_if(TokenKind::Keyword(Keyword::Var)).is_some() {
-                    Some(NetPortType::Variable)
-                } else {
-                    // TODO parse net-type
-                    None
+                let net = match **this.peek() {
+                    TokenKind::Keyword(Keyword::Var) => {
+                        this.consume();
+                        Some(NetPortType::Variable)
+                    }
+                    TokenKind::NetTy(netty) => {
+                        this.consume();
+                        Some(NetPortType::Builtin(netty))
+                    }
+                    // TODO we might also have identifier net-type or interconnect type
+                    _ => None,
                 };
 
                 let (dtype, assign) = this.parse_data_type_decl_assign();

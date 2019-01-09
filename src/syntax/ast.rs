@@ -177,6 +177,25 @@ pub enum NetTy {
     Wor,
 }
 
+impl fmt::Display for NetTy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            NetTy::Supply0 => "supply0",
+            NetTy::Supply1 => "supply1",
+            NetTy::Tri => "tri",
+            NetTy::Triand => "triand",
+            NetTy::Trior => "trior",
+            NetTy::Trireg => "trireg",
+            NetTy::Tri0 => "tri0",
+            NetTy::Tri1 => "tri1",
+            NetTy::Uwire => "uwire",
+            NetTy::Wire => "wire",
+            NetTy::Wand => "wand",
+            NetTy::Wor => "wor",
+        })
+    }
+}
+
 /// Represent a drive strength
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriveStrength {

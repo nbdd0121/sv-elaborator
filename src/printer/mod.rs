@@ -127,9 +127,14 @@ impl PrettyPrint {
 
     fn print_port_decl(&mut self, obj: &PortDecl) {
         match obj {
-            PortDecl::Data(dir, _net, ty, list) => {
+            PortDecl::Data(dir, net, ty, list) => {
                 self.indent_append(format!("{} ", dir));
-                // TODO: Net
+                match net {
+                    NetPortType::Builtin(netty) => self.append(format!("{} ", netty)),
+                    NetPortType::Variable => self.append("var "),
+                    NetPortType::Default => (),
+                    _ => unimplemented!(),
+                }
                 self.print_type(&ty);
                 self.append(" ");
                 for (item, _, last) in list.iter().identify_first_last() {
