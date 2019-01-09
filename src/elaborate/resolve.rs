@@ -490,7 +490,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                 return;
             }
             Item::TypedefIntf(_, intf, _, target) => {
-                self.visit_hier_name(&mut None, intf);
+                self.visit_hier_name(intf);
                 self.add_to_scope(target, SymbolKind::Type);
                 return;
             }
@@ -580,7 +580,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                             self.visit_scoped_id(&mut scope, &mut name);
                                             let span = name.span;
                                             new_list[id] = Some((attr, Some(Box::new(Spanned::new(
-                                                ExprKind::HierName(scope, HierId::Name(Box::new(name))), span
+                                                ExprKind::HierName(HierId::Name(scope, Box::new(name))), span
                                             )))));
                                         }
                                         _ => unreachable!(),
@@ -599,7 +599,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                         let mut scope = None;
                                         self.desugar_pkg(&mut scope, &name);
                                         *v = Some((None, Some(Box::new(Spanned::new_unspanned(
-                                            ExprKind::HierName(scope, HierId::Name(Box::new(name)))
+                                            ExprKind::HierName(HierId::Name(scope, Box::new(name)))
                                         )))));
                                     });
                                 }
@@ -776,13 +776,13 @@ impl<'a> AstVisitor for Resolver<'a> {
         self.do_visit_ty(ty);
     }
 
-    fn visit_hier_name(&mut self, scope: &mut Option<ast::Scope>, id: &mut HierId) {
+    fn visit_hier_name(&mut self, id: &mut HierId) {
         // We only resolve the top-most one
         match id {
-            HierId::Name(id) => self.visit_scoped_id(scope, id),
-            HierId::Member(sup, _) => self.visit_hier_name(scope, sup),
+            HierId::Name(scope, id) => self.visit_scoped_id(scope, id),
+            HierId::Member(sup, _) => self.visit_hier_name(sup),
             HierId::Select(sup, dim) => {
-                self.visit_hier_name(scope, sup);
+                self.visit_hier_name(sup);
                 self.visit_dim(dim);
             },
             _ => (),
@@ -801,7 +801,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                 self.scopes.push(Scope::new());
                 for expr in init {
                     if let ExprKind::Assign(lhs, rhs) = &mut expr.value {
-                        if let ExprKind::HierName(None, HierId::Name(name)) = &mut lhs.value {
+                        if let ExprKind::HierName(HierId::Name(None, name)) = &mut lhs.value {
                             self.add_to_scope(name, SymbolKind::Var);
                         } else { unreachable!() }
                         self.visit_expr(rhs);

@@ -351,14 +351,14 @@ impl<'a> Elaborator<'a> {
                                     continue 'next_instance;
                                 }
                             };
-                            let (scope, name) = match &conn.value {
-                                ExprKind::HierName(scope, name) => (scope, name),
+                            let name = match &conn.value {
+                                ExprKind::HierName(name) => name,
                                 _ => {
                                     self.diag.report_error("expected interface instance", conn.span);
                                     continue 'next_instance;
                                 }
                             };
-                            let hier = match self.type_check_scoped_name(scope, name, conn.span).0 {
+                            let hier = match self.type_check_hier_id(name, conn.span).0 {
                                 Some(hier) => hier,
                                 None => {
                                     self.diag.report_error("expected interface instance", conn.span);
@@ -574,7 +574,7 @@ impl<'a> Elaborator<'a> {
             }
             Item::TypedefIntf(_, intf, ty, name) => {
                 // First evaluate intf to get an hierachical item
-                let item = match self.type_check_scoped_name(&None, &intf.value, intf.span).0 {
+                let item = match self.type_check_hier_id(&intf.value, intf.span).0 {
                     None => {
                         self.diag.report_fatal("this must be an interface port name", intf.span);
                     },
@@ -1096,11 +1096,11 @@ impl<'a> Elaborator<'a> {
 
     /// Try to parse the name as an hierachical item. If it happens to also contain member/index
     /// access, parse it as expression instead.
-    pub fn type_check_scoped_name(
-        &mut self, scope: &Option<Scope>, name: &HierId, span: Span
+    pub fn type_check_hier_id(
+        &mut self, name: &HierId, span: Span
     ) -> (Option<HierItem>, expr::Expr) {
         match name {
-            HierId::Name(name) => {
+            HierId::Name(scope, name) => {
                 // Simple identifier name. Try to lookup it up.
                 let hier = match scope {
                     Some(Scope::Name(None, pkg)) => {
@@ -1119,14 +1119,14 @@ impl<'a> Elaborator<'a> {
                     }
                 };
                 let expr = expr::Expr {
-                    value: expr::ExprKind::HierName(scope.clone(), Spanned::new(HierId::Name(name.clone()), span)),
+                    value: expr::ExprKind::HierName(HierId::Name(scope.clone(), name.clone())),
                     ty: Self::type_of_hier(&hier),
                     span,
                 };
                 (Some(hier), expr)
             }
             HierId::Member(parent, name) => {
-                let (parent_hier, parent_expr) = self.type_check_scoped_name(scope, &parent.value, parent.span);
+                let (parent_hier, parent_expr) = self.type_check_hier_id(&parent.value, parent.span);
                 match parent_hier {
                     Some(item) => {
                         let hier = match item {
@@ -1174,9 +1174,11 @@ impl<'a> Elaborator<'a> {
                             }
                             _ => unimplemented!("{:?} {:?}", parent, name),
                         };
-                        let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
+                        let expr = if let expr::ExprKind::HierName(id) = parent_expr.value {
                             expr::Expr {
-                                value: expr::ExprKind::HierName(scope, Spanned::new(HierId::Member(Box::new(id), name.clone()), span)),
+                                value: expr::ExprKind::HierName(
+                                    HierId::Member(Box::new(Spanned::new(id, parent_expr.span)), name.clone())
+                                ),
                                 ty: Self::type_of_hier(&hier),
                                 span,
                             }
@@ -1187,7 +1189,7 @@ impl<'a> Elaborator<'a> {
                 }
             }
             HierId::Select(parent, dim) => {
-                let (parent_hier, parent_expr) = self.type_check_scoped_name(scope, &parent.value, parent.span);
+                let (parent_hier, parent_expr) = self.type_check_hier_id(&parent.value, parent.span);
                 // In `type_of_hier` we set type of non-expression to void. If the type is not
                 // void, then this is an index expression.
                 if let Ty::Void = parent_expr.ty {
@@ -1283,10 +1285,9 @@ impl<'a> Elaborator<'a> {
                             // SystemVerilog. Therefore when translating it to expr::Expr we will map
                             // it to a concrete instance instead of leaving it in HierId::Select form.
                             let expr = expr::Expr {
-                                value: expr::ExprKind::HierName(None, Spanned::new(
-                                    HierId::Name(genblk.name.as_ref().unwrap().clone()),
-                                    span
-                                )),
+                                value: expr::ExprKind::HierName(
+                                    HierId::Name(None, genblk.name.as_ref().unwrap().clone())
+                                ),
                                 ty: Ty::Void,
                                 span,
                             };
@@ -1294,14 +1295,13 @@ impl<'a> Elaborator<'a> {
                         }
                         ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
                     };
-                    let expr = if let expr::ExprKind::HierName(scope, id) = parent_expr.value {
+                    let expr = if let expr::ExprKind::HierName(id) = parent_expr.value {
                         expr::Expr {
-                            value: expr::ExprKind::HierName(scope, Spanned::new(
-                                HierId::Select(Box::new(id), Box::new(Spanned::new(DimKind::Value(Box::new(
+                            value: expr::ExprKind::HierName(
+                                HierId::Select(Box::new(Spanned::new(id, parent_expr.span)), Box::new(Spanned::new(DimKind::Value(Box::new(
                                     super::reconstruct::reconstruct_int(value, dim.span)
-                                )), dim.span))),
-                                span
-                            )),
+                                )), dim.span)))
+                            ),
                             ty: Self::type_of_hier(&hier),
                             span,
                         }
@@ -1385,8 +1385,8 @@ impl<'a> Elaborator<'a> {
                     _ => unreachable!(),
                 }
             }
-            ExprKind::HierName(ref scope, ref name) => {
-                let (hier, expr) = self.type_check_scoped_name(scope, name, expr.span);
+            ExprKind::HierName(ref name) => {
+                let (hier, expr) = self.type_check_hier_id(name, expr.span);
                 match hier {
                     Some(hier) => {
                         // Fold them into constant right away
@@ -1395,8 +1395,6 @@ impl<'a> Elaborator<'a> {
                             HierItem::Type(ref decl) => expr::ExprKind::Const(Val::Type(decl.ty.clone())),
                             HierItem::Enum(ref enu, index) =>
                                 expr::ExprKind::Const(Val::Int(enu.elements.borrow()[index].1.clone())),
-                            HierItem::GenVar(_) =>
-                                expr::ExprKind::HierName(scope.clone(), Spanned::new(name.clone(), expr.span)),
                             _ => expr.value,
                         };
                         expr::Expr {
@@ -2006,8 +2004,8 @@ impl<'a> Elaborator<'a> {
     pub fn eval_checked_expr(&mut self, expr: &expr::Expr) -> Val {
         match &expr.value {
             expr::ExprKind::Const(val) => val.clone(),
-            expr::ExprKind::HierName(scope, name) => {
-                match self.type_check_scoped_name(scope, name, expr.span).0 {
+            expr::ExprKind::HierName(name) => {
+                match self.type_check_hier_id(name, expr.span).0 {
                     Some(hier) => {
                         match hier {
                             HierItem::GenVar(ref genvar) => {
@@ -2275,8 +2273,8 @@ impl<'a> Elaborator<'a> {
             }
             // PrefixIncDec(IncDec, Option<Box<AttrInst>>, Box<Expr>),
             expr::ExprKind::PostfixIncDec(lhs, incdec) => {
-                if let expr::ExprKind::HierName(ref scope, ref name) = lhs.value {
-                    let hier = match self.type_check_scoped_name(scope, name, lhs.span).0 {
+                if let expr::ExprKind::HierName(ref name) = lhs.value {
+                    let hier = match self.type_check_hier_id(name, lhs.span).0 {
                         None => unimplemented!(),
                         Some(hier) => hier,
                     };

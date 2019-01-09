@@ -831,7 +831,7 @@ pub enum EventExpr {
 pub enum TimingCtrl {
     DelayCtrl(Box<Expr>),
     ExprEventCtrl(Box<EventExpr>),
-    NameEventCtrl(Option<Scope>, HierId),
+    NameEventCtrl(HierId),
     ImplicitEventCtrl,
     // CycleDelay
 }
@@ -871,7 +871,7 @@ pub enum ExprKind {
     Literal(Token),
     
     /// A hierachical name
-    HierName(Option<Scope>, HierId),
+    HierName(HierId),
 
     /// Empty queue initializer ("{}")
     EmptyQueue,
@@ -960,11 +960,11 @@ pub enum HierId {
     /// $root
     Root,
     /// this
-    This,
+    This(Option<Scope>),
     /// super or this.super
-    Super,
+    Super(Option<Scope>),
     /// a name
-    Name(Box<Ident>),
+    Name(Option<Scope>, Box<Ident>),
     /// a member select
     Member(Box<Spanned<HierId>>, Box<Ident>),
     /// a index select

@@ -218,8 +218,8 @@ impl<'a> Reconstructor<'a> {
     pub fn reconstruct_expr(&self, expr: &expr::Expr) -> ast::Expr {
         let kind = match expr.value {
             expr::ExprKind::Const(..) => unimplemented!(),
-            expr::ExprKind::HierName(ref scope, ref name) => {
-                ast::ExprKind::HierName(scope.clone(), name.value.clone())
+            expr::ExprKind::HierName(ref name) => {
+                ast::ExprKind::HierName(name.clone())
             }
             expr::ExprKind::EmptyQueue => unimplemented!(),
             expr::ExprKind::Concat(..) => unimplemented!(),
@@ -346,8 +346,10 @@ impl<'a> Reconstructor<'a> {
                 let enum_index = self.source.enums.iter().position(|x| x == enu).unwrap();
                 let element_name = enu.elements.borrow()[*index].0.clone();
                 let expr = Box::new(Spanned::new_unspanned(ExprKind::HierName(
-                    Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
-                    HierId::Name(Box::new(Ident::new_unspanned(format!("enum_{}_{}", enum_index, element_name)))),
+                    HierId::Name(
+                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
+                        Box::new(Ident::new_unspanned(format!("enum_{}_{}", enum_index, element_name)))
+                    )
                 )));
 
                 list.push(Item::ParamDecl(Box::new(ParamDecl {

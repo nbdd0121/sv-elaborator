@@ -649,7 +649,13 @@ impl PrettyPrint {
 
     fn print_hier_id(&mut self, obj: &HierId) {
         match obj {
-            HierId::Name(id) => self.append(format!("{}", id)),
+            HierId::Name(scope, id) => {
+                if let Some(scope) = scope {
+                    self.append(Self::get_scope(scope));
+                    self.append("::");
+                }
+                self.append(format!("{}", id));
+            }
             HierId::Member(name, id) => {
                 self.print_hier_id(name);
                 self.append(format!(".{}", id));
@@ -684,11 +690,7 @@ impl PrettyPrint {
                     }
                 }
             }
-            ExprKind::HierName(scope, name) => {
-                if let Some(scope) = scope {
-                    self.append(Self::get_scope(scope));
-                    self.append("::");
-                }
+            ExprKind::HierName(name) => {
                 self.print_hier_id(name);
             }
             ExprKind::Concat(list, select) => {

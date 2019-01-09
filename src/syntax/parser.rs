@@ -263,8 +263,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Unwrap `Option` with sensible error message
-    fn parse_unwrap<T: AstNode, F: FnMut(&mut Self) -> Option<T>> (
-        &mut self, mut f: F
+    fn parse_unwrap<T: AstNode, F: FnOnce(&mut Self) -> Option<T>> (
+        &mut self, f: F
     ) -> T {
         let result = f(self);
         self.unwrap(result)
@@ -1188,7 +1188,7 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expr();
         // This is a type import
         match expr.value {
-            ExprKind::HierName(None, HierId::Member(intf, ty)) => {
+            ExprKind::HierName(HierId::Member(intf, ty)) => {
                 let intf = *intf;
                 let id = self.expect_id();
                 self.expect(TokenKind::Semicolon);
@@ -1686,7 +1686,7 @@ impl<'a> Parser<'a> {
     fn conv_expr_to_type(&mut self, expr: Expr) -> Option<DataType> {
         match expr.value {
             ExprKind::Type(ty) => Some(*ty),
-            ExprKind::HierName(scope, mut id) => {
+            ExprKind::HierName(mut id) => {
                 // Convert select expression into dimension list.
                 let mut dimlist = Vec::new();
                 if let HierId::Select(name, dim) = id {
@@ -1696,11 +1696,11 @@ impl<'a> Parser<'a> {
                 dimlist.reverse();
 
                 // In data type, hierachical identifier is not allowed. It can only be
-                let name = match id {
-                    HierId::Name(name) => *name,
+                let (scope, name) = match id {
+                    HierId::Name(scope, name) => (scope, *name),
                     _ => {
                         self.diag.report_error("hierachical identifier cannot appear in data type", expr.span);
-                        Ident::new_unspanned("".to_owned())
+                        (None, Ident::new_unspanned("".to_owned()))
                     }
                 };
                 Some(Spanned::new(DataTypeKind::HierName(scope, name, dimlist), expr.span))
@@ -2606,10 +2606,8 @@ impl<'a> Parser<'a> {
                     }
                     _ => {
                         let scope = self.parse_scope();
-                        let id = self.parse_unwrap(Self::parse_hier_id);
-                        TimingCtrl::NameEventCtrl(
-                            scope, id.value
-                        )
+                        let id = self.parse_unwrap(|this| this.parse_hier_id(scope));
+                        TimingCtrl::NameEventCtrl(id.value)
                     }
                 }
             }
@@ -2768,7 +2766,7 @@ impl<'a> Parser<'a> {
                             if ty.is_some() {
                                 // When type is specified this must be a simple name
                                 match lhs.value {
-                                    ExprKind::HierName(None, HierId::Name(_)) => (),
+                                    ExprKind::HierName(HierId::Name(None, _)) => (),
                                     _ => {
                                         this.diag.report_error(
                                             "expecting loop variable name inside for initialization",
@@ -3316,22 +3314,15 @@ impl<'a> Parser<'a> {
             _ => {
                 let begin_span = self.peek().span;
                 let scope = self.parse_scope();
-                let mut id = self.parse_hier_id();
+                let mut id = self.parse_hier_id(scope);
 
                 // Not a primary expressison
-                if scope.is_none() && id.is_none() {
+                if id.is_none() {
                     None
                 } else {
-                    // If we've seen the scopes then we must need to see the id
-                    if scope.is_some() && id.is_none() {
-                        let span = self.peek().span;
-                        self.diag.report_span(Severity::Error, "expected identifiers after scope", span);
-                        // Error recovery
-                        id = Some(Spanned::new(HierId::Name(Box::new(Ident::new_unspanned("".to_owned()))), Span::none()))
-                    }
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);
-                    let mut expr = Spanned::new(ExprKind::HierName(scope, id.unwrap().value), span);
+                    let mut expr = Spanned::new(ExprKind::HierName(id.unwrap().value), span);
 
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern
@@ -3503,7 +3494,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse hierachical identifier
-    fn parse_hier_id(&mut self) -> Option<Spanned<HierId>> {
+    fn parse_hier_id(&mut self, scope: Option<Scope>) -> Option<Spanned<HierId>> {
         // Parse the leading hierachical name
         let mut id = match **self.peek() {
             TokenKind::Keyword(Keyword::This) => {
@@ -3512,27 +3503,40 @@ impl<'a> Parser<'a> {
                     if let TokenKind::Keyword(Keyword::Super) = self.peek_n(1).value {
                         self.consume();
                         let token2 = self.consume();
-                        Spanned::new(HierId::Super, token.span.merge(token2.span))
+                        Spanned::new(HierId::Super(scope), token.span.merge(token2.span))
                     } else {
-                        Spanned::new(HierId::This, token.span)
+                        Spanned::new(HierId::This(scope), token.span)
                     }
                 } else {
-                    Spanned::new(HierId::This, token.span)
+                    Spanned::new(HierId::This(scope), token.span)
                 }
             }
             TokenKind::Keyword(Keyword::Super) => {
                 let token = self.consume();
-                Spanned::new(HierId::Super, token.span)
+                Spanned::new(HierId::Super(scope), token.span)
             }
             TokenKind::Keyword(Keyword::Root) => {
                 let token = self.consume();
+                if scope.is_some() {
+                    self.diag.report_error("$root cannot follow a scope", token.span);
+                }
                 Spanned::new(HierId::Root, token.span)
             }
             TokenKind::Id(_) => {
                 let span = self.peek().span;
-                Spanned::new(HierId::Name(Box::new(self.expect_id())), span)
+                Spanned::new(HierId::Name(scope, Box::new(self.expect_id())), span)
             }
-            _ => return None,
+            _ => {
+                // If we've seen the scopes then we must need to see the id
+                if scope.is_some() {
+                    let span = self.peek().span;
+                    self.diag.report_span(Severity::Error, "expected identifiers after scope", span);
+                    // Error recovery
+                    return Some(Spanned::new(HierId::Name(scope, Box::new(Ident::new_unspanned("".to_owned()))), Span::none()))
+                } else {
+                    return None
+                }
+            }
         };
 
         loop {

@@ -7,7 +7,7 @@ use number::LogicVec;
 use super::ty::Ty;
 use syntax::ast::{IncDec, UnaryOp, BinaryOp, Spanned};
 
-use syntax::ast::{Scope, HierId, DataType, AssignPattern, Ident};
+use syntax::ast::{HierId, DataType, AssignPattern, Ident};
 
 /// A typed value with concrete data type.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +43,7 @@ pub enum ExprKind {
     Const(Val),
     
     /// A hierachical name
-    HierName(Option<Scope>, Spanned<HierId>),
+    HierName(HierId),
 
     /// Empty queue initializer ("{}")
     EmptyQueue,
