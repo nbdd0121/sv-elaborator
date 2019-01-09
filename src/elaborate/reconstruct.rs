@@ -171,7 +171,16 @@ impl<'a> Reconstructor<'a> {
             Ty::Type => DataTypeKind::Type,
             Ty::Int(subty) => return (self.reconstruct_ty_int(subty, span), Vec::new()),
             Ty::String => DataTypeKind::String,
-            Ty::FixStr(_) => DataTypeKind::String,
+            Ty::FixStr(_) => DataTypeKind::String, // TODO: May need to fix this
+            Ty::Array(base, ub, lb) => {
+                let (ty, mut dim) = self.reconstruct_ty(base, Span::none());
+                let ast_dim = Spanned::new_unspanned(DimKind::Range(
+                    Box::new(reconstruct_int(*ub, Span::none())),
+                    Box::new(reconstruct_int(*lb, Span::none()))
+                ));
+                dim.insert(0, ast_dim);
+                return (ty, dim)
+            }
             v => unimplemented!("{:?}", v),
         };
         (Spanned::new(kind, span), Vec::new())

@@ -561,10 +561,30 @@ impl<'a> Elaborator<'a> {
                 }
                 let ty = self.eval_ty(&decl.ty);
                 for item in &decl.list {
+                    let mut var_ty = ty.clone();
+                    for dim in item.dim.iter().rev() {
+                        match &dim.value {
+                            DimKind::Range(a, b) => {
+                                let ub = self.eval_expr_i32(a);
+                                let lb = self.eval_expr_i32(b);
+                                var_ty = Ty::Array(Box::new(var_ty), ub, lb);
+                            }
+                            DimKind::Value(a) => {
+                                let mut size = self.eval_expr_i32(a);
+                                if size <= 0 {
+                                    self.diag.report_error("dimension must be positive", a.span);
+                                    // Error recovery
+                                    size = 1;
+                                }
+                                var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
+                            }
+                            _ => unimplemented!(),
+                        }
+                    }
                     let init = item.init.as_ref().map(|expr| Box::new(self.type_check(expr, Some(&ty))));
                     let decl = Rc::new(hier::DataDecl {
                         lifetime: decl.lifetime,
-                        ty: ty.clone(),
+                        ty: var_ty,
                         name: item.name.clone(),
                         init,
                     });

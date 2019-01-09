@@ -137,5 +137,6 @@ pub enum Ty {
     Chandle,
     Event,
     Void,
+    Array(Box<Ty>, i32, i32),
     // TODO: Also include unpacked struct, union, array here?
 }
