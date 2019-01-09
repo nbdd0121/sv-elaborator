@@ -368,6 +368,7 @@ impl<'a> Elaborator<'a> {
                             // Get the instance
                             let decl = match hier {
                                 HierItem::Instance(decl) => Rc::clone(&decl.inst),
+                                HierItem::InterfacePort(decl) => Rc::clone(&decl.inst),
                                 HierItem::InstancePart { inst , .. } => inst,
                                 _ => {
                                     self.diag.report_error("expected interface instance", conn.span);
@@ -555,11 +556,20 @@ impl<'a> Elaborator<'a> {
                 }
             }
             Item::DataDecl(decl) => {
-                for item in &decl.list {
-                    self.add_to_scope(&item.name, HierItem::OtherName);
+                if decl.has_const {
+                    self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
                 }
-                // Need to clone AST here.
-                self.add_item(HierItem::Other(Rc::new(Item::DataDecl(decl.clone()))));
+                let ty = self.eval_ty(&decl.ty);
+                for item in &decl.list {
+                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check(expr, Some(&ty))));
+                    let decl = Rc::new(hier::DataDecl {
+                        lifetime: decl.lifetime,
+                        ty: ty.clone(),
+                        name: item.name.clone(),
+                        init,
+                    });
+                    self.add_to_scope(&item.name, HierItem::DataDecl(decl));
+                }
             }
             Item::Typedef(_, ty, name, dim) => {
                 let ty = self.eval_ty(ty);
@@ -1080,10 +1090,11 @@ impl<'a> Elaborator<'a> {
             HierItem::Param(decl) => decl.ty.clone(),
             HierItem::Type(_) => Ty::Type,
             HierItem::DataPort(decl) => decl.ty.clone(),
+            HierItem::DataDecl(decl) => decl.ty.clone(),
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::Other(_) => unimplemented!(),
-            HierItem::OtherName => Ty::Void, //TODO
+            HierItem::OtherName => unimplemented!(),
             HierItem::Instance(_) => Ty::Void, // Not typable
             HierItem::InstancePart{ .. } => Ty::Void, // Not typable
             HierItem::GenBlock(_) => Ty::Void, // Not typable
@@ -1148,6 +1159,22 @@ impl<'a> Elaborator<'a> {
             };
             let hier = match item {
                 HierItem::InterfacePort(decl) => {
+                    if !decl.dim.is_empty() {
+                        self.diag.report_fatal(
+                            "this is an interface port array, not an interface",
+                            parent.span
+                        )
+                    }
+                    let item = match decl.inst.scope.names.get(&name.value) {
+                        None => self.diag.report_fatal(
+                            format!("cannot find {} in interface", name),
+                            name.span
+                        ),
+                        Some(v) => v.clone(),
+                    };
+                    item
+                }
+                HierItem::Instance(decl) => {
                     if !decl.dim.is_empty() {
                         self.diag.report_fatal(
                             "this is an interface port array, not an interface",
@@ -1231,22 +1258,7 @@ impl<'a> Elaborator<'a> {
                     );
                 }
             };
-            let value = if let (_, Val::Int(val)) = self.eval_expr(value, None) {
-                match val.get_two_state().and_then(|v| v.to_i32()) {
-                    None => {
-                        self.diag.report_fatal(
-                            "constant bit select must evaluate to two-state number",
-                            dim.span
-                        );
-                    },
-                    Some(v) => v,
-                }
-            } else {
-                self.diag.report_fatal(
-                    "constant bit select must evaluate to integral number",
-                    dim.span
-                );
-            };
+            let value = self.eval_expr_i32(value);
             let hier = match item {
                 HierItem::Instance(ref inst) => {
                     match inst.dim.first() {
@@ -1337,6 +1349,32 @@ impl<'a> Elaborator<'a> {
                 DimKind::Value(ref value) => {
                     let expr = self.type_check_int(value, None, None);
                     (Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span), 1)
+                }
+                DimKind::Range(ref ub, ref lb) => {
+                    let ub = self.eval_expr_i32(ub);
+                    let lb = self.eval_expr_i32(lb);
+                    let size = (cmp::max(ub, lb) - cmp::min(ub, lb) + 1) as usize;
+                    (Spanned::new(expr::DimKind::Range(ub, lb), dim.span), size)
+                }
+                DimKind::PlusRange(ref value, ref width) => {
+                    let expr = self.type_check_int(value, None, None);
+                    let mut w = self.eval_expr_i32(width);
+                    if w <= 0 {
+                        self.diag.report_error("width must be positive", width.span);
+                        // Error recovery
+                        w = 1;
+                    }
+                    (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w as usize)
+                }
+                DimKind::MinusRange(ref value, ref width) => {
+                    let expr = self.type_check_int(value, None, None);
+                    let mut w = self.eval_expr_i32(width);
+                    if w <= 0 {
+                        self.diag.report_error("width must be positive", width.span);
+                        // Error recovery
+                        w = 1;
+                    }
+                    (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w as usize)
                 }
                 _ => {
                     self.diag.report_fatal(
@@ -1448,7 +1486,23 @@ impl<'a> Elaborator<'a> {
                 }
             }
             // MultConcat(Box<Expr>, Box<Expr>),
-            // AssignPattern(Option<Box<DataType>>, AssignPattern),
+            ExprKind::AssignPattern(None, _) => {
+                // this cannot appear in self-determined context. It must be within an assignment
+                // context.
+                self.diag.report_fatal(
+                    "untyped assignment pattern can only appear in assignment-like context",
+                    expr.span
+                );
+            },
+            ExprKind::AssignPattern(Some(ref ty), ref pattern) => {
+                let ty = self.eval_ty(ty);
+                // TODO: Also evaluate within assignment pattern
+                expr::Expr {
+                    value: expr::ExprKind::AssignPattern(Box::new(ty.clone()), pattern.clone()),
+                    span: expr.span,
+                    ty: ty,
+                }
+            }
             // Select(Box<Expr>, Dim),
             // Member(Box<Expr>, Ident),
             ExprKind::SysTfCall(_) => {
@@ -1506,7 +1560,7 @@ impl<'a> Elaborator<'a> {
                             ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
                         }
                     }
-                    _ => unimplemented!(),
+                    _ => unimplemented!("{:?}", call.task),
                 }
             }
             // ConstCast(Box<Expr>),
@@ -1843,12 +1897,7 @@ impl<'a> Elaborator<'a> {
                             Ty::Int(intty) => {
                                 *val = val.extend_or_trunc(ctx.1);
                                 val.signed = ctx.0;
-                                if let IntTy::SimpleVec(width, _, sign) = intty {
-                                    *sign = ctx.0;
-                                    *width = ctx.1;
-                                } else {
-                                    unimplemented!();
-                                }
+                                *intty = IntTy::SimpleVec(ctx.1, intty.two_state(), ctx.0);
                             }
                             _ => unreachable!(),
                         }
@@ -2332,6 +2381,25 @@ impl<'a> Elaborator<'a> {
         if let (Ty::Int(ty), Val::Int(val)) = (conv.ty, val) { (ty, val) } else { unreachable!() }
     }
 
+    pub fn eval_expr_i32(&mut self, expr: &Expr) -> i32 {
+        if let (_, Val::Int(val)) = self.eval_expr(expr, None) {
+            match val.get_two_state().and_then(|v| v.to_i32()) {
+                None => {
+                    self.diag.report_fatal(
+                        "this expression must evaluate to two-state number",
+                        expr.span
+                    );
+                },
+                Some(v) => v,
+            }
+        } else {
+            self.diag.report_fatal(
+                "this expression must evaluate to integral number",
+                expr.span
+            );
+        }
+    }
+
     pub fn eval_expr(&mut self, expr: &Expr, target: Option<&Ty>) -> (Ty, Val) {
         let conv = self.type_check(&expr, target);
         let val = self.eval_checked_expr(&conv);
@@ -2343,25 +2411,13 @@ impl<'a> Elaborator<'a> {
         dim.iter().map(|dim| {
             match &dim.value {
                 DimKind::Range(a, b) => {
-                    let (_, ca) = self.eval_expr(a, None);
-                    let (_, cb) = self.eval_expr(b, None);
-                    match (ca, cb) {
-                        (Val::Int(av), Val::Int(bv)) => {
-                            let (ub, lb) = (av.get_two_state().and_then(|x| x.to_i32()).unwrap(), bv.get_two_state().and_then(|x| x.to_i32()).unwrap());
-                            (ub, lb)
-                        }
-                        _ => unreachable!(),
-                    }
+                    let ub = self.eval_expr_i32(a);
+                    let lb = self.eval_expr_i32(b);
+                    (ub, lb)
                 }
                 DimKind::Value(a) => {
-                    let (_, ca) = self.eval_expr(a, None);
-                    match ca {
-                        Val::Int(av) => {
-                            let size = av.get_two_state().and_then(|x| x.to_i32()).unwrap();
-                            (0, size - 1)
-                        }
-                        _ => unreachable!(),
-                    }
+                    let size = self.eval_expr_i32(a);
+                    (0, size - 1)
                 }
                 _ => self.diag.report_fatal("unexpected dimension format", dim.span),
             }

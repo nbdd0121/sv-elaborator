@@ -171,9 +171,16 @@ impl<'a> Reconstructor<'a> {
             Ty::Type => DataTypeKind::Type,
             Ty::Int(subty) => return (self.reconstruct_ty_int(subty, span), Vec::new()),
             Ty::String => DataTypeKind::String,
+            Ty::FixStr(_) => DataTypeKind::String,
             v => unimplemented!("{:?}", v),
         };
         (Spanned::new(kind, span), Vec::new())
+    }
+
+    pub fn reconstruct_ty_simple(&self, ty: &Ty) -> DataType {
+        let (ty, dim) = self.reconstruct_ty(ty, Span::none());
+        assert!(dim.len() == 0);
+        ty
     }
 
     pub fn reconstruct_val_int(&self, ty: &IntTy, val: &LogicVec, span: Span) -> Expr {
@@ -181,7 +188,7 @@ impl<'a> Reconstructor<'a> {
             IntTy::SimpleVec(_, false, _) => {
                 self.reconstruct_const(val, span)
             }
-            IntTy::Enum(_) => {
+            _ => {
                 let ty = self.reconstruct_ty_int(ty, span);
                 let val = self.reconstruct_const(val, span);
                 Spanned::new(ExprKind::TypeCast(
@@ -189,7 +196,6 @@ impl<'a> Reconstructor<'a> {
                     Box::new(val)
                 ), span)
             }
-            _ => unimplemented!(),
         }
     }
 
@@ -215,27 +221,78 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, span)
     }
 
+    pub fn reconstruct_dim(&self, dim: &expr::Dim) -> ast::Dim {
+        let kind = match dim.value {
+            expr::DimKind::Value(ref expr) => {
+                ast::DimKind::Value(Box::new(self.reconstruct_expr(expr)))
+            }
+            expr::DimKind::Range(ub, lb) => {
+                let ast_ub = reconstruct_int(ub, Span::none());
+                let ast_lb = reconstruct_int(lb, Span::none());
+                ast::DimKind::Range(Box::new(ast_ub), Box::new(ast_lb))
+            }
+            expr::DimKind::PlusRange(ref expr, width) => {
+                let ast_expr = self.reconstruct_expr(expr);
+                let ast_width = reconstruct_int(width, Span::none());
+                ast::DimKind::PlusRange(Box::new(ast_expr), Box::new(ast_width))
+            }
+            expr::DimKind::MinusRange(ref expr, width) => {
+                let ast_expr = self.reconstruct_expr(expr);
+                let ast_width = reconstruct_int(width, Span::none());
+                ast::DimKind::MinusRange(Box::new(ast_expr), Box::new(ast_width))
+            }
+        };
+        Spanned::new(kind, dim.span)
+    }
+
     pub fn reconstruct_expr(&self, expr: &expr::Expr) -> ast::Expr {
         let kind = match expr.value {
-            expr::ExprKind::Const(..) => unimplemented!(),
+            expr::ExprKind::Const(ref val) => {
+                self.reconstruct_val(&expr.ty, val, expr.span).value
+            }
             expr::ExprKind::HierName(ref name) => {
                 ast::ExprKind::HierName(name.clone())
             }
             expr::ExprKind::EmptyQueue => unimplemented!(),
-            expr::ExprKind::Concat(..) => unimplemented!(),
+            expr::ExprKind::Concat(ref list) => {
+                let ast_list = list.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                ast::ExprKind::Concat(ast_list, None)
+            }
             expr::ExprKind::MultConcat(..) => unimplemented!(),
-            expr::ExprKind::AssignPattern(..) => unimplemented!(),
-            expr::ExprKind::Select(..) => unimplemented!(),
+            expr::ExprKind::AssignPattern(ref ty, ref pattern) => {
+                let ast_ty = Some(Box::new(self.reconstruct_ty_simple(ty)));
+                ast::ExprKind::AssignPattern(ast_ty, pattern.clone())
+            }
+            expr::ExprKind::Select(ref parent, ref dim) => {
+                let ast_parent = self.reconstruct_expr(parent);
+                let ast_dim = self.reconstruct_dim(dim);
+                match ast_parent.value {
+                    ast::ExprKind::HierName(name) => {
+                        let spanned = Spanned::new(name, ast_parent.span);
+                        ast::ExprKind::HierName(HierId::Select(Box::new(spanned), Box::new(ast_dim)))
+                    }
+                    _ => unimplemented!(),
+                }
+            }
             expr::ExprKind::Member(..) => unimplemented!(),
             expr::ExprKind::SysTfCall(..) => unimplemented!(),
             expr::ExprKind::ConstCast(..) => unimplemented!(),
-            expr::ExprKind::TypeCast(..) => unimplemented!(),
+            expr::ExprKind::TypeCast(ref ty, ref rhs) => {
+                let ast_ty = self.reconstruct_ty_simple(ty);
+                let ast_ty_expr = Spanned::new(ast::ExprKind::Type(Box::new(ast_ty)), Span::none());
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::TypeCast(Box::new(ast_ty_expr), Box::new(ast_rhs))
+            }
             expr::ExprKind::SignCast(..) => unimplemented!(),
             expr::ExprKind::WidthCast(..) => unimplemented!(),
             expr::ExprKind::Unary(op, ref expr) => {
                 ast::ExprKind::Unary(op, None, Box::new(self.reconstruct_expr(expr)))
             }
-            expr::ExprKind::Binary(..) => unimplemented!(),
+            expr::ExprKind::Binary(ref lhs, op, ref rhs) => {
+                let ast_lhs = self.reconstruct_expr(lhs);
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::Binary(Box::new(ast_lhs), op, None, Box::new(ast_rhs))
+            }
             expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
             expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
             expr::ExprKind::Assign(..) => unimplemented!(),
@@ -265,6 +322,21 @@ impl<'a> Reconstructor<'a> {
             HierItem::Type(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
                 list.push(Item::Typedef(None, Box::new(ty), Box::new(decl.name.clone()), dim));
+            }
+            HierItem::DataDecl(decl) => {
+                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                list.push(Item::DataDecl(Box::new(DataDecl {
+                    attr: None,
+                    has_const: false,
+                    lifetime: decl.lifetime,
+                    ty,
+                    list: vec![DeclAssign {
+                        name: decl.name.clone(),
+                        dim,
+                        init: init,
+                    }]
+                })));
             }
             HierItem::Design(decl) => {
                 // Reconstruct all instantiations and display them here

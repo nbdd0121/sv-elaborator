@@ -36,6 +36,15 @@ pub struct TypedefDecl {
     pub name: Ident,
 }
 
+/// Resolved variable declaration
+#[derive(Debug)]
+pub struct DataDecl {
+    pub lifetime: ast::Lifetime,
+    pub ty: Ty,
+    pub name: Ident,
+    pub init: Option<Box<Expr>>,
+}
+
 /// Un-instantiated module during resolution and elaboration
 pub struct DesignDecl {
     /// The AST of this design declaration
@@ -153,7 +162,9 @@ pub enum HierItem {
     InterfacePort(Rc<InterfacePortDecl>),
     /// An design declaration that is not instantiated
     Design(Rc<DesignDecl>),
-    /// Other items that we don't really care in elaboration, e.g. data declaration
+    /// Data declaration
+    DataDecl(Rc<DataDecl>),
+    /// Other items that we don't really care in elaboration
     /// We might need to treat a little bit different to support constant functions though.
     Other(Rc<ast::Item>),
     OtherName,

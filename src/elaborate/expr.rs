@@ -7,7 +7,7 @@ use number::LogicVec;
 use super::ty::Ty;
 use syntax::ast::{IncDec, UnaryOp, BinaryOp, Spanned};
 
-use syntax::ast::{HierId, DataType, AssignPattern, Ident};
+use syntax::ast::{HierId, AssignPattern, Ident};
 
 /// A typed value with concrete data type.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +55,7 @@ pub enum ExprKind {
     MultConcat(Box<Expr>, Box<Expr>),
 
     /// Assignment pattern expression
-    AssignPattern(Option<Box<DataType>>, AssignPattern),
+    AssignPattern(Box<Ty>, AssignPattern),
 
     /// Element select
     Select(Box<Expr>, Dim),
