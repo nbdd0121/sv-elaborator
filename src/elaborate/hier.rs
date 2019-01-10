@@ -1,6 +1,6 @@
 //! This module represent elaborated hierachical items.
 
-use syntax::ast::{self, Ident};
+use syntax::ast::{self, Ident, SymbolId};
 use syntax::tokens;
 
 use std::rc::Rc;
@@ -120,6 +120,8 @@ pub struct HierScope {
     pub items: Vec<HierItem>,
     /// Index into items from their names
     pub names: HashMap<String, usize>,
+    /// Lexical map from symbol to item
+    pub symbols: HashMap<SymbolId, usize>,
 }
 
 impl HierScope {
@@ -127,6 +129,7 @@ impl HierScope {
         Self {
             items: Vec::new(),
             names: HashMap::new(),
+            symbols: HashMap::new(),
         }
     }
 

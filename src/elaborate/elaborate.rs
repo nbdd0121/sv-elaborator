@@ -48,9 +48,6 @@ struct Elaborator<'a> {
     toplevel_name: &'a str,
 
     scopes: Vec<HierScope>,
-    /// Lexical symbolic mapping. Necessary for nested modules which isn't instantiated at the
-    /// lexical scope where they're defined, so we need to use the marked info from resolver.
-    symbols: Vec<HashMap<SymbolId, HierItem>>,
 
     units: Vec<HierScope>,
 
@@ -73,7 +70,6 @@ impl<'a> Elaborator<'a> {
             toplevel_name: toplevel,
 
             scopes: Vec::new(),
-            symbols: Vec::new(),
 
             units: Vec::new(),
             pkgs: HashMap::new(),
@@ -84,9 +80,9 @@ impl<'a> Elaborator<'a> {
     }
 
     fn resolve_opt(&self, name: &Ident) -> Option<HierItem> {
-        for scope in self.symbols.iter().rev() {
-            if let Some(v) = scope.get(&name.symbol) {
-                return Some(v.clone())
+        for scope in self.scopes.iter().rev() {
+            if let Some(v) = scope.symbols.get(&name.symbol) {
+                return Some(scope.items[*v].clone())
             }
         }
         None
@@ -103,10 +99,9 @@ impl<'a> Elaborator<'a> {
     pub fn add_to_scope(&mut self, ident: &Ident, item: HierItem) {
         let scope = self.scopes.last_mut().unwrap();
         let index = scope.items.len();
-        scope.items.push(item.clone());
+        scope.items.push(item);
         scope.names.insert(ident.value.to_owned(), index);
-        // Insert the identifier into lexical symbol lookup table.
-        self.symbols.last_mut().unwrap().insert(ident.symbol, item);
+        scope.symbols.insert(ident.symbol, index);
     }
 
     pub fn add_item(&mut self, item: HierItem) {
@@ -120,7 +115,6 @@ impl<'a> Elaborator<'a> {
     ) -> Rc<hier::DesignInstantiation> {
         // Create new hiearchy scope.
         self.scopes.push(HierScope::new());
-        self.symbols.push(HashMap::new());
 
         // Add instantiated parameters to the scope.
         for decl in param.param.iter() {
@@ -182,7 +176,6 @@ impl<'a> Elaborator<'a> {
         }
 
         let scope = self.scopes.pop().unwrap();
-        self.symbols.pop();
         let param_rc = Rc::new(param);
         let mut inst_list = decl.instances.borrow_mut();
 
@@ -213,7 +206,6 @@ impl<'a> Elaborator<'a> {
         // First we are going to evaluate parameters.
         // Introduce a temporary scope for dependent parameters.
         self.scopes.push(HierScope::new());
-        self.symbols.push(HashMap::new());
 
         if let Some(param) = &item.ast.param {
             // First build list of parameter names
@@ -303,9 +295,6 @@ impl<'a> Elaborator<'a> {
 
         // Now tear down the temporary scope and use its content to build a parameter map.
         // This avoids having to clone the values.
-        self.symbols.pop();
-        // The following two statements must not be combined as we need scope.names to be dropped
-        // before calling unwrap on Rc.
         let items = self.scopes.pop().unwrap().items;
         let map = Rc::new(items.into_iter().map(|x| {
             if let HierItem::Param(v) = x {
@@ -426,7 +415,6 @@ impl<'a> Elaborator<'a> {
         // First we are going to evaluate parameters.
         // Introduce a temporary scope for dependent parameters.
         self.scopes.push(HierScope::new());
-        self.symbols.push(HashMap::new());
 
         if let Some(param) = &module.ast.param {
             for param in param {
@@ -459,9 +447,6 @@ impl<'a> Elaborator<'a> {
 
         // Now tear down the temporary scope and use its content to build a parameter map.
         // This avoids having to clone the values.
-        self.symbols.pop();
-        // The following two statements must not be combined as we need scope.names to be dropped
-        // before calling unwrap on Rc.
         let items = self.scopes.pop().unwrap().items;
         let map = Rc::new(items.into_iter().map(|x| {
             if let HierItem::Param(v) = x {
@@ -514,12 +499,10 @@ impl<'a> Elaborator<'a> {
             Item::PkgDecl(decl) => {
                 // Create new hiearchy scope.
                 self.scopes.push(HierScope::new());
-                self.symbols.push(HashMap::new());
                 for item in &decl.items {
                     self.elaborate_item(item);
                 }
                 let scope = self.scopes.pop().unwrap();
-                self.symbols.pop();
                 let decl = hier::PkgDecl {
                     name: decl.name.clone(),
                     scope: scope,
@@ -658,7 +641,6 @@ impl<'a> Elaborator<'a> {
 
                 // This scope is only for genvar
                 self.scopes.push(HierScope::new());
-                self.symbols.push(HashMap::new());
                 let genvar = Rc::new(hier::GenVar {
                     name: gen.id.clone(),
                     value: RefCell::new(0),
@@ -706,7 +688,6 @@ impl<'a> Elaborator<'a> {
 
                     // Elaborate items within the gen block
                     self.scopes.push(HierScope::new());
-                    self.symbols.push(HashMap::new());
 
                     // The genvar is automatically converted to a localparam within the block
                     let genvar_item = HierItem::Param(Rc::new(hier::ParamDecl {
@@ -722,7 +703,6 @@ impl<'a> Elaborator<'a> {
                     }
 
                     let scope = self.scopes.pop().unwrap();
-                    self.symbols.pop();
                     let genblk = Rc::new(hier::GenBlock {
                         name: gen.block.name.as_ref().map(|name| {
                             Box::new(Ident::new_unspanned(format!("{}_{}", name, val)))
@@ -735,7 +715,6 @@ impl<'a> Elaborator<'a> {
                     self.eval_expr(&gen.update, None);
                 }
                 self.scopes.pop();
-                self.symbols.pop();
             }
             Item::IfGen(ifgen) => {
                 // First figure out which block to instantiate
@@ -766,12 +745,10 @@ impl<'a> Elaborator<'a> {
 
                 if let Some(block) = block {
                     self.scopes.push(HierScope::new());
-                    self.symbols.push(HashMap::new());
                     for item in &block.items {
                         self.elaborate_item(item);
                     }
                     let scope = self.scopes.pop().unwrap();
-                    self.symbols.pop();
                     let decl = HierItem::GenBlock(Rc::new(hier::GenBlock {
                         name: block.name.clone(),
                         scope
@@ -808,7 +785,6 @@ impl<'a> Elaborator<'a> {
             Item::ModportDecl(_, list) => {
                 for (name, decl) in list {
                     self.scopes.push(HierScope::new());
-                    self.symbols.push(HashMap::new());
                     for port in decl {
                         match port {
                             ModportPortDecl::Simple(_, dir, list) => {
@@ -831,7 +807,6 @@ impl<'a> Elaborator<'a> {
                             ModportPortDecl::Clocking(..) => unimplemented!(),
                         }
                     }
-                    self.symbols.pop();
                     let scope = self.scopes.pop().unwrap();
                     let modport = Rc::new(hier::Modport {
                         name: name.clone(),
@@ -849,7 +824,6 @@ impl<'a> Elaborator<'a> {
 
     pub fn elaborate(&mut self, items: &Vec<Vec<Item>>) {
         self.scopes.push(HierScope::new());
-        self.symbols.push(HashMap::new());
 
         // Walk through for first time to add designs into global symbol list
         for items in items {
@@ -860,11 +834,25 @@ impl<'a> Elaborator<'a> {
             }
         }
 
-        // Pop the scope out. Leave the global symbol list in though.
-        let scope = self.scopes.pop().unwrap();
+        let mut modules_list = self.scopes[0].items.clone();
+        modules_list.reverse();
+
+        for items in items {
+            self.scopes.push(HierScope::new());
+            for item in items {
+                if let Item::DesignDecl(_) = item {
+                    // This is processed already in the first iteration, so do not elaborate them
+                    // again. But do add them to compilation-unit local item list.
+                    self.scopes.last_mut().unwrap().items.push(modules_list.pop().unwrap());
+                } else {
+                    self.elaborate_item(&item);
+                }
+            }
+            self.units.push(self.scopes.pop().unwrap());
+        }
 
         // Find the top-level module
-        let toplevel = match scope.find(self.toplevel_name) {
+        let toplevel = match self.scopes[0].find(self.toplevel_name) {
             Some(HierItem::Design(item)) => item.clone(),
             _ => {
                 self.diag.report_error(
@@ -874,27 +862,6 @@ impl<'a> Elaborator<'a> {
                 return;
             }
         };
-
-        let mut modules_list = scope.items;
-        modules_list.reverse();
-
-        for items in items {
-            self.scopes.push(HierScope::new());
-            self.symbols.push(HashMap::new());
-            for item in items {
-                if let Item::DesignDecl(_) = item {
-                    // This is processed already in the first iteration, so do not elaborate them
-                    // again. But do pop them from global item list and add them to compilation-
-                    // unit local item list.
-                    self.scopes.last_mut().unwrap().items.push(modules_list.pop().unwrap());
-                } else {
-                    self.elaborate_item(&item);
-                }
-            }
-            self.symbols.pop();
-            self.units.push(self.scopes.pop().unwrap());
-        }
-
         self.elaborate_toplevel(toplevel);
     }
 
