@@ -1,9 +1,9 @@
 mod ast_visit;
 mod resolve;
 
-mod ty;
-mod expr;
-mod hier;
+pub mod ty;
+pub mod expr;
+pub mod hier;
 mod reconstruct;
 mod elaborate;
 

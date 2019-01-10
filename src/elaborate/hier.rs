@@ -65,6 +65,7 @@ pub struct DesignParam {
 }
 
 /// Represent an instantiated design unit.
+#[derive(Clone)]
 pub struct DesignInstantiation {
     /// Pointer to the design declaration
     pub ast: Rc<ast::DesignDecl>,

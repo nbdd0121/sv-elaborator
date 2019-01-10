@@ -13,6 +13,7 @@ mod source;
 mod number;
 mod printer;
 mod elaborate;
+mod lowering;
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -125,13 +126,15 @@ fn main() {
         return;
     }
 
-    let elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
+    let mut elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
         None => "chip_top",
         Some(ref v) => v,
     });
 
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { return; }
+
+    lowering::type_param_elim(&mut elaborated);
 
     let files = elaborate::reconstruct(&elaborated);
 
