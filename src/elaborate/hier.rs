@@ -119,7 +119,7 @@ pub struct HierScope {
     /// All items, either named or un-named, under this scope.
     pub items: Vec<HierItem>,
     /// Index into items from their names
-    pub names: HashMap<String, HierItem>,
+    pub names: HashMap<String, usize>,
 }
 
 impl HierScope {
@@ -127,6 +127,13 @@ impl HierScope {
         Self {
             items: Vec::new(),
             names: HashMap::new(),
+        }
+    }
+
+    pub fn find<'a>(&'a self, name: &str) -> Option<&'a HierItem> {
+        match self.names.get(name) {
+            None => None,
+            Some(index) => Some(&self.items[*index])
         }
     }
 }

@@ -99,18 +99,12 @@ impl<'a> Elaborator<'a> {
         }
     }
 
-    /// Insert item to scope but not symbol list.
-    pub fn add_to_scope_only(&mut self, ident: &str, item: HierItem) {
-        let scope = self.scopes.last_mut().unwrap();
-        scope.items.push(item.clone());
-        scope.names.insert(ident.to_owned(), item.clone());
-    }
-
+    /// Insert the identifier into scope.
     pub fn add_to_scope(&mut self, ident: &Ident, item: HierItem) {
-        // Insert the identifier into scope.
         let scope = self.scopes.last_mut().unwrap();
+        let index = scope.items.len();
         scope.items.push(item.clone());
-        scope.names.insert(ident.value.to_owned(), item.clone());
+        scope.names.insert(ident.value.to_owned(), index);
         // Insert the identifier into lexical symbol lookup table.
         self.symbols.last_mut().unwrap().insert(ident.symbol, item);
     }
@@ -158,7 +152,7 @@ impl<'a> Elaborator<'a> {
                         let modport = match modport {
                             None => None,
                             Some(modport) => {
-                                match instance.scope.names.get(&modport.value) {
+                                match instance.scope.find(&modport) {
                                     Some(HierItem::Modport(modport)) => Some(modport.clone()),
                                     _ => {
                                         self.diag.report_fatal(
@@ -618,7 +612,7 @@ impl<'a> Elaborator<'a> {
                     }
                 };
                 // Find ty inside the interface
-                let item = match inst.scope.names.get(&ty.value) {
+                let item = match inst.scope.find(&ty) {
                     None => {
                         self.diag.report_fatal("cannot find this in interface port", name.span);
                     }
@@ -814,6 +808,7 @@ impl<'a> Elaborator<'a> {
             Item::ModportDecl(_, list) => {
                 for (name, decl) in list {
                     self.scopes.push(HierScope::new());
+                    self.symbols.push(HashMap::new());
                     for port in decl {
                         match port {
                             ModportPortDecl::Simple(_, dir, list) => {
@@ -827,7 +822,7 @@ impl<'a> Elaborator<'a> {
                                                 ty: Ty::Void,
                                                 init: None,
                                             });
-                                            self.add_to_scope_only(name, HierItem::DataPort(item));
+                                            self.add_to_scope(name, HierItem::DataPort(item));
                                         }
                                         ModportSimplePort::Explicit(..) => unimplemented!(),
                                     }
@@ -836,6 +831,7 @@ impl<'a> Elaborator<'a> {
                             ModportPortDecl::Clocking(..) => unimplemented!(),
                         }
                     }
+                    self.symbols.pop();
                     let scope = self.scopes.pop().unwrap();
                     let modport = Rc::new(hier::Modport {
                         name: name.clone(),
@@ -866,7 +862,19 @@ impl<'a> Elaborator<'a> {
 
         // Pop the scope out. Leave the global symbol list in though.
         let scope = self.scopes.pop().unwrap();
-        let modules_map = scope.names;
+
+        // Find the top-level module
+        let toplevel = match scope.find(self.toplevel_name) {
+            Some(HierItem::Design(item)) => item.clone(),
+            _ => {
+                self.diag.report_error(
+                    format!("cannot find toplevel module {}", self.toplevel_name),
+                    Span::none()
+                );
+                return;
+            }
+        };
+
         let mut modules_list = scope.items;
         modules_list.reverse();
 
@@ -887,19 +895,7 @@ impl<'a> Elaborator<'a> {
             self.units.push(self.scopes.pop().unwrap());
         }
 
-        // Find the top-level module
-        let item = match modules_map.get(self.toplevel_name) {
-            Some(HierItem::Design(item)) => item.clone(),
-            _ => {
-                self.diag.report_error(
-                    format!("cannot find toplevel module {}", self.toplevel_name),
-                    Span::none()
-                );
-                return;
-            }
-        };
-
-        self.elaborate_toplevel(item);
+        self.elaborate_toplevel(toplevel);
     }
 
     //
@@ -1048,7 +1044,7 @@ impl<'a> Elaborator<'a> {
                 let item = match scope {
                     Some(Scope::Name(None, pkg)) => {
                         // Packaged name, retrieve from package
-                        self.pkgs[&pkg.value].scope.names[&name.value].clone()
+                        self.pkgs[&pkg.value].scope.find(&name).unwrap().clone()
                     }
                     None => {
                         // Lexical name
@@ -1136,7 +1132,7 @@ impl<'a> Elaborator<'a> {
                 let hier = match scope {
                     Some(Scope::Name(None, pkg)) => {
                         // Packaged name, retrieve from package
-                        self.pkgs[&pkg.value].scope.names[&name.value].clone()
+                        self.pkgs[&pkg.value].scope.find(&name).unwrap().clone()
                     }
                     None => {
                         // Lexical name
@@ -1185,7 +1181,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match decl.inst.scope.names.get(&name.value) {
+                    let item = match decl.inst.scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1201,7 +1197,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match decl.inst.scope.names.get(&name.value) {
+                    let item = match decl.inst.scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1217,7 +1213,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match inst.scope.names.get(&name.value) {
+                    let item = match inst.scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1227,7 +1223,7 @@ impl<'a> Elaborator<'a> {
                     item
                 }
                 HierItem::GenBlock(decl) => {
-                    let item = match decl.scope.names.get(&name.value) {
+                    let item = match decl.scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in generate block", name),
                             name.span
