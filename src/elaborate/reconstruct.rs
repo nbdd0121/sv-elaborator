@@ -351,13 +351,13 @@ impl<'a> Reconstructor<'a> {
             HierItem::Design(decl) => {
                 // Reconstruct all instantiations and display them here
                 for (_, inst) in decl.instances.borrow().iter() {
-                    list.push(self.reconstruct_instantiation(inst));
+                    list.push(self.reconstruct_instantiation(decl, inst));
                 }
             }
             HierItem::Instance(decl) => {
                 list.push(Item::HierInstantiation(Box::new(HierInstantiation {
                     attr: None,
-                    name: decl.inst.name.clone(),
+                    name: decl.inst.get_instance().name.clone(),
                     param: None,
                         inst: vec![HierInst {
                         name: decl.name.clone(),
@@ -448,7 +448,7 @@ impl<'a> Reconstructor<'a> {
         }
     }
 
-    pub fn reconstruct_instantiation(&self, inst: &hier::DesignInstantiation) -> Item {
+    pub fn reconstruct_instantiation(&self, decl: &hier::DesignDecl, inst: &hier::DesignInstantiation) -> Item {
         // Reconstruct all parameters
         let mut params = Vec::new();
         for item in &inst.scope.items {
@@ -475,7 +475,7 @@ impl<'a> Reconstructor<'a> {
                     }]));
                 }
                 HierItem::InterfacePort(decl) => {
-                    let intf = Some(Box::new(decl.inst.name.clone()));
+                    let intf = Some(Box::new(decl.inst.get_instance().name.clone()));
                     let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
                     let dim = decl.dim.iter().map(|(ub, lb)| {
                         let ub = reconstruct_int(*ub, Span::none());
@@ -500,8 +500,8 @@ impl<'a> Reconstructor<'a> {
 
         Item::DesignDecl(Box::new(DesignDecl {
             attr: None,
-            kw: inst.ast.kw,
-            lifetime: inst.ast.lifetime,
+            kw: decl.ast.kw,
+            lifetime: decl.ast.lifetime,
             name: inst.name.clone(),
             pkg_import: Vec::new(),
             param: if !params.is_empty() { Some(params) } else { None },

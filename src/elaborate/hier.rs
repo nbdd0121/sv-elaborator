@@ -3,7 +3,7 @@
 use syntax::ast::{self, Ident, SymbolId};
 use syntax::tokens;
 
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
 pub use super::ty::{IntTy, Ty, Struct, Enum};
@@ -46,11 +46,19 @@ pub struct DataDecl {
 }
 
 /// Un-instantiated module during resolution and elaboration
+#[derive(Clone)]
 pub struct DesignDecl {
     /// The AST of this design declaration
     pub ast: Rc<ast::DesignDecl>,
     /// All instantiated instances. Current organised in a Vec because DesignParam can't be hashed.
     pub instances: RefCell<Vec<(Rc<DesignParam>, Rc<DesignInstantiation>)>>,
+}
+
+impl PartialEq for DesignDecl {
+    fn eq(&self, rhs: &Self) -> bool {
+        // DesignDecl is equal only if they're the same instance
+        self as *const Self == rhs as *const Self
+    }
 }
 
 /// Represent parameterisation and interface parameterisation of a design unit.
@@ -61,14 +69,24 @@ pub struct DesignParam {
     /// as they need to be evaluated anyway for dependency reasons and we don't want to evaluate
     /// them multiple times. Rc'ed here just for convience, could be removed.
     pub param: Rc<Vec<ParamDecl>>,
-    pub intf: HashMap<String, Rc<DesignInstantiation>>,
+    pub intf: HashMap<String, DesignInstHandle>,
+}
+
+/// Represent a handle to an design instantiation
+#[derive(PartialEq, Clone)]
+pub struct DesignInstHandle(pub Rc<DesignDecl>, pub Rc<DesignParam>);
+
+impl DesignInstHandle {
+    pub fn get_instance(&self) -> Rc<DesignInstantiation> {
+        let vec = self.0.instances.borrow();
+        Rc::clone(&vec.iter().find(|(param, _)| param == &self.1).unwrap().1)
+    }
 }
 
 /// Represent an instantiated design unit.
 #[derive(Clone)]
 pub struct DesignInstantiation {
-    /// Pointer to the design declaration
-    pub ast: Rc<ast::DesignDecl>,
+    pub decl: Weak<DesignDecl>,
     /// Generate name of this instance,
     pub name: Ident,
     /// The parameters of this instantiation, this include interface ports already.
@@ -77,16 +95,9 @@ pub struct DesignInstantiation {
     pub scope: HierScope,
 }
 
-impl PartialEq for DesignInstantiation {
-    fn eq(&self, rhs: &Self) -> bool {
-        // DesignInstantiation is equal only if they're the same instance
-        self as *const Self == rhs as *const Self
-    }
-}
-
 /// Represent a instance.
 pub struct InstanceDecl {
-    pub inst: Rc<DesignInstantiation>,
+    pub inst: DesignInstHandle,
     pub name: Ident,
     pub dim: Vec<(i32, i32)>,
     pub port: Vec<Option<Expr>>,
@@ -99,7 +110,7 @@ pub struct Modport {
 }
 
 pub struct InterfacePortDecl {
-    pub inst: Rc<DesignInstantiation>,
+    pub inst: DesignInstHandle,
     pub modport: Option<Rc<Modport>>,
     pub name: Ident,
     pub dim: Vec<(i32, i32)>,
@@ -143,6 +154,7 @@ impl HierScope {
 }
 
 /// Represent a generate block
+#[derive(Clone)]
 pub struct GenBlock {
     pub name: Option<Box<Ident>>,
     pub scope: HierScope,
@@ -154,6 +166,7 @@ pub struct GenVar {
 }
 
 /// Represent a loop-generate block
+#[derive(Clone)]
 pub struct LoopGenBlock {
     pub name: Option<Box<Ident>>,
     pub instances: RefCell<Vec<(i32, Rc<GenBlock>)>>,
@@ -184,7 +197,7 @@ pub enum HierItem {
     /// An part-selected instance
     InstancePart {
         /// Pointer to the instantiated design
-        inst: Rc<DesignInstantiation>,
+        inst: DesignInstHandle,
         /// Modport reference
         modport: Option<Rc<Modport>>,
         /// Remaining dimensions

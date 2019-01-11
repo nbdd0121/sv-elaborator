@@ -54,9 +54,6 @@ struct Elaborator<'a> {
     /// All packages
     pkgs: HashMap<String, hier::PkgDecl>,
 
-    /// Top-level instance
-    toplevel: Option<Rc<hier::DesignInstantiation>>,
-
     /// All elaborated structures.
     structs: Vec<Rc<Struct>>,
     enums: Vec<Rc<ty::Enum>>,
@@ -73,7 +70,6 @@ impl<'a> Elaborator<'a> {
 
             units: Vec::new(),
             pkgs: HashMap::new(),
-            toplevel: None,
             structs: Vec::new(),
             enums: Vec::new(),
         }
@@ -111,8 +107,8 @@ impl<'a> Elaborator<'a> {
 
     /// This will instantiate a parameterised module.
     pub fn instantiate_design(
-        &mut self, decl: Rc<hier::DesignDecl>, param: hier::DesignParam
-    ) -> Rc<hier::DesignInstantiation> {
+        &mut self, decl: &Rc<hier::DesignDecl>, param: Rc<hier::DesignParam>
+    ) {
         // Create new hiearchy scope.
         self.scopes.push(HierScope::new());
 
@@ -142,11 +138,11 @@ impl<'a> Elaborator<'a> {
                 }
                 PortDecl::Interface(_intf, modport, list) => {
                     for assign in list {
-                        let instance = Rc::clone(&param.intf[&assign.name.value]);
+                        let instance = param.intf[&assign.name.value].clone();
                         let modport = match modport {
                             None => None,
                             Some(modport) => {
-                                match instance.scope.find(&modport) {
+                                match instance.get_instance().scope.find(&modport) {
                                     Some(HierItem::Modport(modport)) => Some(modport.clone()),
                                     _ => {
                                         self.diag.report_fatal(
@@ -176,7 +172,6 @@ impl<'a> Elaborator<'a> {
         }
 
         let scope = self.scopes.pop().unwrap();
-        let param_rc = Rc::new(param);
         let mut inst_list = decl.instances.borrow_mut();
 
         // Give this module a name. We use the original name for the first instantiation, and
@@ -188,13 +183,12 @@ impl<'a> Elaborator<'a> {
         };
 
         let inst = Rc::new(hier::DesignInstantiation {
-            ast: Rc::clone(&decl.ast),
+            decl: Rc::downgrade(decl),
             name: Ident::new(name, decl.ast.name.span),
-            param: Rc::clone(&param_rc),
+            param: Rc::clone(&param),
             scope: scope,
         });
-        inst_list.push((param_rc, Rc::clone(&inst)));
-        inst
+        inst_list.push((Rc::clone(&param), inst));
     }
 
     pub fn elaborate_instantiation(&mut self, inst: &HierInstantiation) {
@@ -350,8 +344,8 @@ impl<'a> Elaborator<'a> {
                             };
                             // Get the instance
                             let decl = match hier {
-                                HierItem::Instance(decl) => Rc::clone(&decl.inst),
-                                HierItem::InterfacePort(decl) => Rc::clone(&decl.inst),
+                                HierItem::Instance(decl) => decl.inst.clone(),
+                                HierItem::InterfacePort(decl) => decl.inst.clone(),
                                 HierItem::InstancePart { inst , .. } => inst,
                                 _ => {
                                     self.diag.report_error("expected interface instance", conn.span);
@@ -359,16 +353,16 @@ impl<'a> Elaborator<'a> {
                                 }
                             };
                             // Check that it is actually interface
-                            if decl.ast.kw != Keyword::Interface {
+                            if decl.0.ast.kw != Keyword::Interface {
                                 self.diag.report_error("expected interface instance", conn.span);
                                 continue 'next_instance;
                             }
                             // If the interface port declaration is not using "interface id",
                             // check if the interface actually matches.
                             if let Some(name) = intf {
-                                if name.symbol != decl.ast.name.symbol {
+                                if name.symbol != decl.0.ast.name.symbol {
                                     self.diag.report_error(
-                                        format!("expected interface {}, found interface {}", name, decl.ast.name),
+                                        format!("expected interface {}, found interface {}", name, decl.0.ast.name),
                                         conn.span
                                     );
                                     continue 'next_instance;
@@ -387,14 +381,16 @@ impl<'a> Elaborator<'a> {
             };
 
             // Search for existing instances.
-            let design_inst = 'outer2: loop {
-                for (inst_map, inst) in item.instances.borrow().iter() {
+            let design_inst = hier::DesignInstHandle(Rc::clone(&item), 'outer2: loop {
+                for (inst_map, _) in item.instances.borrow().iter() {
                     if &**inst_map == &map {
-                        break 'outer2 Rc::clone(inst);
+                        break 'outer2 Rc::clone(inst_map);
                     }
                 }
-                break self.instantiate_design(Rc::clone(&item), map);
-            };
+                let param = Rc::new(map);
+                self.instantiate_design(&item, Rc::clone(&param));
+                break param;
+            });
 
             let port_connections = port_list.iter().map(|(_, port)| {
                 port.as_ref().map(|port| self.type_check(port, None))
@@ -403,7 +399,7 @@ impl<'a> Elaborator<'a> {
             let dim = self.eval_const_unpacked_dim(&inst.dim);
             let declitem = HierItem::Instance(Rc::new(hier::InstanceDecl {
                 name: inst.name.clone(),
-                inst: Rc::clone(&design_inst),
+                inst: design_inst,
                 dim,
                 port: port_connections,
             }));
@@ -472,16 +468,15 @@ impl<'a> Elaborator<'a> {
         };
 
         // Search for existing instances.
-        let design_inst = 'outer2: loop {
-            for (inst_map, inst) in module.instances.borrow().iter() {
+        'outer2: loop {
+            for (inst_map, _) in module.instances.borrow().iter() {
                 if &**inst_map == &map {
-                    break 'outer2 Rc::clone(inst);
+                    break 'outer2;
                 }
             }
-            break self.instantiate_design(module, map);
+            self.instantiate_design(&module, Rc::new(map));
+            break;
         };
-
-        self.toplevel = Some(design_inst);
     }
 
     pub fn elaborate_item(&mut self, item: &Item) {
@@ -595,7 +590,8 @@ impl<'a> Elaborator<'a> {
                     }
                 };
                 // Find ty inside the interface
-                let item = match inst.scope.find(&ty) {
+                let inst_inst = inst.get_instance();
+                let item = match inst_inst.scope.find(&ty) {
                     None => {
                         self.diag.report_fatal("cannot find this in interface port", name.span);
                     }
@@ -1148,7 +1144,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match decl.inst.scope.find(&name) {
+                    let item = match decl.inst.get_instance().scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1164,7 +1160,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match decl.inst.scope.find(&name) {
+                    let item = match decl.inst.get_instance().scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1180,7 +1176,7 @@ impl<'a> Elaborator<'a> {
                             parent.span
                         )
                     }
-                    let item = match inst.scope.find(&name) {
+                    let item = match inst.get_instance().scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in interface", name),
                             name.span
@@ -1258,7 +1254,7 @@ impl<'a> Elaborator<'a> {
                                 );
                             }
                             HierItem::InstancePart {
-                                inst: Rc::clone(&inst.inst),
+                                inst: inst.inst.clone(),
                                 modport: None,
                                 dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
                             }
@@ -1280,7 +1276,7 @@ impl<'a> Elaborator<'a> {
                                 );
                             }
                             HierItem::InstancePart {
-                                inst: Rc::clone(&decl.inst),
+                                inst: decl.inst.clone(),
                                 modport: decl.modport.clone(),
                                 dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
                             }
