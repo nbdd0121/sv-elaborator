@@ -15,7 +15,7 @@
 //!   determined, their size depend on the largest operand in the entire enclosing expression.
 //! * The spec is really vague and messy.
 
-use syntax::ast::*;
+use syntax::ast::{self, *};
 use syntax::tokens::*;
 use source::*;
 use number::{LogicValue, LogicVec, Int};
@@ -1509,9 +1509,18 @@ impl<'a> Elaborator<'a> {
             },
             ExprKind::AssignPattern(Some(ref ty), ref pattern) => {
                 let ty = self.eval_ty(ty);
+                let pattern = match pattern {
+                    ast::AssignPattern::Simple(list) => {
+                        // TODO: They should be considered as assignment-like instead
+                        expr::AssignPattern::Simple(
+                            list.iter().map(|item| self.type_check(item, None)).collect()
+                        )
+                    }
+                    _ => unimplemented!(),
+                };
                 // TODO: Also evaluate within assignment pattern
                 expr::Expr {
-                    value: expr::ExprKind::AssignPattern(Box::new(ty.clone()), pattern.clone()),
+                    value: expr::ExprKind::AssignPattern(Box::new(ty.clone()), pattern),
                     span: expr.span,
                     ty: ty,
                 }

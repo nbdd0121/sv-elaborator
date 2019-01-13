@@ -7,7 +7,7 @@ use number::LogicVec;
 use super::ty::Ty;
 use syntax::ast::{IncDec, UnaryOp, BinaryOp, Spanned};
 
-use syntax::ast::{HierId, AssignPattern, Ident};
+use syntax::ast::{HierId, Ident};
 
 /// A typed value with concrete data type.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,4 +121,13 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.value.fmt(f)
     }
+}
+
+/// Represent an assignment pattern.
+#[derive(Debug, Clone)]
+pub enum AssignPattern {
+    Simple(Vec<Expr>),
+    // Keyed(Vec<(Expr, Expr)>),
+    // Mult(Box<Expr>, Vec<Expr>),
+    NonExhaustive,
 }

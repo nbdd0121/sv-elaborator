@@ -271,7 +271,15 @@ impl<'a> Reconstructor<'a> {
             expr::ExprKind::MultConcat(..) => unimplemented!(),
             expr::ExprKind::AssignPattern(ref ty, ref pattern) => {
                 let ast_ty = Some(Box::new(self.reconstruct_ty_simple(ty)));
-                ast::ExprKind::AssignPattern(ast_ty, pattern.clone())
+                let ast_pattern = match pattern {
+                    expr::AssignPattern::Simple(list) => {
+                        ast::AssignPattern::Simple(
+                            list.iter().map(|item| self.reconstruct_expr(item)).collect()
+                        )
+                    }
+                    _ => unimplemented!(),
+                };
+                ast::ExprKind::AssignPattern(ast_ty, ast_pattern)
             }
             expr::ExprKind::Select(ref parent, ref dim) => {
                 let ast_parent = self.reconstruct_expr(parent);
