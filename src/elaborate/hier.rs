@@ -188,6 +188,7 @@ pub enum HierItem {
     Design(Rc<DesignDecl>),
     /// Data declaration
     DataDecl(Rc<DataDecl>),
+    ContinuousAssign(Rc<Expr>),
     /// Other items that we don't really care in elaboration
     /// We might need to treat a little bit different to support constant functions though.
     Other(Rc<ast::Item>),

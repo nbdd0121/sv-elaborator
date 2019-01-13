@@ -614,7 +614,12 @@ impl<'a> Elaborator<'a> {
                 self.add_to_scope(&name, declitem);
             }
             // These are not handled specially
-            v @ Item::ContinuousAssign(..) |
+            Item::ContinuousAssign(list) => {
+                for assign in list {
+                    let assign = self.type_check(assign, None);
+                    self.add_item(HierItem::ContinuousAssign(Rc::new(assign)));
+                }
+            }
             v @ Item::Initial(..) |
             v @ Item::Always(..) => {
                 // Need to clone AST here.
@@ -1072,7 +1077,8 @@ impl<'a> Elaborator<'a> {
             HierItem::DataDecl(decl) => decl.ty.clone(),
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
-            HierItem::Other(_) => unimplemented!(),
+            HierItem::ContinuousAssign(_) => unreachable!(),
+            HierItem::Other(_) => unreachable!(),
             HierItem::OtherName => unimplemented!(),
             HierItem::Instance(_) => Ty::Void, // Not typable
             HierItem::InstancePart{ .. } => Ty::Void, // Not typable
@@ -1206,10 +1212,28 @@ impl<'a> Elaborator<'a> {
                     span,
                 }
             } else { unreachable!() };
-            (Some(hier), expr)
-        } else {
-            unimplemented!()
+            return (Some(hier), expr)
         }
+
+        let myty = match parent_expr.ty {
+            Ty::Int(IntTy::Struct(ref struc)) => 'struct_loop: loop {
+                for (ty, member_name, _) in &struc.members {
+                    if name == member_name {
+                        break 'struct_loop Ty::Int(ty.clone());
+                    }
+                }
+                self.diag.report_fatal(format!("there are no members named {}", name), span);
+            }
+            _ => {
+                eprintln!("{:?}", parent_expr.ty);
+                self.diag.report_fatal("unexpected member select", span);
+            }
+        };
+        (None, expr::Expr {
+            value: expr::ExprKind::Member(Box::new(parent_expr), name.clone()),
+            ty: myty,
+            span,
+        })
     }
 
     /// Type-check a hierachical select or bit/part-select expression.
@@ -1318,56 +1342,66 @@ impl<'a> Elaborator<'a> {
                     span,
                 }
             } else { unreachable!() };
-            (Some(hier), expr)
-        } else {
-            let two_state = match parent_expr.ty {
-                Ty::Int(ref intty) => intty.two_state(),
-                _ => unimplemented!(),
-            };
-            let (dim, len) = match dim.value {
-                DimKind::Value(ref value) => {
-                    let expr = self.type_check_int(value, None, None);
-                    (Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span), 1)
+            return (Some(hier), expr)
+        };
+
+        // The canonical element type of this int type.
+        let canonical_element_type = match parent_expr.ty {
+            Ty::Int(ref intty) => match intty {
+                // For array type, 
+                IntTy::Array(ty, ..) => IntTy::clone(ty),
+                _ => IntTy::Logic(intty.two_state(), false),
+            }
+            _ => unimplemented!(),
+        };
+        let (dim, len) = match dim.value {
+            DimKind::Value(ref value) => {
+                let expr = self.type_check_int(value, None, None);
+                let dim = Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span);
+                return (None, expr::Expr {
+                    value: expr::ExprKind::Select(Box::new(parent_expr), dim),
+                    ty: Ty::Int(canonical_element_type),
+                    span,
+                })
+            }
+            DimKind::Range(ref ub, ref lb) => {
+                let ub = self.eval_expr_i32(ub);
+                let lb = self.eval_expr_i32(lb);
+                let size = cmp::max(ub, lb) - cmp::min(ub, lb) + 1;
+                (Spanned::new(expr::DimKind::Range(ub, lb), dim.span), size)
+            }
+            DimKind::PlusRange(ref value, ref width) => {
+                let expr = self.type_check_int(value, None, None);
+                let mut w = self.eval_expr_i32(width);
+                if w <= 0 {
+                    self.diag.report_error("width must be positive", width.span);
+                    // Error recovery
+                    w = 1;
                 }
-                DimKind::Range(ref ub, ref lb) => {
-                    let ub = self.eval_expr_i32(ub);
-                    let lb = self.eval_expr_i32(lb);
-                    let size = (cmp::max(ub, lb) - cmp::min(ub, lb) + 1) as usize;
-                    (Spanned::new(expr::DimKind::Range(ub, lb), dim.span), size)
+                (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w)
+            }
+            DimKind::MinusRange(ref value, ref width) => {
+                let expr = self.type_check_int(value, None, None);
+                let mut w = self.eval_expr_i32(width);
+                if w <= 0 {
+                    self.diag.report_error("width must be positive", width.span);
+                    // Error recovery
+                    w = 1;
                 }
-                DimKind::PlusRange(ref value, ref width) => {
-                    let expr = self.type_check_int(value, None, None);
-                    let mut w = self.eval_expr_i32(width);
-                    if w <= 0 {
-                        self.diag.report_error("width must be positive", width.span);
-                        // Error recovery
-                        w = 1;
-                    }
-                    (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w as usize)
-                }
-                DimKind::MinusRange(ref value, ref width) => {
-                    let expr = self.type_check_int(value, None, None);
-                    let mut w = self.eval_expr_i32(width);
-                    if w <= 0 {
-                        self.diag.report_error("width must be positive", width.span);
-                        // Error recovery
-                        w = 1;
-                    }
-                    (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w as usize)
-                }
-                _ => {
-                    self.diag.report_fatal(
-                        "unimplemented dimension kind",
-                        dim.span
-                    );
-                }
-            };
-            (None, expr::Expr {
-                value: expr::ExprKind::Select(Box::new(parent_expr), dim),
-                ty: Ty::Int(IntTy::SimpleVec(len, two_state, false)),
-                span,
-            })
-        }
+                (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w)
+            }
+            _ => {
+                self.diag.report_fatal(
+                    "unimplemented dimension kind",
+                    dim.span
+                );
+            }
+        };
+        (None, expr::Expr {
+            value: expr::ExprKind::Select(Box::new(parent_expr), dim),
+            ty: Ty::Int(canonical_element_type.vec(len - 1, 0)),
+            span,
+        })
     }
 
     /// Perform self-determined type checks and convert expression into an post-elaboration
@@ -1606,7 +1640,18 @@ impl<'a> Elaborator<'a> {
                             ty: myty,
                         }
                     }
-                    UnaryOp::Not => unimplemented!(),
+                    UnaryOp::Not => {
+                        let conv = self.self_type_check_int(rhs);
+                        let myty = match conv.ty {
+                            Ty::Int(ref subty) => Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign())),
+                            _ => unreachable!(),
+                        };
+                        expr::Expr {
+                            value: expr::ExprKind::Unary(op, Box::new(conv)),
+                            span: expr.span,
+                            ty: myty,
+                        }
+                    }
                     UnaryOp::LNot => {
                         let conv = self.type_check_bool(rhs);
                         expr::Expr {
@@ -1620,7 +1665,14 @@ impl<'a> Elaborator<'a> {
                     UnaryOp::Or |
                     UnaryOp::Nor |
                     UnaryOp::Xor |
-                    UnaryOp::Xnor => unimplemented!(),
+                    UnaryOp::Xnor => {
+                        let conv = self.self_type_check_int(rhs);
+                        expr::Expr {
+                            value: expr::ExprKind::Unary(op, Box::new(conv)),
+                            span: expr.span,
+                            ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
+                        }
+                    }
                 }
             }
             ExprKind::Binary(ref lhs, op, _, ref rhs) => {
@@ -1668,7 +1720,21 @@ impl<'a> Elaborator<'a> {
                     BinaryOp::And |
                     BinaryOp::Or |
                     BinaryOp::Xor |
-                    BinaryOp::Xnor => unimplemented!(),
+                    BinaryOp::Xnor => {
+                        let lhs_conv = self.self_type_check_int(lhs);
+                        let rhs_conv = self.self_type_check_int(rhs);
+                        let myty = match (&lhs_conv.ty, &rhs_conv.ty) {
+                            (Ty::Int(lsubty), Ty::Int(rsubty)) => {
+                                Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign()))
+                            }
+                            _ => unreachable!(),
+                        };
+                        expr::Expr {
+                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            span: expr.span,
+                            ty: myty,
+                        }
+                    }
                     BinaryOp::Shl |
                     BinaryOp::LShr |
                     BinaryOp::AShr => {
@@ -1753,7 +1819,15 @@ impl<'a> Elaborator<'a> {
                     ty: ty,
                 }
             }
-            // Assign(Box<Expr>, Box<Expr>),
+            ExprKind::Assign(ref lhs, ref rhs) => {
+                let lhs = self.type_check(lhs, None);
+                let rhs = self.type_check(rhs, Some(&lhs.ty));
+                expr::Expr {
+                    value: expr::ExprKind::Assign(Box::new(lhs), Box::new(rhs)),
+                    span: expr.span,
+                    ty: Ty::Void,
+                }
+            }
             // BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
             ExprKind::Paren(ref expr) => {
                 let conv = self.self_type_check(expr);
@@ -1765,7 +1839,20 @@ impl<'a> Elaborator<'a> {
                 }
             }
             // MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
-            // Cond(Box<Expr>, Option<Box<AttrInst>>, Box<Expr>, Box<Expr>),
+            ExprKind::Cond(ref cond, _, ref true_expr, ref false_expr) => {
+                let cond_conv = self.type_check_bool(cond);
+                let mut true_conv = self.self_type_check(true_expr);
+                let mut false_conv = self.self_type_check(false_expr);
+                let myty = match (&true_conv.ty, &false_conv.ty) {
+                    (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign())),
+                    _ => unimplemented!(),
+                };
+                expr::Expr {
+                    value: expr::ExprKind::Cond(Box::new(cond_conv), Box::new(true_conv), Box::new(false_conv)),
+                    span: expr.span,
+                    ty: myty,
+                }
+            }
             ref v => {
                 eprintln!("{:?}", v);
                 unimplemented!();
@@ -1837,29 +1924,40 @@ impl<'a> Elaborator<'a> {
     pub fn insert_cast(&mut self, expr: &mut expr::Expr, ctx: (bool, usize)) {
         match expr.ty {
             Ty::Int(ref mut subty) => {
-                if subty.width() == ctx.1 {
-                    if subty.sign() == ctx.0 {
-                        // No cast needed.
-                    } else {
-                        // Insert a sign cast
-                        let span = expr.span;
-                        let old_subty = std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, ctx.0));
-                        ::util::replace_with(&mut expr.value, |old_value| {
-                            let old_expr = Box::new(expr::Expr {
-                                value: old_value,
-                                span: span,
-                                ty: Ty::Int(old_subty)
-                            });
-                            let new_value = expr::ExprKind::SignCast(
-                                ctx.0,
-                                old_expr
-                            );
-                            new_value
+                let subty_sign = subty.sign();
+                if subty.width() != ctx.1 {
+                    // Width cast
+                    let span = expr.span;
+                    let old_subty = std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, subty_sign));
+                    ::util::replace_with(&mut expr.value, |old_value| {
+                        let old_expr = Box::new(expr::Expr {
+                            value: old_value,
+                            span: span,
+                            ty: Ty::Int(old_subty)
                         });
-                    }
-                } else {
-                    eprintln!("{:?} {:?}", ctx, subty);
-                    self.diag.report_fatal("unimplemented cast", expr.span)
+                        let new_value = expr::ExprKind::WidthCast(
+                            ctx.1,
+                            old_expr
+                        );
+                        new_value
+                    });
+                }
+                if subty_sign != ctx.0 {
+                    // Insert a sign cast
+                    let span = expr.span;
+                    let old_subty = std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, ctx.0));
+                    ::util::replace_with(&mut expr.value, |old_value| {
+                        let old_expr = Box::new(expr::Expr {
+                            value: old_value,
+                            span: span,
+                            ty: Ty::Int(old_subty)
+                        });
+                        let new_value = expr::ExprKind::SignCast(
+                            ctx.0,
+                            old_expr
+                        );
+                        new_value
+                    });
                 }
             }
             _ => unreachable!(),
@@ -1891,7 +1989,7 @@ impl<'a> Elaborator<'a> {
             // MultConcat(Box<Expr>, Box<Expr>),
             // AssignPattern(Option<Box<DataType>>, AssignPattern),
             expr::ExprKind::Select(..) => (),
-            // Member(Box<Expr>, Ident),
+            expr::ExprKind::Member(..) => (),
             expr::ExprKind::SysTfCall(..) => (),
             // ConstCast(Box<Expr>),
             // SignCast(Signing, Box<Expr>),
@@ -1992,7 +2090,21 @@ impl<'a> Elaborator<'a> {
                 return;
             }
             // MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
-            // Cond(Box<Expr>, Option<Box<AttrInst>>, Box<Expr>, Box<Expr>),
+            expr::ExprKind::Cond(_, ref mut t, ref mut f) => {
+                // Fix size of self
+                match &mut expr.ty {
+                    Ty::Int(IntTy::SimpleVec(width, _, sign)) => {
+                        *sign = ctx.0;
+                        *width = ctx.1;
+                    }
+                    Ty::Int(_) => unimplemented!(),
+                    // We don't need to handle non-number.
+                    _ => return,
+                }
+                self.propagate_size(t, ctx);
+                self.propagate_size(f, ctx);
+                return;
+            }
             ref v => {
                 eprintln!("{:?}", v);
                 unimplemented!();

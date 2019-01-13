@@ -18,9 +18,8 @@ impl TypeParamEliminator {
     pub fn visit_item(&mut self, item: &mut HierItem) {
         match item {
             HierItem::Design(decl) => {
-                for (_, inst) in Rc::get_mut(decl).unwrap().instances.borrow_mut().iter_mut() {
-                    // TODO: Make mut here always clones. How to avoid this?
-                    self.visit_instantiation(Rc::make_mut(inst));
+                for (_, inst) in decl.instances.borrow_mut().iter_mut() {
+                    self.visit_instantiation(Rc::get_mut(inst).unwrap());
                 }
             }
             HierItem::GenBlock(genblk) => {
@@ -29,7 +28,7 @@ impl TypeParamEliminator {
                 }
             }
             HierItem::LoopGenBlock(loopgenblk) => {
-                for (_, genblk) in Rc::get_mut(loopgenblk).unwrap().instances.borrow_mut().iter_mut() {
+                for (_, genblk) in loopgenblk.instances.borrow_mut().iter_mut() {
                     for item in &mut Rc::get_mut(genblk).unwrap().scope.items {
                         self.visit_item(item);
                     }
@@ -60,7 +59,10 @@ impl TypeParamEliminator {
                     }
                     HierItem::DataPort(decl) => ports.push(HierItem::DataPort(decl)),
                     HierItem::InterfacePort(decl) => ports.push(HierItem::InterfacePort(decl)),
-                    item => others.push(item),
+                    mut item => {
+                        self.visit_item(&mut item);
+                        others.push(item)
+                    }
                 }
             }
 

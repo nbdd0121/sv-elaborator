@@ -44,7 +44,7 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
             LogicNumber {
                 value: val.clone(),
-                sized: true, 
+                sized: val.width() != 32 || !val.signed, 
             }
         ), span)), span)
     }
@@ -284,7 +284,16 @@ impl<'a> Reconstructor<'a> {
                     _ => unimplemented!(),
                 }
             }
-            expr::ExprKind::Member(..) => unimplemented!(),
+            expr::ExprKind::Member(ref parent, ref name) => {
+                let ast_parent = self.reconstruct_expr(parent);
+                match ast_parent.value {
+                    ast::ExprKind::HierName(id) => {
+                        let spanned = Spanned::new(id, ast_parent.span);
+                        ast::ExprKind::HierName(HierId::Member(Box::new(spanned), Box::new(name.clone())))
+                    }
+                    _ => unimplemented!(),
+                }
+            }
             expr::ExprKind::SysTfCall(..) => unimplemented!(),
             expr::ExprKind::ConstCast(..) => unimplemented!(),
             expr::ExprKind::TypeCast(ref ty, ref rhs) => {
@@ -294,7 +303,11 @@ impl<'a> Reconstructor<'a> {
                 ast::ExprKind::TypeCast(Box::new(ast_ty_expr), Box::new(ast_rhs))
             }
             expr::ExprKind::SignCast(..) => unimplemented!(),
-            expr::ExprKind::WidthCast(..) => unimplemented!(),
+            expr::ExprKind::WidthCast(width, ref rhs) => {
+                let ast_ty = reconstruct_int(width as i32, Span::none());
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::TypeCast(Box::new(ast_ty), Box::new(ast_rhs))
+            }
             expr::ExprKind::Unary(op, ref expr) => {
                 ast::ExprKind::Unary(op, None, Box::new(self.reconstruct_expr(expr)))
             }
@@ -305,11 +318,23 @@ impl<'a> Reconstructor<'a> {
             }
             expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
             expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
-            expr::ExprKind::Assign(..) => unimplemented!(),
+            expr::ExprKind::Assign(ref lhs, ref rhs) => {
+                let ast_lhs = self.reconstruct_expr(lhs);
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::Assign(Box::new(ast_lhs), Box::new(ast_rhs))
+            }
             expr::ExprKind::BinaryAssign(..) => unimplemented!(),
-            expr::ExprKind::Paren(..) => unimplemented!(),
+            expr::ExprKind::Paren(ref expr) => {
+                let ast_expr = self.reconstruct_expr(expr);
+                ast::ExprKind::Paren(Box::new(ast_expr))
+            }
             expr::ExprKind::MinTypMax(..) => unimplemented!(),
-            expr::ExprKind::Cond(..) => unimplemented!(),
+            expr::ExprKind::Cond(ref cond, ref t, ref f) => {
+                let ast_cond = self.reconstruct_expr(cond);
+                let ast_t = self.reconstruct_expr(t);
+                let ast_f = self.reconstruct_expr(f);
+                ast::ExprKind::Cond(Box::new(ast_cond), None, Box::new(ast_t), Box::new(ast_f))
+            }
         };
         Spanned::new(kind, expr.span)
     }
@@ -347,6 +372,9 @@ impl<'a> Reconstructor<'a> {
                         init: init,
                     }]
                 })));
+            }
+            HierItem::ContinuousAssign(expr) => {
+                list.push(Item::ContinuousAssign(vec![self.reconstruct_expr(expr)]));
             }
             HierItem::Design(decl) => {
                 // Reconstruct all instantiations and display them here
