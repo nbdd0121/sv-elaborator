@@ -505,9 +505,14 @@ impl<'a> Elaborator<'a> {
                 self.pkgs.insert(decl.name.value.clone(), decl);
             }
             Item::FuncDecl(decl) => {
-                self.add_to_scope(&decl.name, HierItem::OtherName);
-                // Need to clone AST here.
-                self.add_item(HierItem::Other(Rc::new(Item::FuncDecl(decl.clone()))));
+                let ty = self.eval_ty(&decl.ty);
+                self.add_to_scope(&decl.name, HierItem::FuncDecl(Rc::new(hier::FuncDecl {
+                    lifetime: decl.lifetime,
+                    ty: ty,
+                    name: decl.name.clone(),
+                    ports: decl.ports.clone(),
+                    stmts: decl.stmts.clone(),
+                })));
             }
             // Package import are already resolved by resolver - discard it.
             Item::PkgImport(_) => (),
@@ -1075,6 +1080,7 @@ impl<'a> Elaborator<'a> {
             HierItem::Type(_) => Ty::Type,
             HierItem::DataPort(decl) => decl.ty.clone(),
             HierItem::DataDecl(decl) => decl.ty.clone(),
+            HierItem::FuncDecl(_) => unimplemented!(),
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::ContinuousAssign(_) => unreachable!(),
@@ -1587,6 +1593,18 @@ impl<'a> Elaborator<'a> {
                         }
                     }
                     _ => unimplemented!("{:?}", call.task),
+                }
+            }
+            ExprKind::FuncCall { ref expr, ref args, .. } => {
+                let ty = if let ast::ExprKind::HierName(HierId::Name(None, ref name)) = expr.value {
+                    if let HierItem::FuncDecl(decl) = self.resolve(name) {
+                        decl.ty.clone()
+                    } else { unimplemented!() }
+                } else { unimplemented!() };
+                expr::Expr {
+                    value: expr::ExprKind::FuncCall { expr: expr.clone(), args: args.clone() },
+                    span: expr.span,
+                    ty,
                 }
             }
             // ConstCast(Box<Expr>),

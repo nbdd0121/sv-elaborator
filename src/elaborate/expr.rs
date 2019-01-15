@@ -5,7 +5,7 @@ use std::fmt;
 use source::Span;
 use number::LogicVec;
 use super::ty::Ty;
-use syntax::ast::{IncDec, UnaryOp, BinaryOp, Spanned};
+use syntax::ast::{self, IncDec, UnaryOp, BinaryOp, Spanned};
 
 use syntax::ast::{HierId, Ident};
 
@@ -66,6 +66,10 @@ pub enum ExprKind {
     // Subroutine calls
     /// Call to system task
     SysTfCall(Box<Spanned<String>>, Vec<Option<Expr>>),
+    FuncCall {
+        expr: Box<ast::Expr>,
+        args: Option<Box<ast::Args>>,
+    },
 
     // Casts
     ConstCast(Box<Expr>),
@@ -129,5 +133,6 @@ pub enum AssignPattern {
     Simple(Vec<Expr>),
     // Keyed(Vec<(Expr, Expr)>),
     // Mult(Box<Expr>, Vec<Expr>),
-    NonExhaustive,
+    #[doc(hidden)]
+    __Nonexhaustive,
 }

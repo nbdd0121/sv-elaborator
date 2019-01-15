@@ -303,6 +303,13 @@ impl<'a> Reconstructor<'a> {
                 }
             }
             expr::ExprKind::SysTfCall(..) => unimplemented!(),
+            expr::ExprKind::FuncCall { ref expr, ref args } => {
+                ast::ExprKind::FuncCall {
+                    expr: expr.clone(),
+                    attr: None,
+                    args: args.clone(),
+                }
+            }
             expr::ExprKind::ConstCast(..) => unimplemented!(),
             expr::ExprKind::TypeCast(ref ty, ref rhs) => {
                 let ast_ty = self.reconstruct_ty_simple(ty);
@@ -379,6 +386,18 @@ impl<'a> Reconstructor<'a> {
                         dim,
                         init: init,
                     }]
+                })));
+            }
+            HierItem::FuncDecl(decl) => {
+                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                assert!(dim.is_empty());
+                list.push(Item::FuncDecl(Box::new(FuncDecl {
+                    attr: None,
+                    lifetime: decl.lifetime,
+                    ty,
+                    name: decl.name.clone(),
+                    ports: decl.ports.clone(),
+                    stmts: decl.stmts.clone(),
                 })));
             }
             HierItem::ContinuousAssign(expr) => {

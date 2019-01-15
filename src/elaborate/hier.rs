@@ -45,6 +45,16 @@ pub struct DataDecl {
     pub init: Option<Box<Expr>>,
 }
 
+/// Partially resolved function declaration
+#[derive(Debug)]
+pub struct FuncDecl {
+    pub lifetime: ast::Lifetime,
+    pub ty: Ty,
+    pub name: Ident,
+    pub ports: Vec<ast::PortDecl>,
+    pub stmts: Vec<ast::Stmt>,
+}
+
 /// Un-instantiated module during resolution and elaboration
 #[derive(Clone)]
 pub struct DesignDecl {
@@ -188,6 +198,7 @@ pub enum HierItem {
     Design(Rc<DesignDecl>),
     /// Data declaration
     DataDecl(Rc<DataDecl>),
+    FuncDecl(Rc<FuncDecl>),
     ContinuousAssign(Rc<Expr>),
     /// Other items that we don't really care in elaboration
     /// We might need to treat a little bit different to support constant functions though.
