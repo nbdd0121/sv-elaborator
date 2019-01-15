@@ -126,7 +126,7 @@ fn main() {
         return;
     }
 
-    let mut elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
+    let elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
         None => "chip_top",
         Some(ref v) => v,
     });
@@ -134,6 +134,7 @@ fn main() {
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { return; }
 
+    let mut elaborated = lowering::loop_gen_elim(elaborated);
     lowering::type_param_elim(&mut elaborated);
 
     let files = elaborate::reconstruct(&elaborated);

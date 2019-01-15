@@ -155,6 +155,16 @@ impl HierScope {
         }
     }
 
+    /// Insert an item into the scope.
+    pub fn insert(&mut self, ident: Option<Ident>, item: HierItem) {
+        let index = self.items.len();
+        self.items.push(item);
+        if let Some(ident) = ident {
+            self.names.insert(ident.value, index);
+            self.symbols.insert(ident.symbol, index);
+        }
+    }
+
     pub fn find<'a>(&'a self, name: &str) -> Option<&'a HierItem> {
         match self.names.get(name) {
             None => None,

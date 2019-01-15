@@ -710,9 +710,7 @@ impl<'a> Elaborator<'a> {
 
                     let scope = self.scopes.pop().unwrap();
                     let genblk = Rc::new(hier::GenBlock {
-                        name: gen.block.name.as_ref().map(|name| {
-                            Box::new(Ident::new_unspanned(format!("{}_{}", name, val)))
-                        }),
+                        name: None,
                         scope
                     });
                     declitem.instances.borrow_mut().push((val, genblk));
@@ -1323,17 +1321,7 @@ impl<'a> Elaborator<'a> {
                         },
                         Some((_, genblk)) => Rc::clone(genblk),
                     };
-                    // Loop generate block cannot be easily translated back to valid
-                    // SystemVerilog. Therefore when translating it to expr::Expr we will map
-                    // it to a concrete instance instead of leaving it in HierId::Select form.
-                    let expr = expr::Expr {
-                        value: expr::ExprKind::HierName(
-                            HierId::Name(None, genblk.name.as_ref().unwrap().clone())
-                        ),
-                        ty: Ty::Void,
-                        span,
-                    };
-                    return (Some(HierItem::GenBlock(genblk)), expr)
+                    HierItem::GenBlock(genblk)
                 }
                 ref v => unimplemented!("{:?}", std::mem::discriminant(v)),
             };

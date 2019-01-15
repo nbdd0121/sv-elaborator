@@ -450,25 +450,7 @@ impl<'a> Reconstructor<'a> {
                     else_block: None,
                 })));
             }
-            HierItem::LoopGenBlock(loopgenblk) => {
-                for (_, genblk) in loopgenblk.instances.borrow().iter() {
-                    // Reconstruct all interior items
-                    let mut sublist = Vec::new();
-                    for item in &genblk.scope.items {
-                        self.reconstruct_item(item, &mut sublist);
-                    }
-                    list.push(Item::IfGen(Box::new(IfGen {
-                        attr: None,
-                        if_block: vec![{
-                            (self.reconstruct_const(&LogicValue::One.into(), Span::none()), GenBlock {
-                                name: genblk.name.clone(),
-                                items: sublist,
-                            })
-                        }],
-                        else_block: None,
-                    })));
-                }
-            }
+            HierItem::LoopGenBlock(_) => unreachable!(),
             HierItem::Modport(modport) => {
                 let decl_list = modport.scope.items.iter().map(|item| {
                     let item = match item {
