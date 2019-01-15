@@ -1349,9 +1349,10 @@ impl<'a> Elaborator<'a> {
         let canonical_element_type = match parent_expr.ty {
             Ty::Int(ref intty) => match intty {
                 // For array type, 
-                IntTy::Array(ty, ..) => IntTy::clone(ty),
-                _ => IntTy::Logic(intty.two_state(), false),
+                IntTy::Array(ty, ..) => Ty::Int(IntTy::clone(ty)),
+                _ => Ty::Int(IntTy::Logic(intty.two_state(), false)),
             }
+            Ty::Array(ref ty, ..) => Ty::clone(ty),
             _ => unimplemented!(),
         };
         let (dim, len) = match dim.value {
@@ -1360,7 +1361,7 @@ impl<'a> Elaborator<'a> {
                 let dim = Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span);
                 return (None, expr::Expr {
                     value: expr::ExprKind::Select(Box::new(parent_expr), dim),
-                    ty: Ty::Int(canonical_element_type),
+                    ty: canonical_element_type,
                     span,
                 })
             }
@@ -1396,6 +1397,11 @@ impl<'a> Elaborator<'a> {
                     dim.span
                 );
             }
+        };
+        // For part-select canonical element type must be IntTy
+        let canonical_element_type = match canonical_element_type {
+            Ty::Int(intty) => intty,
+            _ => unimplemented!(),
         };
         (None, expr::Expr {
             value: expr::ExprKind::Select(Box::new(parent_expr), dim),
@@ -1525,8 +1531,6 @@ impl<'a> Elaborator<'a> {
                     ty: ty,
                 }
             }
-            // Select(Box<Expr>, Dim),
-            // Member(Box<Expr>, Ident),
             ExprKind::SysTfCall(_) => {
                 // Work around borrow checker
                 let call = if let ExprKind::SysTfCall(call) = &expr.value {call} else { unreachable!() };
@@ -1816,7 +1820,6 @@ impl<'a> Elaborator<'a> {
                     }
                 }
             }
-            // Binary(Box<Expr>, BinaryOp, Option<Box<AttrInst>>, Box<Expr>),
             // PrefixIncDec(IncDec, Option<Box<AttrInst>>, Box<Expr>),
             ExprKind::PostfixIncDec(ref lhs, _, incdec) => {
                 // TODO: Maybe we want to check lvalue here?
@@ -1993,16 +1996,18 @@ impl<'a> Elaborator<'a> {
                 return;
             },
             expr::ExprKind::HierName(..) => (),
-            // EmptyQueue,
+            expr::ExprKind::EmptyQueue => (),
             expr::ExprKind::Concat(_) => (),
-            // MultConcat(Box<Expr>, Box<Expr>),
+            expr::ExprKind::MultConcat(..) => (),
             // AssignPattern(Option<Box<DataType>>, AssignPattern),
             expr::ExprKind::Select(..) => (),
             expr::ExprKind::Member(..) => (),
             expr::ExprKind::SysTfCall(..) => (),
+            expr::ExprKind::FuncCall { .. } => (),
             // ConstCast(Box<Expr>),
-            // SignCast(Signing, Box<Expr>),
+            expr::ExprKind::SignCast(..) => (),
             expr::ExprKind::TypeCast(..) => (),
+            expr::ExprKind::WidthCast(..) => (),
             expr::ExprKind::Unary(op, ref mut rhs) => {
                 match op {
                     UnaryOp::Add |
