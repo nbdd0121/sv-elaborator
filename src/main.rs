@@ -134,7 +134,8 @@ fn main() {
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { return; }
 
-    let mut elaborated = lowering::loop_gen_elim(elaborated);
+    let elaborated = lowering::loop_gen_elim(elaborated);
+    let mut elaborated = lowering::inst_array_elim(elaborated);
     lowering::type_param_elim(&mut elaborated);
 
     let files = elaborate::reconstruct(&elaborated);
