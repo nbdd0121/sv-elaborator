@@ -1510,7 +1510,25 @@ impl<'a> Elaborator<'a> {
                     ty: Ty::Int(IntTy::SimpleVec(width, two_state, false))
                 }
             }
-            // MultConcat(Box<Expr>, Box<Expr>),
+            ExprKind::MultConcat(ref mul, ref subexpr, ref select) => {
+                // Multiplier must be an integer
+                let mul_val = self.eval_expr_i32(mul);
+                if mul_val <= 0 {
+                    // TODO: Not necessary if within concat
+                    self.diag.report_fatal("multiplier must be positive", mul.span);
+                }
+                let mul_val = mul_val as usize;
+                let subexpr = self.type_check_int(subexpr, None, None);
+                let ty = if let Ty::Int(ref val) = subexpr.ty {
+                    IntTy::SimpleVec(val.width() * mul_val, val.two_state(), false)
+                } else { unreachable!() };
+                assert!(select.is_none()); // TODO
+                expr::Expr {
+                    value: expr::ExprKind::MultConcat(mul_val, Box::new(subexpr)),
+                    span: expr.span,
+                    ty: Ty::Int(ty),
+                }
+            }
             ExprKind::AssignPattern(None, _) => {
                 // this cannot appear in self-determined context. It must be within an assignment
                 // context.

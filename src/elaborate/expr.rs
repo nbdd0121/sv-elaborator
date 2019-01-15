@@ -52,7 +52,7 @@ pub enum ExprKind {
     Concat(Vec<Expr>),
 
     /// Multiple concatenation
-    MultConcat(Box<Expr>, Box<Expr>),
+    MultConcat(usize, Box<Expr>),
 
     /// Assignment pattern expression
     AssignPattern(Box<Ty>, AssignPattern),

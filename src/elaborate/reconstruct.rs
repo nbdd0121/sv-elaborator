@@ -268,7 +268,11 @@ impl<'a> Reconstructor<'a> {
                 let ast_list = list.iter().map(|expr| self.reconstruct_expr(expr)).collect();
                 ast::ExprKind::Concat(ast_list, None)
             }
-            expr::ExprKind::MultConcat(..) => unimplemented!(),
+            expr::ExprKind::MultConcat(mul, ref subexpr) => {
+                let ast_mul = reconstruct_int(mul as i32, Span::none());
+                let ast_subexpr = self.reconstruct_expr(subexpr);
+                ast::ExprKind::MultConcat(Box::new(ast_mul), Box::new(ast_subexpr), None)
+            }
             expr::ExprKind::AssignPattern(ref ty, ref pattern) => {
                 let ast_ty = Some(Box::new(self.reconstruct_ty_simple(ty)));
                 let ast_pattern = match pattern {
