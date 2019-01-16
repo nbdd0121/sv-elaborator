@@ -48,6 +48,7 @@ struct Elaborator<'a> {
     toplevel_name: &'a str,
 
     scopes: Vec<HierScope>,
+    genblk: usize,
 
     units: Vec<HierScope>,
 
@@ -67,6 +68,7 @@ impl<'a> Elaborator<'a> {
             toplevel_name: toplevel,
 
             scopes: Vec::new(),
+            genblk: 0,
 
             units: Vec::new(),
             pkgs: HashMap::new(),
@@ -106,6 +108,8 @@ impl<'a> Elaborator<'a> {
         &mut self, decl: &Rc<hier::DesignDecl>, param: Rc<hier::DesignParam>
     ) {
         // Create new hiearchy scope.
+        let genblk_saved = self.genblk;
+        self.genblk = 0;
         self.scopes.push(HierScope::new());
 
         // Add instantiated parameters to the scope.
@@ -176,6 +180,7 @@ impl<'a> Elaborator<'a> {
         }
 
         let scope = self.scopes.pop().unwrap();
+        self.genblk = genblk_saved;
         let mut inst_list = decl.instances.borrow_mut();
 
         // Give this module a name. We use the original name for the first instantiation, and
@@ -203,6 +208,8 @@ impl<'a> Elaborator<'a> {
 
         // First we are going to evaluate parameters.
         // Introduce a temporary scope for dependent parameters.
+        let genblk_saved = self.genblk;
+        self.genblk = 0;
         self.scopes.push(HierScope::new());
 
         if let Some(param) = &item.ast.param {
@@ -294,6 +301,7 @@ impl<'a> Elaborator<'a> {
         // Now tear down the temporary scope and use its content to build a parameter map.
         // This avoids having to clone the values.
         let items = self.scopes.pop().unwrap().items;
+        self.genblk = genblk_saved;
         let map = Rc::new(items.into_iter().map(|x| {
             if let HierItem::Param(v) = x {
                 Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
@@ -414,6 +422,8 @@ impl<'a> Elaborator<'a> {
     fn elaborate_toplevel(&mut self, module: Rc<hier::DesignDecl>) {
         // First we are going to evaluate parameters.
         // Introduce a temporary scope for dependent parameters.
+        let genblk_saved = self.genblk;
+        self.genblk = 0;
         self.scopes.push(HierScope::new());
 
         if let Some(param) = &module.ast.param {
@@ -448,6 +458,7 @@ impl<'a> Elaborator<'a> {
         // Now tear down the temporary scope and use its content to build a parameter map.
         // This avoids having to clone the values.
         let items = self.scopes.pop().unwrap().items;
+        self.genblk = genblk_saved;
         let map = Rc::new(items.into_iter().map(|x| {
             if let HierItem::Param(v) = x {
                 Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
@@ -497,11 +508,14 @@ impl<'a> Elaborator<'a> {
             }
             Item::PkgDecl(decl) => {
                 // Create new hiearchy scope.
+                let genblk_saved = self.genblk;
+                self.genblk = 0;
                 self.scopes.push(HierScope::new());
                 for item in &decl.items {
                     self.elaborate_item(item);
                 }
                 let scope = self.scopes.pop().unwrap();
+                self.genblk = genblk_saved;
                 let decl = hier::PkgDecl {
                     name: decl.name.clone(),
                     scope: scope,
@@ -639,9 +653,12 @@ impl<'a> Elaborator<'a> {
             }
             // GenRegion(Vec<Item>),
             Item::LoopGen(gen) => {
+                // Each generate construct will be assigned an id for external names.
+                self.genblk += 1;
                 let declitem = Rc::new(hier::LoopGenBlock {
                     name: gen.block.name.as_ref().map(|name| Ident::clone(name)),
                     instances: RefCell::new(Vec::new()),
+                    id: self.genblk,
                 });
                 if let Some(name) = &gen.block.name {
                     self.add_to_scope(name, HierItem::LoopGenBlock(Rc::clone(&declitem)));
@@ -697,6 +714,8 @@ impl<'a> Elaborator<'a> {
                     };
 
                     // Elaborate items within the gen block
+                    let genblk_saved = self.genblk;
+                    self.genblk = 0;
                     self.scopes.push(HierScope::new());
 
                     // The genvar is automatically converted to a localparam within the block
@@ -713,9 +732,11 @@ impl<'a> Elaborator<'a> {
                     }
 
                     let scope = self.scopes.pop().unwrap();
+                    self.genblk = genblk_saved;
                     let genblk = Rc::new(hier::GenBlock {
                         name: None,
-                        scope
+                        scope,
+                        id: None,
                     });
                     declitem.instances.borrow_mut().push((val, genblk));
 
@@ -725,6 +746,8 @@ impl<'a> Elaborator<'a> {
                 self.scopes.pop();
             }
             Item::IfGen(ifgen) => {
+                self.genblk += 1;
+
                 // First figure out which block to instantiate
                 let block = 'if_outer: loop {
                     for (cond, block) in &ifgen.if_block {
@@ -752,14 +775,18 @@ impl<'a> Elaborator<'a> {
                 };
 
                 if let Some(block) = block {
+                    let genblk_saved = self.genblk;
+                    self.genblk = 0;
                     self.scopes.push(HierScope::new());
                     for item in &block.items {
                         self.elaborate_item(item);
                     }
                     let scope = self.scopes.pop().unwrap();
+                    self.genblk = genblk_saved;
                     let decl = HierItem::GenBlock(Rc::new(hier::GenBlock {
                         name: block.name.as_ref().map(|name| Ident::clone(name)),
                         scope,
+                        id: Some(genblk_saved),
                     }));
                     if let Some(v) = &block.name {
                         self.add_to_scope(v, decl);

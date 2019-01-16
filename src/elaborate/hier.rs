@@ -178,6 +178,7 @@ impl HierScope {
 pub struct GenBlock {
     pub name: Option<Ident>,
     pub scope: HierScope,
+    pub id: Option<usize>,
 }
 
 pub struct GenVar {
@@ -190,6 +191,7 @@ pub struct GenVar {
 pub struct LoopGenBlock {
     pub name: Option<Ident>,
     pub instances: RefCell<Vec<(i32, Rc<GenBlock>)>>,
+    pub id: usize,
 }
 
 /// Represent a elaborated item. This item should be able to cheaply cloned.

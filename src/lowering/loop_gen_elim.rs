@@ -1,6 +1,8 @@
 //! After elaboration we have each iteration of loop generate construct evaluated already.
 //! This construct, however, cannot be translated back to source code directly. This pass will
 //! lower loop generate constructs into generate blocks, assigning new names to each iterations.
+//!
+//! This pass must be run after gen_name_assign.
 
 use std::rc::Rc;
 use std::collections::HashMap;
@@ -85,10 +87,10 @@ impl LoopGenEliminator {
                         self.prepare_genblks(&mut genblk_mut.scope);
                         // Then assign names
                         // TODO: How about symbols
-                        let new_name = loopgenblk.name.as_ref().map(|name| {
-                            Ident::new_unspanned(format!("{}_{}", name, val))
-                        });
-                        genblk_mut.name = new_name.clone();
+                        let new_name = Ident::new_unspanned(
+                            format!("{}_{}", loopgenblk.name.as_ref().unwrap(), val)
+                        );
+                        genblk_mut.name = Some(new_name);
                     }
                 }
                 _ => (),
@@ -310,7 +312,7 @@ impl LoopGenEliminator {
                     let loopgenblk = Rc::try_unwrap(loopgenblk).unwrap_or_else(|_| unreachable!());
                     for (_, mut genblk) in loopgenblk.instances.into_inner() {
                         ::util::replace_with(&mut Rc::get_mut(&mut genblk).unwrap().scope, |scope| self.expand_loopgen(scope));
-                        let name = genblk.name.as_ref().map(|id| Ident::clone(id));
+                        let name = genblk.name.clone();
                         self.scopes.last_mut().unwrap().insert(name, HierItem::GenBlock(genblk));
                     }
                     continue;
