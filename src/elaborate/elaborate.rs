@@ -640,7 +640,7 @@ impl<'a> Elaborator<'a> {
             // GenRegion(Vec<Item>),
             Item::LoopGen(gen) => {
                 let declitem = Rc::new(hier::LoopGenBlock {
-                    name: gen.block.name.clone(),
+                    name: gen.block.name.as_ref().map(|name| Ident::clone(name)),
                     instances: RefCell::new(Vec::new()),
                 });
                 if let Some(name) = &gen.block.name {
@@ -758,8 +758,8 @@ impl<'a> Elaborator<'a> {
                     }
                     let scope = self.scopes.pop().unwrap();
                     let decl = HierItem::GenBlock(Rc::new(hier::GenBlock {
-                        name: block.name.clone(),
-                        scope
+                        name: block.name.as_ref().map(|name| Ident::clone(name)),
+                        scope,
                     }));
                     if let Some(v) = &block.name {
                         self.add_to_scope(v, decl);

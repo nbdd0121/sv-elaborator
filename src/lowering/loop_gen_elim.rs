@@ -88,7 +88,7 @@ impl LoopGenEliminator {
                         let new_name = loopgenblk.name.as_ref().map(|name| {
                             Ident::new_unspanned(format!("{}_{}", name, val))
                         });
-                        genblk_mut.name = new_name.as_ref().map(|name| Box::new(name.clone()));
+                        genblk_mut.name = new_name.clone();
                     }
                 }
                 _ => (),
@@ -163,7 +163,7 @@ impl LoopGenEliminator {
                         match parent.value {
                             ast::HierId::Name(_, ref mut name) |
                             ast::HierId::Member(_, ref mut name) => {
-                                *name = genblk.name.as_ref().unwrap().clone();
+                                *name = Box::new(genblk.name.as_ref().unwrap().clone());
                             }
                             _ => unreachable!(),
                         }

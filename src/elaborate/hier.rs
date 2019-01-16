@@ -176,7 +176,7 @@ impl HierScope {
 /// Represent a generate block
 #[derive(Clone)]
 pub struct GenBlock {
-    pub name: Option<Box<Ident>>,
+    pub name: Option<Ident>,
     pub scope: HierScope,
 }
 
@@ -188,7 +188,7 @@ pub struct GenVar {
 /// Represent a loop-generate block
 #[derive(Clone)]
 pub struct LoopGenBlock {
-    pub name: Option<Box<Ident>>,
+    pub name: Option<Ident>,
     pub instances: RefCell<Vec<(i32, Rc<GenBlock>)>>,
 }
 

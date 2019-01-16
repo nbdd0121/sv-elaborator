@@ -443,7 +443,7 @@ impl<'a> Reconstructor<'a> {
                     attr: None,
                     if_block: vec![{
                         (self.reconstruct_const(&LogicValue::One.into(), Span::none()), GenBlock {
-                            name: genblk.name.clone(),
+                            name: genblk.name.clone().map(Box::new),
                             items: sublist,
                         })
                     }],
