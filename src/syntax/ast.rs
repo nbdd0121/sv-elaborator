@@ -978,8 +978,16 @@ impl AstNode for HierId {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymbolId(pub u32);
 
+// It is unlikely that this will not be enough.
+static SYMBOL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl SymbolId {
     pub const DUMMY: Self = SymbolId(std::u32::MAX);
+
+    pub fn allocate() -> SymbolId {
+        let id = SYMBOL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        SymbolId(id as u32)
+    }
 }
 
 /// Represent an identifier. In additional to value and span as Spanned<T> have, it also contains

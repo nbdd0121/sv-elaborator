@@ -80,7 +80,6 @@ struct Resolver<'a> {
     // /// Caches self-determined expression size
     // size: HashMap<NodeId, (bool, usize)>,
     diag: &'a DiagMgr,
-    symbol: u32,
 
     /// Packages. As package name needs to be inserted into both pkg and pkg_ref we avoid
     /// duplication by using reference-counted pointers here.
@@ -96,17 +95,10 @@ impl<'a> Resolver<'a> {
     fn new(diag: &'a DiagMgr) -> Resolver<'a> {
         Resolver {
             diag: diag,
-            symbol: 0,
             pkg: HashMap::new(),
             pkg_ref: HashMap::new(),
             scopes: Vec::new(),
         }
-    }
-
-    fn alloc_id(&mut self) -> SymbolId {
-        let ret = self.symbol;
-        self.symbol += 1;
-        SymbolId(ret)
     }
 
     fn add_to_scope_noalloc(&mut self, ident: &Ident, kind: SymbolKind) {
@@ -122,7 +114,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn add_to_scope(&mut self, ident: &mut Ident, kind: SymbolKind) {
-        ident.symbol = self.alloc_id();
+        ident.symbol = SymbolId::allocate();
         if let Some(_) = self.scopes.last_mut().unwrap().map.insert(ident.value.clone(), (
             ident.symbol,
             kind
