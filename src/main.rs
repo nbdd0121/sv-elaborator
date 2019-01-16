@@ -138,7 +138,8 @@ fn main() {
 
     lowering::gen_name_assign(&mut elaborated);
     let elaborated = lowering::loop_gen_elim(elaborated);
-    let mut elaborated = lowering::inst_array_elim(elaborated);
+    let elaborated = lowering::inst_array_elim(elaborated);
+    let mut elaborated = lowering::gen_blk_elim(elaborated);
     lowering::type_param_elim(&mut elaborated);
 
     let files = elaborate::reconstruct(&elaborated);
