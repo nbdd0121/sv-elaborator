@@ -283,27 +283,16 @@ impl LoopGenEliminator {
         self.scopes.push(HierScope::new());
         for mut item in scope.items {
             let ident = match item {
-                HierItem::Instance(ref decl) => Some(decl.name.clone()),
-                HierItem::InterfacePort(ref decl) => Some(decl.name.clone()),
-                HierItem::Param(ref decl) => Some(decl.name.clone()),
-                HierItem::Type(ref decl) => Some(decl.name.clone()),
-                HierItem::DataPort(ref decl) => Some(decl.name.clone()),
                 HierItem::Design(ref mut decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
                         ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.expand_loopgen(scope));
                     }
                     None
                 }
-                HierItem::DataDecl(ref decl) => Some(decl.name.clone()),
-                HierItem::FuncDecl(ref decl) => Some(decl.name.clone()),
-                HierItem::ContinuousAssign(..) => None,
-                HierItem::Other(..) => None,
-                HierItem::InstancePart { .. } => unreachable!(),
                 HierItem::GenBlock(ref mut genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_loopgen(scope));
                     Some(genblk.name.as_ref().unwrap().clone())
                 }
-                HierItem::GenVar(ref decl) => Some(decl.name.clone()),
                 HierItem::LoopGenBlock(loopgenblk) => {
                     let loopgenblk = Rc::try_unwrap(loopgenblk).unwrap_or_else(|_| unreachable!());
                     for (_, mut genblk) in loopgenblk.instances.into_inner() {
@@ -313,11 +302,7 @@ impl LoopGenEliminator {
                     }
                     continue;
                 }
-                HierItem::Modport(ref decl) => Some(decl.name.clone()),
-                HierItem::Enum(..) => {
-                    // TODO: Ignore for now
-                    None
-                }
+                ref item => super::common::name_of(item).map(Ident::clone),
             };
             self.scopes.last_mut().unwrap().insert(ident, item);
         }

@@ -1,3 +1,4 @@
+mod common;
 mod gen_name_assign;
 mod loop_gen_elim;
 mod inst_array_elim;

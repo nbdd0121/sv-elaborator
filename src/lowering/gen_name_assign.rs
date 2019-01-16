@@ -13,7 +13,7 @@ pub fn gen_name_assign(source: &mut hier::Source) {
     }
 }
 
-pub fn assign_name(scope: &mut HierScope) {
+fn assign_name(scope: &mut HierScope) {
     for item in &mut scope.items {
         match item {
             HierItem::Design(decl) => {

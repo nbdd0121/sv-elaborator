@@ -414,32 +414,17 @@ impl InstArrayEliminator {
                     }
                     continue;
                 }
-                HierItem::Param(ref decl) => Some(decl.name.clone()),
-                HierItem::Type(ref decl) => Some(decl.name.clone()),
-                HierItem::DataPort(ref decl) => Some(decl.name.clone()),
                 HierItem::Design(ref mut decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
                         ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.expand_array(scope));
                     }
                     None
                 }
-                HierItem::DataDecl(ref decl) => Some(decl.name.clone()),
-                HierItem::FuncDecl(ref decl) => Some(decl.name.clone()),
-                HierItem::ContinuousAssign(..) => None,
-                HierItem::Other(..) => None,
-                HierItem::InstancePart { .. } => unreachable!(),
                 HierItem::GenBlock(ref mut genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_array(scope));
                     genblk.name.as_ref().map(|name| Ident::clone(name))
                 }
-                HierItem::GenVar(ref decl) => Some(decl.name.clone()),
-                // Should already be eliminated
-                HierItem::LoopGenBlock(..) => unreachable!(),
-                HierItem::Modport(ref decl) => Some(decl.name.clone()),
-                HierItem::Enum(..) => {
-                    // TODO: Ignore for now
-                    None
-                }
+                ref item => super::common::name_of(item).map(Ident::clone),
             };
             self.scopes.last_mut().unwrap().insert(ident, item);
         }
