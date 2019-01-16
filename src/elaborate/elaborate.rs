@@ -93,16 +93,12 @@ impl<'a> Elaborator<'a> {
 
     /// Insert the identifier into scope.
     pub fn add_to_scope(&mut self, ident: &Ident, item: HierItem) {
-        let scope = self.scopes.last_mut().unwrap();
-        let index = scope.items.len();
-        scope.items.push(item);
-        scope.names.insert(ident.value.to_owned(), index);
-        scope.symbols.insert(ident.symbol, index);
+        self.scopes.last_mut().unwrap().insert(Some(ident.clone()), item);
     }
 
     pub fn add_item(&mut self, item: HierItem) {
         // Add to current item list
-        self.scopes.last_mut().unwrap().items.push(item);
+        self.scopes.last_mut().unwrap().insert(None, item);
     }
 
     /// This will instantiate a parameterised module.
@@ -126,9 +122,17 @@ impl<'a> Elaborator<'a> {
                     let ty = self.eval_ty(ty);
                     for assign in list {
                         assert!(assign.dim.len() == 0);
+                        // Default net type to wire. Technically we don't need to do this but some
+                        // SystemVerilog implementation incorrectly assumes the net port type to
+                        // be var when a data type is present.
+                        let netty = if let NetPortType::Default = net {
+                            NetPortType::Builtin(NetTy::Wire)
+                        } else {
+                            net.clone()
+                        };
                         let declitem = HierItem::DataPort(Rc::new(hier::DataPortDecl {
                             dir: *dir,
-                            net: net.clone(),
+                            net: netty,
                             ty: ty.clone(),
                             name: assign.name.clone(),
                             init: assign.init.clone(),
