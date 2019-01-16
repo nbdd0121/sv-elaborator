@@ -20,6 +20,7 @@ use std::io::prelude::*;
 
 use source::{SrcMgr, Source, DiagMgr, Severity};
 use printer::PrettyPrint;
+use syntax::ast;
 
 // use lexer::TokenKind;
 use std::rc::Rc;
@@ -38,6 +39,7 @@ fn main() {
     let mut opts = getopts::Options::new();
     opts.optopt("o", "", "set output file name", "FILE");
     opts.optopt("t", "", "set toplevel module name", "MODULE");
+    opts.optmulti("b", "", "set a module to be a black box", "MODULE");
     opts.optflag("", "parse", "parse only, do not elaborate");
     opts.optflag("h", "help", "print this help message");
 
@@ -156,6 +158,7 @@ fn main() {
         writeln!(out, "{}", printer.take()).unwrap();
     }
 
+    let blackbox = matches.opt_strs("b");
     for (list, name) in files.iter().skip(1).zip(matches.free.iter()) {
         writeln!(out, "/* file: {} */", name).unwrap();
         if list.is_empty() {
@@ -163,6 +166,12 @@ fn main() {
         } else {
             let mut printer = PrettyPrint::new();
             for i in list {
+                // If it is a design unit specified in blackbox list, do not print it out.
+                if let ast::Item::DesignDecl(ref decl) = i {
+                    if blackbox.iter().any(|item| &decl.name.value == item) {
+                        continue
+                    }
+                }
                 printer.print_item(&i);
                 printer.append("\n");
             }
