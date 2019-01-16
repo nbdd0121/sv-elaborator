@@ -432,7 +432,6 @@ impl<'a> Reconstructor<'a> {
                 })))
             }
             HierItem::Other(item) => list.push(Item::clone(item)),
-            HierItem::OtherName => (),
             HierItem::GenBlock(genblk) => {
                 // Reconstruct all interior items
                 let mut sublist = Vec::new();

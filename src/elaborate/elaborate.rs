@@ -1114,7 +1114,6 @@ impl<'a> Elaborator<'a> {
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::ContinuousAssign(_) => unreachable!(),
             HierItem::Other(_) => unreachable!(),
-            HierItem::OtherName => unimplemented!(),
             HierItem::Instance(_) => Ty::Void, // Not typable
             HierItem::InstancePart{ .. } => Ty::Void, // Not typable
             HierItem::GenBlock(_) => Ty::Void, // Not typable

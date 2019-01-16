@@ -215,7 +215,6 @@ pub enum HierItem {
     /// Other items that we don't really care in elaboration
     /// We might need to treat a little bit different to support constant functions though.
     Other(Rc<ast::Item>),
-    OtherName,
     /// An instantiated design
     Instance(Rc<InstanceDecl>),
     /// An part-selected instance

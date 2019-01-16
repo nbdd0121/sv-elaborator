@@ -155,8 +155,7 @@ impl InstArrayEliminator {
                                     break 'resolve_loop v.clone()
                                 }
                             }
-                            // unimplemented!("{:?}", name)
-                            break HierItem::OtherName
+                            unreachable!()
                         }
                     }
                     _ => unimplemented!(),
@@ -177,8 +176,7 @@ impl InstArrayEliminator {
                     HierItem::GenBlock(decl) => {
                         decl.scope.find(&name).unwrap().clone()
                     }
-                    _ => HierItem::OtherName,
-                    // _ => unimplemented!()
+                    _ => unreachable!()
                 }
             }
             ast::HierId::Select(..) => {
@@ -205,8 +203,7 @@ impl InstArrayEliminator {
                                 dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
                             }
                         }
-                        // _ => unimplemented!(),
-                        _ => HierItem::OtherName,
+                        _ => unreachable!(),
                     });
                     // Mutate the parent's name to include the dimension
                     match parent.value {
@@ -429,8 +426,7 @@ impl InstArrayEliminator {
                 HierItem::DataDecl(ref decl) => Some(decl.name.clone()),
                 HierItem::FuncDecl(ref decl) => Some(decl.name.clone()),
                 HierItem::ContinuousAssign(..) => None,
-                HierItem::Other(..) |
-                HierItem::OtherName => None,
+                HierItem::Other(..) => None,
                 HierItem::InstancePart { .. } => unreachable!(),
                 HierItem::GenBlock(ref mut genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_array(scope));

@@ -86,10 +86,10 @@ impl LoopGenEliminator {
                         // Prepare nested scopes
                         self.prepare_genblks(&mut genblk_mut.scope);
                         // Then assign names
-                        // TODO: How about symbols
-                        let new_name = Ident::new_unspanned(
+                        let mut new_name = Ident::new_unspanned(
                             format!("{}_{}", loopgenblk.name.as_ref().unwrap(), val)
                         );
+                        new_name.symbol = ast::SymbolId::allocate();
                         genblk_mut.name = Some(new_name);
                     }
                 }
@@ -115,8 +115,7 @@ impl LoopGenEliminator {
                                     break 'resolve_loop v.clone()
                                 }
                             }
-                            // unimplemented!("{:?}", name)
-                            break HierItem::OtherName
+                            unreachable!()
                         }
                     }
                     _ => unimplemented!(),
@@ -137,8 +136,7 @@ impl LoopGenEliminator {
                     HierItem::GenBlock(decl) => {
                         decl.scope.find(&name).unwrap().clone()
                     }
-                    _ => HierItem::OtherName,
-                    // _ => unimplemented!()
+                    _ => unreachable!()
                 }
             }
             ast::HierId::Select(parent, sel) => {
@@ -171,8 +169,7 @@ impl LoopGenEliminator {
                         }
                         HierItem::GenBlock(genblk)
                     }
-                    // _ => unimplemented!(),
-                    _ => return HierItem::OtherName,
+                    _ => unreachable!(),
                 };
                 // Replace parent
                 (std::mem::replace(&mut **parent, ast::Spanned::new_unspanned(ast::HierId::Root)), hier)
@@ -300,12 +297,11 @@ impl LoopGenEliminator {
                 HierItem::DataDecl(ref decl) => Some(decl.name.clone()),
                 HierItem::FuncDecl(ref decl) => Some(decl.name.clone()),
                 HierItem::ContinuousAssign(..) => None,
-                HierItem::Other(..) |
-                HierItem::OtherName => None,
+                HierItem::Other(..) => None,
                 HierItem::InstancePart { .. } => unreachable!(),
                 HierItem::GenBlock(ref mut genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_loopgen(scope));
-                    genblk.name.as_ref().map(|name| Ident::clone(name))
+                    Some(genblk.name.as_ref().unwrap().clone())
                 }
                 HierItem::GenVar(ref decl) => Some(decl.name.clone()),
                 HierItem::LoopGenBlock(loopgenblk) => {
