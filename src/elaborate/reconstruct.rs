@@ -363,6 +363,74 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, expr.span)
     }
 
+    pub fn reconstruct_stmt(&self, stmt: &expr::Stmt) -> ast::Stmt {
+        let kind = match &stmt.value {
+            expr::StmtKind::Empty => ast::StmtKind::Empty,
+            expr::StmtKind::TimingCtrl(ctrl, stmt) => ast::StmtKind::TimingCtrl(
+                ctrl.clone(),
+                Box::new(self.reconstruct_stmt(stmt))
+            ),
+            expr::StmtKind::If { uniq, cond, success, failure } => {
+                let cond = self.reconstruct_expr(cond);
+                let t = self.reconstruct_stmt(success);
+                let f = failure.as_ref().map(|f| self.reconstruct_stmt(f));
+                ast::StmtKind::If(*uniq, Box::new(cond), Box::new(t), f.map(Box::new))
+            },
+            expr::StmtKind::Case { uniq, kw, expr, items } => {
+                let expr = self.reconstruct_expr(expr);
+                let items = items.iter().map(|(conds, stmt)| {
+                    let conds = conds.iter().map(|cond| self.reconstruct_expr(cond)).collect();
+                    let stmt = self.reconstruct_stmt(stmt);
+                    (conds, stmt)
+                }).collect();
+                ast::StmtKind::Case {
+                    uniq: *uniq,
+                    kw: *kw,
+                    expr: Box::new(expr),
+                    items,
+                }
+            },
+            expr::StmtKind::For { ty, init, cond, update, body } => {
+                let ty = ty.as_ref().map(|ty| self.reconstruct_ty_simple(ty));
+                let init = init.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                let cond = cond.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                let update = update.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                let body = Box::new(self.reconstruct_stmt(body));
+                ast::StmtKind::For {
+                    ty: ty.map(Box::new),
+                    init, cond, update, body
+                }
+            },
+            expr::StmtKind::Assert { kind, expr, success, failure } => {
+                let expr = Box::new(self.reconstruct_expr(expr));
+                let success = success.as_ref().map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
+                let failure = failure.as_ref().map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
+                ast::StmtKind::Assert {
+                    kind: *kind,
+                    expr,
+                    success,
+                    failure,
+                }
+            },
+            expr::StmtKind::SeqBlock(list) => {
+                let list = list.iter().map(|stmt| self.reconstruct_stmt(stmt)).collect();
+                ast::StmtKind::SeqBlock(list)
+            }
+            expr::StmtKind::Expr(expr) => {
+                let expr = self.reconstruct_expr(expr);
+                ast::StmtKind::Expr(Box::new(expr))
+            }
+            expr::StmtKind::DataDecl(_decl) => {
+                unimplemented!()
+            }
+        };
+        ast::Stmt {
+            label: stmt.label.clone(),
+            attr: None,
+            value: kind,
+        }
+    }
+
     pub fn reconstruct_item(&self, item: &HierItem, list: &mut Vec<Item>) {
         match item {
             HierItem::Param(decl) => {
@@ -411,6 +479,9 @@ impl<'a> Reconstructor<'a> {
             }
             HierItem::ContinuousAssign(expr) => {
                 list.push(Item::ContinuousAssign(vec![self.reconstruct_expr(expr)]));
+            }
+            HierItem::Always(kw, stmt) => {
+                list.push(Item::Always(*kw, Box::new(self.reconstruct_stmt(stmt))));
             }
             HierItem::Design(decl) => {
                 // Reconstruct all instantiations and display them here

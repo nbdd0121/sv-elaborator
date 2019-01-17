@@ -7,7 +7,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
 pub use super::ty::{IntTy, Ty, Struct, Enum};
-pub use super::expr::{Expr, Val};
+pub use super::expr::{Expr, Stmt, Val};
 
 /// Resolved and evaluated parameter declaration
 #[derive(Debug, Clone, PartialEq)]
@@ -212,6 +212,7 @@ pub enum HierItem {
     DataDecl(Rc<DataDecl>),
     FuncDecl(Rc<FuncDecl>),
     ContinuousAssign(Rc<Expr>),
+    Always(ast::AlwaysKw, Rc<Stmt>),
     /// Other items that we don't really care in elaboration
     /// We might need to treat a little bit different to support constant functions though.
     Other(Rc<ast::Item>),

@@ -2,9 +2,12 @@
 
 use std::ops;
 use std::fmt;
+use std::rc::Rc;
+
 use source::Span;
 use number::LogicVec;
 use super::ty::Ty;
+use super::hier;
 use syntax::ast::{self, IncDec, UnaryOp, BinaryOp, Spanned};
 
 use syntax::ast::{HierId, Ident};
@@ -136,4 +139,44 @@ pub enum AssignPattern {
     // Mult(Box<Expr>, Vec<Expr>),
     #[doc(hidden)]
     __Nonexhaustive,
+}
+
+#[derive(Debug, Clone)]
+pub enum StmtKind {
+    Empty,
+    TimingCtrl(ast::TimingCtrl, Box<Stmt>),
+    If {
+        uniq: Option<ast::UniqPrio>,
+        cond: Box<Expr>,
+        success: Box<Stmt>,
+        failure: Option<Box<Stmt>>,
+    },
+    Case {
+        uniq: Option<ast::UniqPrio>,
+        kw: ast::CaseKw,
+        expr: Box<Expr>,
+        items: Vec<(Vec<Expr>, Stmt)>,
+    },
+    For {
+        ty: Option<Box<Ty>>,
+        init: Vec<Expr>,
+        cond: Option<Box<Expr>>,
+        update: Vec<Expr>,
+        body: Box<Stmt>,
+    },
+    Assert {
+        kind: (),
+        expr: Box<Expr>,
+        success: Option<Box<Stmt>>,
+        failure: Option<Box<Stmt>>,
+    },
+    SeqBlock(Vec<Stmt>),
+    Expr(Box<Expr>),
+    DataDecl(Rc<hier::DataDecl>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub label: Option<Box<Ident>>,
+    pub value: StmtKind,
 }

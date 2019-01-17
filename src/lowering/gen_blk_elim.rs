@@ -140,22 +140,20 @@ impl GenBlkEliminator {
                         let item = decl.scope.find(&name).unwrap().clone();
                         let new_name = super::common::name_of(&item).unwrap().clone();
                         // Remove prefixing parent and replace with actual name
-                        let repl = match &mut parent.value {
-                            ast::HierId::Name(None, name) => {
-                                ast::HierId::Name(None, Box::new(new_name))
-                            }
-                            ast::HierId::Member(parent, name) => {
-                                let parent = std::mem::replace(parent, Box::new(ast::Spanned::new_unspanned(ast::HierId::Root)));
-                                ast::HierId::Member(parent, Box::new(new_name))
+                        match &mut parent.value {
+                            ast::HierId::Name(None, name) |
+                            ast::HierId::Member(_, name) => {
+                                **name = new_name
                             }
                             _ => unimplemented!(),
-                        };
+                        }
+                        let repl = std::mem::replace(&mut parent.value, ast::HierId::Root);
                         (repl, item)
                     }
                     _ => unreachable!()
                 }
             }
-            ast::HierId::Select(parent, sel) => {
+            ast::HierId::Select(parent, _) => {
                 let parent_hier = self.xfrm_hier_id(parent);
                 return match parent_hier {
                     HierItem::Instance(ref inst) => {
@@ -286,22 +284,12 @@ impl GenBlkEliminator {
 
     pub fn expand_item(&mut self, mut item: HierItem) {
         let ident = match item {
-            HierItem::Instance(ref decl) => Some(decl.name.clone()),
-            HierItem::InterfacePort(ref decl) => Some(decl.name.clone()),
-            HierItem::Param(ref decl) => Some(decl.name.clone()),
-            HierItem::Type(ref decl) => Some(decl.name.clone()),
-            HierItem::DataPort(ref decl) => Some(decl.name.clone()),
             HierItem::Design(ref mut decl) => {
                 for (_, inst) in decl.instances.borrow_mut().iter_mut() {
                     ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.expand_genblk(scope));
                 }
                 None
             }
-            HierItem::DataDecl(ref decl) => Some(decl.name.clone()),
-            HierItem::FuncDecl(ref decl) => Some(decl.name.clone()),
-            HierItem::ContinuousAssign(..) => None,
-            HierItem::Other(..) => None,
-            HierItem::InstancePart { .. } => unreachable!(),
             HierItem::GenBlock(ref mut genblk) => {
                 let items = std::mem::replace(&mut Rc::get_mut(genblk).unwrap().scope.items, Vec::new());
                 for item in items {
@@ -309,13 +297,7 @@ impl GenBlkEliminator {
                 }
                 return;
             }
-            HierItem::GenVar(ref decl) => Some(decl.name.clone()),
-            HierItem::LoopGenBlock(_) => unreachable!(),
-            HierItem::Modport(ref decl) => Some(decl.name.clone()),
-            HierItem::Enum(..) => {
-                // TODO: Ignore for now
-                None
-            }
+            ref item => super::common::name_of(item).map(Ident::clone),
         };
         self.scopes.last_mut().unwrap().insert(ident, item);
     }

@@ -643,10 +643,13 @@ impl<'a> Elaborator<'a> {
                     self.add_item(HierItem::ContinuousAssign(Rc::new(assign)));
                 }
             }
-            v @ Item::Initial(..) |
-            v @ Item::Always(..) => {
+            v @ Item::Initial(..) => {
                 // Need to clone AST here.
                 self.add_item(HierItem::Other(Rc::new(Item::clone(v))));
+            }
+            Item::Always(kw, stmt) => {
+                let stmt = self.elaborate_stmt(stmt);
+                self.add_item(HierItem::Always(*kw, Rc::new(stmt)));
             }
             Item::HierInstantiation(inst) => {
                 self.elaborate_instantiation(inst);
@@ -900,6 +903,100 @@ impl<'a> Elaborator<'a> {
         self.elaborate_toplevel(toplevel);
     }
 
+    fn elaborate_stmt(&mut self, stmt: &ast::Stmt) -> expr::Stmt {
+        let kind = match &stmt.value {
+            ast::StmtKind::Empty => expr::StmtKind::Empty,
+            ast::StmtKind::TimingCtrl(ctrl, stmt) => expr::StmtKind::TimingCtrl(
+                ctrl.clone(),
+                Box::new(self.elaborate_stmt(stmt))
+            ),
+            ast::StmtKind::If(uniq, cond, t, f) => {
+                let cond = self.type_check_bool(cond);
+                let t = self.elaborate_stmt(t);
+                let f = f.as_ref().map(|f| self.elaborate_stmt(f));
+                expr::StmtKind::If {
+                    uniq: *uniq,
+                    cond: Box::new(cond),
+                    success: Box::new(t),
+                    failure: f.map(Box::new),
+                }
+            },
+            ast::StmtKind::Case { uniq, kw, expr, items } => {
+                let expr = self.type_check(expr, None);
+                let items = items.iter().map(|(conds, stmt)| {
+                    let conds = conds.iter().map(|cond| self.type_check(cond, None)).collect();
+                    let stmt = self.elaborate_stmt(stmt);
+                    (conds, stmt)
+                }).collect();
+                expr::StmtKind::Case {
+                    uniq: *uniq,
+                    kw: *kw,
+                    expr: Box::new(expr),
+                    items,
+                }
+            },
+            ast::StmtKind::For { ty, init, cond, update, body } => {
+                let ty = ty.as_ref().map(|ty| self.eval_ty(ty));
+                if let Some(ref ty) = ty {
+                    // The scope for initialisers
+                    self.scopes.push(HierScope::new());
+                    for expr in init {
+                        if let ExprKind::Assign(lhs, _) = &expr.value {
+                            if let ExprKind::HierName(HierId::Name(None, name)) = &lhs.value {
+                                self.add_to_scope(name, HierItem::DataDecl(Rc::new(hier::DataDecl {
+                                    lifetime: ast::Lifetime::Automatic,
+                                    ty: ty.clone(),
+                                    name: Ident::clone(name),
+                                    // We will process initialisers later, set it to none here.
+                                    init: None,
+                                })));
+                            } else { unreachable!() }
+                        } else { unreachable!(); }
+                    }
+                }
+                let init = init.iter().map(|expr| self.type_check(expr, None)).collect();
+                let cond = cond.as_ref().map(|expr| Box::new(self.type_check_bool(expr)));
+                let update = update.iter().map(|expr| self.type_check(expr, None)).collect();
+                let body = Box::new(self.elaborate_stmt(body));
+                if ty.is_some() {
+                    self.scopes.pop();
+                }
+                expr::StmtKind::For {
+                    ty: ty.map(Box::new),
+                    init, cond, update, body
+                }
+            },
+            ast::StmtKind::Assert { kind, expr, success, failure } => {
+                let expr = Box::new(self.type_check_bool(expr));
+                let success = success.as_ref().map(|stmt| Box::new(self.elaborate_stmt(stmt)));
+                let failure = failure.as_ref().map(|stmt| Box::new(self.elaborate_stmt(stmt)));
+                expr::StmtKind::Assert {
+                    kind: *kind,
+                    expr,
+                    success,
+                    failure,
+                }
+            },
+            ast::StmtKind::SeqBlock(list) => {
+                self.scopes.push(HierScope::new());
+                let list = list.iter().map(|stmt| self.elaborate_stmt(stmt)).collect();
+                self.scopes.pop();
+                expr::StmtKind::SeqBlock(list)
+            }
+            ast::StmtKind::Expr(expr) => {
+                let expr = self.type_check(expr, None);
+                expr::StmtKind::Expr(Box::new(expr))
+            }
+            ast::StmtKind::DataDecl(_decl) => {
+                unimplemented!()
+            }
+        };
+        expr::Stmt {
+            label: stmt.label.clone(),
+            value: kind,
+        }
+    }
+
     //
     // The following section handles data type folding
     //
@@ -1113,6 +1210,7 @@ impl<'a> Elaborator<'a> {
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::ContinuousAssign(_) => unreachable!(),
+            HierItem::Always(..) => unreachable!(),
             HierItem::Other(_) => unreachable!(),
             HierItem::Instance(_) => Ty::Void, // Not typable
             HierItem::InstancePart{ .. } => Ty::Void, // Not typable
@@ -1628,7 +1726,19 @@ impl<'a> Elaborator<'a> {
                             ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
                         }
                     }
-                    _ => unimplemented!("{:?}", call.task),
+                    _ => {
+                        eprintln!("{:?} unimplemented", call.task);
+                        let args = if let Some(args) = &call.args {
+                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v, None))).collect()
+                        } else {
+                            unimplemented!()
+                        };
+                        expr::Expr {
+                            value: expr::ExprKind::SysTfCall(Box::new(call.task.clone()), args),
+                            span: expr.span,
+                            ty: Ty::Void,
+                        }
+                    }
                 }
             }
             ExprKind::FuncCall { ref expr, ref args, .. } => {
