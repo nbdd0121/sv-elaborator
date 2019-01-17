@@ -306,7 +306,20 @@ impl<'a> Reconstructor<'a> {
                     _ => unimplemented!(),
                 }
             }
-            expr::ExprKind::SysTfCall(..) => unimplemented!(),
+            expr::ExprKind::SysTfCall(ref name, ref args) => {
+                let args = args
+                    .iter()
+                    .map(|arg| arg.as_ref().map(|arg| Box::new(self.reconstruct_expr(arg))))
+                    .collect();
+
+                ast::ExprKind::SysTfCall(Box::new(SysTfCall {
+                    task: Spanned::clone(name),
+                    args: Some(Args {
+                        ordered: args,
+                        named: Vec::new(),
+                    })
+                }))
+            }
             expr::ExprKind::FuncCall { ref expr, ref args } => {
                 ast::ExprKind::FuncCall {
                     expr: expr.clone(),
@@ -336,7 +349,9 @@ impl<'a> Reconstructor<'a> {
                 ast::ExprKind::Binary(Box::new(ast_lhs), op, None, Box::new(ast_rhs))
             }
             expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
-            expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
+            expr::ExprKind::PostfixIncDec(ref lhs, op) => {
+                ast::ExprKind::PostfixIncDec(Box::new(self.reconstruct_expr(lhs)), None, op)
+            }
             expr::ExprKind::Assign(ref lhs, ref rhs) => {
                 let ast_lhs = self.reconstruct_expr(lhs);
                 let ast_rhs = self.reconstruct_expr(rhs);

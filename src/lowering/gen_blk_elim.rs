@@ -13,6 +13,7 @@ use syntax::ast::{self, Ident};
 use elaborate::ty;
 use elaborate::expr;
 use elaborate::hier::{self, HierScope, HierItem};
+use elaborate::eht_visit::EhtVisitor;
 
 pub fn gen_blk_elim(source: hier::Source) -> hier::Source {
     let mut elim = GenBlkEliminator {
@@ -179,65 +180,6 @@ impl GenBlkEliminator {
         hier
     }
 
-    /// Transform an expression. This visits all subexpressions.
-    pub fn xfrm_expr(&mut self, expr: &mut expr::Expr) {
-        match &mut expr.value {
-            expr::ExprKind::Const(..) => (),
-            expr::ExprKind::HierName(id) => {
-                self.xfrm_hier_id(id);
-            }
-            expr::ExprKind::EmptyQueue => (),
-            expr::ExprKind::Concat(list) => for item in list { self.xfrm_expr(item) },
-            expr::ExprKind::MultConcat(_, subexpr) => self.xfrm_expr(subexpr),
-            expr::ExprKind::AssignPattern(_, pattern) => {
-                match pattern {
-                    expr::AssignPattern::Simple(list) => {
-                        for item in list {
-                            self.xfrm_expr(item);
-                        }
-                    }
-                    _ => unimplemented!(),
-                }
-            }
-            expr::ExprKind::Select(parent, dim) => {
-                self.xfrm_expr(parent);
-                match &mut dim.value {
-                    expr::DimKind::Value(expr) => self.xfrm_expr(expr),
-                    expr::DimKind::Range(..) => (),
-                    expr::DimKind::PlusRange(expr, _) => self.xfrm_expr(expr),
-                    expr::DimKind::MinusRange(expr, _) => self.xfrm_expr(expr),
-                }
-            }
-            expr::ExprKind::Member(parent, _) => self.xfrm_expr(parent),
-            expr::ExprKind::SysTfCall(..) => unimplemented!(),
-            expr::ExprKind::FuncCall { .. } => (),
-            expr::ExprKind::ConstCast(..) => unimplemented!(),
-            expr::ExprKind::TypeCast(_, rhs) => self.xfrm_expr(rhs),
-            expr::ExprKind::SignCast(..) => unimplemented!(),
-            expr::ExprKind::WidthCast(_, rhs) => self.xfrm_expr(rhs),
-            expr::ExprKind::Unary(_, expr) => self.xfrm_expr(expr),
-            expr::ExprKind::Binary(lhs, _, rhs) => {
-                self.xfrm_expr(lhs);
-                self.xfrm_expr(rhs);
-            }
-            expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
-            expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
-            expr::ExprKind::Assign(lhs, rhs) |
-            expr::ExprKind::NonblockAssign(lhs, rhs) => {
-                self.xfrm_expr(lhs);
-                self.xfrm_expr(rhs);
-            }
-            expr::ExprKind::BinaryAssign(..) => unimplemented!(),
-            expr::ExprKind::Paren(expr) => self.xfrm_expr(expr),
-            expr::ExprKind::MinTypMax(..) => unimplemented!(),
-            expr::ExprKind::Cond(cond, t, f) => {
-                self.xfrm_expr(cond);
-                self.xfrm_expr(t);
-                self.xfrm_expr(f);
-            }
-        }
-    }
-
     /// Second stage of gen blk elimination: transform expressions.
     /// This function requires scope to be taken away and then placed back because we need to build
     /// up self.scopes to be able to resolve expressions.
@@ -251,7 +193,7 @@ impl GenBlkEliminator {
             match &mut item {
                 HierItem::Instance(decl) => {
                     for port in &mut Rc::get_mut(decl).unwrap().port {
-                        if let Some(port) = port { self.xfrm_expr(port) }
+                        if let Some(port) = port { self.visit_expr(port) }
                     }
                 }
                 HierItem::Design(decl) => {
@@ -260,7 +202,7 @@ impl GenBlkEliminator {
                     }
                 }
                 HierItem::ContinuousAssign(expr) => {
-                    self.xfrm_expr(Rc::get_mut(expr).unwrap());
+                    self.visit_expr(Rc::get_mut(expr).unwrap());
                 }
                 HierItem::GenBlock(genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
@@ -300,5 +242,16 @@ impl GenBlkEliminator {
             ref item => super::common::name_of(item).map(Ident::clone),
         };
         self.scopes.last_mut().unwrap().insert(ident, item);
+    }
+}
+
+impl EhtVisitor for GenBlkEliminator {
+    fn visit_expr(&mut self, expr: &mut expr::Expr) {
+        match expr.value {
+            expr::ExprKind::HierName(ref mut id) => {
+                self.xfrm_hier_id(id);
+            }
+            _ => self.do_visit_expr(expr),
+        }
     }
 }

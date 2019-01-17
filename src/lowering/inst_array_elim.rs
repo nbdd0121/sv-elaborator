@@ -10,6 +10,7 @@ use syntax::ast::{self, Ident};
 use elaborate::ty;
 use elaborate::expr;
 use elaborate::hier::{self, HierScope, HierItem, InstanceDecl, InterfacePortDecl};
+use elaborate::eht_visit::EhtVisitor;
 
 pub fn inst_array_elim(source: hier::Source) -> hier::Source {
     let mut elim = InstArrayEliminator {
@@ -222,65 +223,6 @@ impl InstArrayEliminator {
         }
     }
 
-    /// Transform an expression. This visits all subexpressions.
-    pub fn xfrm_expr(&mut self, expr: &mut expr::Expr) {
-        match &mut expr.value {
-            expr::ExprKind::Const(..) => (),
-            expr::ExprKind::HierName(id) => {
-                self.xfrm_hier_id(id);
-            }
-            expr::ExprKind::EmptyQueue => (),
-            expr::ExprKind::Concat(list) => for item in list { self.xfrm_expr(item) },
-            expr::ExprKind::MultConcat(_, subexpr) => self.xfrm_expr(subexpr),
-            expr::ExprKind::AssignPattern(_, pattern) => {
-                match pattern {
-                    expr::AssignPattern::Simple(list) => {
-                        for item in list {
-                            self.xfrm_expr(item);
-                        }
-                    }
-                    _ => unimplemented!(),
-                }
-            }
-            expr::ExprKind::Select(parent, dim) => {
-                self.xfrm_expr(parent);
-                match &mut dim.value {
-                    expr::DimKind::Value(expr) => self.xfrm_expr(expr),
-                    expr::DimKind::Range(..) => (),
-                    expr::DimKind::PlusRange(expr, _) => self.xfrm_expr(expr),
-                    expr::DimKind::MinusRange(expr, _) => self.xfrm_expr(expr),
-                }
-            }
-            expr::ExprKind::Member(parent, _) => self.xfrm_expr(parent),
-            expr::ExprKind::SysTfCall(..) => unimplemented!(),
-            expr::ExprKind::FuncCall { .. } => (),
-            expr::ExprKind::ConstCast(..) => unimplemented!(),
-            expr::ExprKind::TypeCast(_, rhs) => self.xfrm_expr(rhs),
-            expr::ExprKind::SignCast(..) => unimplemented!(),
-            expr::ExprKind::WidthCast(_, rhs) => self.xfrm_expr(rhs),
-            expr::ExprKind::Unary(_, expr) => self.xfrm_expr(expr),
-            expr::ExprKind::Binary(lhs, _, rhs) => {
-                self.xfrm_expr(lhs);
-                self.xfrm_expr(rhs);
-            }
-            expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
-            expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
-            expr::ExprKind::Assign(lhs, rhs) |
-            expr::ExprKind::NonblockAssign(lhs, rhs) => {
-                self.xfrm_expr(lhs);
-                self.xfrm_expr(rhs);
-            }
-            expr::ExprKind::BinaryAssign(..) => unimplemented!(),
-            expr::ExprKind::Paren(expr) => self.xfrm_expr(expr),
-            expr::ExprKind::MinTypMax(..) => unimplemented!(),
-            expr::ExprKind::Cond(cond, t, f) => {
-                self.xfrm_expr(cond);
-                self.xfrm_expr(t);
-                self.xfrm_expr(f);
-            }
-        }
-    }
-
     // Part of second stage. Transform ports list, expand instance arrays into list of individual
     // instances.
     fn xfrm_ports(&mut self, ports: Vec<Option<expr::Expr>>) -> Vec<Option<expr::Expr>> {
@@ -318,7 +260,7 @@ impl InstArrayEliminator {
                         _ => (),
                     }
                 } else {
-                    self.xfrm_expr(&mut port);
+                    self.visit_expr(&mut port);
                 }
                 new_list.push(Some(port));
             } else {
@@ -361,7 +303,7 @@ impl InstArrayEliminator {
                     }
                 }
                 HierItem::ContinuousAssign(expr) => {
-                    self.xfrm_expr(Rc::get_mut(expr).unwrap());
+                    self.visit_expr(Rc::get_mut(expr).unwrap());
                 }
                 HierItem::GenBlock(genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
@@ -430,5 +372,16 @@ impl InstArrayEliminator {
             self.scopes.last_mut().unwrap().insert(ident, item);
         }
         self.scopes.pop().unwrap()
+    }
+}
+
+impl EhtVisitor for InstArrayEliminator {
+    fn visit_expr(&mut self, expr: &mut expr::Expr) {
+        match expr.value {
+            expr::ExprKind::HierName(ref mut id) => {
+                self.xfrm_hier_id(id);
+            }
+            _ => self.do_visit_expr(expr),
+        }
     }
 }
