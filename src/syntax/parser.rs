@@ -14,6 +14,7 @@ struct Parser<'a> {
     diag: &'a DiagMgr,
     lexer: VecDeque<Token>,
     eof: Token,
+    leq_as_assign: bool,
 }
 
 //
@@ -78,7 +79,8 @@ impl<'a> Parser<'a> {
         Parser {
             diag,
             lexer: lexer,
-            eof: Spanned::new(TokenKind::Eof, last_pos.span_to(last_pos))
+            eof: Spanned::new(TokenKind::Eof, last_pos.span_to(last_pos)),
+            leq_as_assign: false,
         }
     }
 
@@ -2902,7 +2904,10 @@ impl<'a> Parser<'a> {
     /// | expression assignment_operator expression
     /// ```
     fn parse_assign_expr_opt(&mut self) -> Option<Expr> {
-        let expr = match self.parse_expr_opt() {
+        self.leq_as_assign = true;
+        let expr = self.parse_expr_opt();
+        self.leq_as_assign = false;
+        let expr = match expr {
             None => return None,
             Some(v) => v,
         };
@@ -2913,6 +2918,12 @@ impl<'a> Parser<'a> {
                 let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
                 Some(Spanned::new(ExprKind::Assign(Box::new(expr), Box::new(rhs)), span))
+            }
+            TokenKind::BinaryOp(BinaryOp::Leq) => {
+                self.consume();
+                let rhs = self.parse_expr();
+                let span = expr.span.merge(rhs.span);
+                Some(Spanned::new(ExprKind::NonblockAssign(Box::new(expr), Box::new(rhs)), span))
             }
             TokenKind::BinaryOpAssign(op) => {
                 self.consume();
@@ -3040,6 +3051,7 @@ impl<'a> Parser<'a> {
         loop {
 
             let (op, new_prec) = match **self.peek() {
+                TokenKind::BinaryOp(BinaryOp::Leq) if self.leq_as_assign => break,
                 TokenKind::BinaryOp(op) => {
                     let new_prec = Self::get_bin_op_prec(op);
                     // Can only proceed if precedence is higher

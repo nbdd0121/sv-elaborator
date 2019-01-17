@@ -342,6 +342,11 @@ impl<'a> Reconstructor<'a> {
                 let ast_rhs = self.reconstruct_expr(rhs);
                 ast::ExprKind::Assign(Box::new(ast_lhs), Box::new(ast_rhs))
             }
+            expr::ExprKind::NonblockAssign(ref lhs, ref rhs) => {
+                let ast_lhs = self.reconstruct_expr(lhs);
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::NonblockAssign(Box::new(ast_lhs), Box::new(ast_rhs))
+            }
             expr::ExprKind::BinaryAssign(..) => unimplemented!(),
             expr::ExprKind::Paren(ref expr) => {
                 let ast_expr = self.reconstruct_expr(expr);

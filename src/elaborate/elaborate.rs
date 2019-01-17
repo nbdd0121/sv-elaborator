@@ -1894,6 +1894,15 @@ impl<'a> Elaborator<'a> {
                     ty: Ty::Void,
                 }
             }
+            ExprKind::NonblockAssign(ref lhs, ref rhs) => {
+                let lhs = self.type_check(lhs, None);
+                let rhs = self.type_check(rhs, Some(&lhs.ty));
+                expr::Expr {
+                    value: expr::ExprKind::NonblockAssign(Box::new(lhs), Box::new(rhs)),
+                    span: expr.span,
+                    ty: Ty::Void,
+                }
+            }
             // BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
             ExprKind::Paren(ref expr) => {
                 let conv = self.self_type_check(expr);

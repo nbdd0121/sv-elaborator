@@ -397,7 +397,8 @@ pub trait AstVisitor {
             }
             ExprKind::PrefixIncDec(_, _, expr) => self.visit_expr(expr),
             ExprKind::PostfixIncDec(expr, _, _) => self.visit_expr(expr),
-            ExprKind::Assign(lhs, rhs) => {
+            ExprKind::Assign(lhs, rhs) |
+            ExprKind::NonblockAssign(lhs, rhs) => {
                 self.visit_expr(lhs);
                 self.visit_expr(rhs);
             }

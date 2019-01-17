@@ -223,7 +223,8 @@ impl LoopGenEliminator {
             }
             expr::ExprKind::PrefixIncDec(..) => unimplemented!(),
             expr::ExprKind::PostfixIncDec(..) => unimplemented!(),
-            expr::ExprKind::Assign(lhs, rhs) => {
+            expr::ExprKind::Assign(lhs, rhs) |
+            expr::ExprKind::NonblockAssign(lhs, rhs) => {
                 self.xfrm_expr(lhs);
                 self.xfrm_expr(rhs);
             }

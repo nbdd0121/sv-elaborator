@@ -88,6 +88,7 @@ pub enum ExprKind {
 
     /// Assignment
     Assign(Box<Expr>, Box<Expr>),
+    NonblockAssign(Box<Expr>, Box<Expr>),
     BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
 
     /// Parenthesised expression
