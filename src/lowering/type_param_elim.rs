@@ -40,8 +40,6 @@ impl TypeParamEliminator {
 
     pub fn visit_instantiation(&mut self, inst: &mut hier::DesignInstantiation) {
         ::util::replace_with(&mut inst.scope.items, |items| {
-            let mut params = Vec::new();
-            let mut type_params = Vec::new();
             let mut ports = Vec::new();
             let mut others = Vec::new();
 
@@ -49,12 +47,12 @@ impl TypeParamEliminator {
                 match item {
                     HierItem::Param(decl) => {
                         if let Ty::Type = decl.ty {
-                            type_params.push(HierItem::Type(Rc::new(TypedefDecl {
+                            others.push(HierItem::Type(Rc::new(TypedefDecl {
                                 ty: if let Val::Type(ref ty) = decl.init { ty.clone() } else { unreachable!() },
                                 name: decl.name.clone()
                             })))
                         } else {
-                            params.push(HierItem::Param(decl))
+                            others.push(HierItem::Param(decl))
                         }
                     }
                     HierItem::DataPort(decl) => ports.push(HierItem::DataPort(decl)),
@@ -66,10 +64,8 @@ impl TypeParamEliminator {
                 }
             }
 
-            params.extend(ports);
-            params.extend(type_params);
-            params.extend(others);
-            params
+            ports.extend(others);
+            ports
         })
     }
 
