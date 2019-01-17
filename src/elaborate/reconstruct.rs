@@ -1,5 +1,7 @@
 //! Reconstruct AST from elaborated constructs.
 
+use std::collections::HashMap;
+
 use syntax::ast::{self, *};
 use syntax::tokens::*;
 use source::Span;
@@ -12,7 +14,8 @@ use super::hier::{self, HierItem};
 pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
     let mut reconstructor = Reconstructor {
         source,
-        global_qualify: false,
+        global_qualify: true,
+        simple_ty_map: HashMap::new(),
     };
     reconstructor.reconstruct()
 }
@@ -36,6 +39,8 @@ struct Reconstructor<'a> {
     source: &'a hier::Source,
     /// Whether reference to structs and enums need to be qualified by "global_types::"
     global_qualify: bool,
+    /// Map from a type to an global_types:: identifier
+    simple_ty_map: HashMap<Ty, Ident>,
 }
 
 impl<'a> Reconstructor<'a> {
@@ -187,10 +192,28 @@ impl<'a> Reconstructor<'a> {
         (Spanned::new(kind, span), Vec::new())
     }
 
-    pub fn reconstruct_ty_simple(&self, ty: &Ty) -> DataType {
-        let (ty, dim) = self.reconstruct_ty(ty, Span::none());
+    pub fn reconstruct_ty_simple(&mut self, ty: &Ty) -> DataType {
+        let (mut ast_ty, dim) = self.reconstruct_ty(ty, Span::none());
         assert!(dim.len() == 0);
-        ty
+        match ast_ty.value {
+            // These are already simple types
+            DataTypeKind::IntAtom(_, None) |
+            DataTypeKind::Real(_) |
+            DataTypeKind::HierName(..) => (),
+            _ => {
+                if !self.simple_ty_map.contains_key(&ty) {
+                    let ident = Ident::new_unspanned(format!("type_{}", self.simple_ty_map.len()));
+                    self.simple_ty_map.insert(ty.clone(), ident);
+                }
+                let ident = self.simple_ty_map[&ty].clone();
+                ast_ty.value = DataTypeKind::HierName(
+                    Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
+                    ident,
+                    Vec::new(),
+                );
+            }
+        }
+        ast_ty
     }
 
     pub fn reconstruct_val_int(&self, ty: &IntTy, val: &LogicVec, span: Span) -> Expr {
@@ -231,7 +254,7 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, span)
     }
 
-    pub fn reconstruct_dim(&self, dim: &expr::Dim) -> ast::Dim {
+    pub fn reconstruct_dim(&mut self, dim: &expr::Dim) -> ast::Dim {
         let kind = match dim.value {
             expr::DimKind::Value(ref expr) => {
                 ast::DimKind::Value(Box::new(self.reconstruct_expr(expr)))
@@ -255,7 +278,7 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, dim.span)
     }
 
-    pub fn reconstruct_expr(&self, expr: &expr::Expr) -> ast::Expr {
+    pub fn reconstruct_expr(&mut self, expr: &expr::Expr) -> ast::Expr {
         let kind = match expr.value {
             expr::ExprKind::Const(ref val) => {
                 self.reconstruct_val(&expr.ty, val, expr.span).value
@@ -378,7 +401,7 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(kind, expr.span)
     }
 
-    pub fn reconstruct_stmt(&self, stmt: &expr::Stmt) -> ast::Stmt {
+    pub fn reconstruct_stmt(&mut self, stmt: &expr::Stmt) -> ast::Stmt {
         let kind = match &stmt.value {
             expr::StmtKind::Empty => ast::StmtKind::Empty,
             expr::StmtKind::TimingCtrl(ctrl, stmt) => ast::StmtKind::TimingCtrl(
@@ -446,7 +469,7 @@ impl<'a> Reconstructor<'a> {
         }
     }
 
-    pub fn reconstruct_item(&self, item: &HierItem, list: &mut Vec<Item>) {
+    pub fn reconstruct_item(&mut self, item: &HierItem, list: &mut Vec<Item>) {
         match item {
             HierItem::Param(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
@@ -579,7 +602,7 @@ impl<'a> Reconstructor<'a> {
         }
     }
 
-    pub fn reconstruct_instantiation(&self, decl: &hier::DesignDecl, inst: &hier::DesignInstantiation) -> Item {
+    pub fn reconstruct_instantiation(&mut self, decl: &hier::DesignDecl, inst: &hier::DesignInstantiation) -> Item {
         // Reconstruct all parameters
         let mut params = Vec::new();
         for item in &inst.scope.items {
@@ -642,11 +665,32 @@ impl<'a> Reconstructor<'a> {
     }
 
     pub fn reconstruct(&mut self) -> Vec<Vec<Item>> {
-        let mut units = Vec::new();
+        // Packages
+        let mut list: Vec<_> = self.source.pkgs.iter().map(|(_, decl)| {
+            let mut list = Vec::new();
+            for item in &decl.scope.items {
+                self.reconstruct_item(item, &mut list);
+            }
+            Item::PkgDecl(Box::new(PkgDecl {
+                attr: None,
+                lifetime: Lifetime::Static,
+                name: decl.name.clone(),
+                items: list
+            }))
+        }).collect();
 
-        // Build global unit: contain packages and typedefs
-        let mut list = Vec::new();
-        list.push({
+        let mut units = Vec::new();
+        for unit in &self.source.units { 
+            let mut list = Vec::new();
+            for item in &unit.items {
+                self.reconstruct_item(item, &mut list);
+            }
+            units.push(list);
+        }
+
+        // Build global types package, insert before all packages
+        list.insert(0, {
+            self.global_qualify = false;
             let mut types = Vec::new();
             types.extend(self.source.enums.iter().enumerate().map(|(index, enu)| {
                 let prefix = format!("enum_{}", index);
@@ -661,7 +705,10 @@ impl<'a> Reconstructor<'a> {
                 let name = Ident::new(format!("struct_{}", index), Span::none());
                 Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
             }));
-            self.global_qualify = true;
+            types.extend(self.simple_ty_map.iter().map(|(ty, name)| {
+                let (ty, dim) = self.reconstruct_ty(ty, Span::none());
+                Item::Typedef(None, Box::new(ty), Box::new(name.clone()), dim)
+            }));
             Item::PkgDecl(Box::new(PkgDecl {
                 attr: None,
                 lifetime: Lifetime::Static,
@@ -669,27 +716,8 @@ impl<'a> Reconstructor<'a> {
                 items: types
             }))
         });
-        list.extend(self.source.pkgs.iter().map(|(_, decl)| {
-            let mut list = Vec::new();
-            for item in &decl.scope.items {
-                self.reconstruct_item(item, &mut list);
-            }
-            Item::PkgDecl(Box::new(PkgDecl {
-                attr: None,
-                lifetime: Lifetime::Static,
-                name: decl.name.clone(),
-                items: list
-            }))
-        }));
-        units.push(list);
+        units.insert(0, list);
 
-        for unit in &self.source.units { 
-            let mut list = Vec::new();
-            for item in &unit.items {
-                self.reconstruct_item(item, &mut list);
-            }
-            units.push(list);
-        }
         units
     }
 }
