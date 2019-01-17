@@ -204,6 +204,9 @@ impl GenBlkEliminator {
                 HierItem::ContinuousAssign(expr) => {
                     self.visit_expr(Rc::get_mut(expr).unwrap());
                 }
+                HierItem::Always(_, stmt) => {
+                    self.visit_stmt(Rc::get_mut(stmt).unwrap());
+                }
                 HierItem::GenBlock(genblk) => {
                     ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
                 }
@@ -253,5 +256,35 @@ impl EhtVisitor for GenBlkEliminator {
             }
             _ => self.do_visit_expr(expr),
         }
+    }
+
+    fn visit_stmt(&mut self, stmt: &mut expr::Stmt) {
+        match &mut stmt.value {
+            expr::StmtKind::For { ty: Some(ty), init, cond, update, body } => {
+                // The scope for initialisers
+                self.scopes.push(HierScope::new());
+                for expr in init.iter_mut() {
+                    if let expr::ExprKind::Assign(lhs, _) = &expr.value {
+                        if let expr::ExprKind::HierName(ast::HierId::Name(None, name)) = &lhs.value {
+                            self.scopes.last_mut().unwrap().insert(Some(Ident::clone(name)), HierItem::DataDecl(Rc::new(hier::DataDecl {
+                                lifetime: ast::Lifetime::Automatic,
+                                ty: ty::Ty::clone(ty),
+                                name: Ident::clone(name),
+                                // We will process initialisers later, set it to none here.
+                                init: None,
+                            })));
+                        } else { unreachable!() }
+                    } else { unreachable!(); }
+                }
+                for expr in init { self.visit_expr(expr); }
+                if let Some(expr) = cond { self.visit_expr(expr); }
+                for expr in update { self.visit_expr(expr); }
+                self.visit_stmt(body);
+                self.scopes.pop();
+                return;
+            },
+            _ => (),
+        }
+        self.do_visit_stmt(stmt);
     }
 }
