@@ -154,7 +154,7 @@ impl fmt::Display for IntVecTy {
 }
 
 /// Represent a built-in non-integer type. The spec says that realtime is an alias to real.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RealTy {
     Real,
     Shortreal,

@@ -9,7 +9,7 @@ use number::LogicVec;
 use syntax::ast::{Ident, RealTy};
 
 /// A packed integral data type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IntTy {
     /// A single bit. First bool represents whether the bit is two-state, and second bool
     /// represent whether the bit is signed.
@@ -108,6 +108,12 @@ impl cmp::PartialEq for Struct {
 
 impl cmp::Eq for Struct {}
 
+impl std::hash::Hash for Struct {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self as *const _ as usize)
+    }
+}
+
 /// An enumeration after elaboration
 #[derive(Debug)]
 pub struct Enum {
@@ -124,8 +130,14 @@ impl cmp::PartialEq for Enum {
 
 impl cmp::Eq for Enum {}
 
+impl std::hash::Hash for Enum {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self as *const _ as usize)
+    }
+}
+
 /// A concrete SystemVerilog data type.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     Type,
     Int(IntTy),
