@@ -1,5 +1,6 @@
 pub mod tokens;
 pub mod ast;
+pub mod ast_visit;
 mod kw_map;
 mod lexer;
 mod parser;

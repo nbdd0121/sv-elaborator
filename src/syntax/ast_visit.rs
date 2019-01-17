@@ -1,4 +1,4 @@
-use syntax::ast::*;
+use super::ast::*;
 
 pub trait AstVisitor {
     fn do_visit_item(&mut self, item: &mut Item) {

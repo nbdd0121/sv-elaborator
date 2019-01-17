@@ -8,8 +8,7 @@ use syntax::ast;
 use syntax::ast::*;
 use syntax::tokens::*;
 use source::*;
-
-use super::ast_visit::AstVisitor;
+use syntax::ast_visit::AstVisitor;
 
 use std::rc::Rc;
 use std::collections::HashMap;

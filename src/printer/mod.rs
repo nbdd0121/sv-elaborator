@@ -757,6 +757,11 @@ impl PrettyPrint {
                 self.append(" = ");
                 self.print_expr(rhs);
             }
+            ExprKind::NonblockAssign(lhr, rhs) => {
+                self.print_expr(lhr);
+                self.append(" <= ");
+                self.print_expr(rhs);
+            }
             ExprKind::BinaryAssign(lhr, op, rhs) => {
                 self.print_expr(lhr);
                 self.append(format!(" {}= ", op));
