@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use syntax::ast::{self, *};
 use syntax::tokens::*;
 use source::Span;
-use num::{BigInt, Zero};
 use number::{LogicVec, LogicNumber, LogicValue};
 use super::ty::{Ty, IntTy, Struct, Enum};
 use super::expr::{self, Val};
@@ -21,17 +20,17 @@ pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
 }
 
 /// Given a i32, reconstruct the corresponding corresponding constant value.
-pub fn reconstruct_int(val: i32, span: Span) -> Expr {
-    let expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
+pub fn reconstruct_i32(val: i32) -> Expr {
+    let expr = Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(TokenKind::IntegerLiteral(
         LogicNumber {
             value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(val.abs()).unwrap()),
             sized: false, 
         }
-    ), span)), span);
+    ))));
     if val >= 0 {
         expr
     } else {
-        Spanned::new(ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)), span)
+        Spanned::new(ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)), Span::none())
     }
 }
 
@@ -101,18 +100,8 @@ impl<'a> Reconstructor<'a> {
         while let IntTy::Array(element, ub, lb) = inner {
             inner = &**element;
             // Synthesis fake expression nodes from constants
-            let a_expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-                LogicNumber {
-                    value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(*ub).unwrap()),
-                    sized: false,
-                }
-            ), span)), span);
-            let b_expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-                LogicNumber {
-                    value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(*lb).unwrap()),
-                    sized: false,
-                }
-            ), span)), span);
+            let a_expr = reconstruct_i32(*ub);
+            let b_expr = reconstruct_i32(*lb);
             dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span))
         }
         let kind = match inner {
@@ -127,18 +116,8 @@ impl<'a> Reconstructor<'a> {
             IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
-                let a_expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-                    LogicNumber {
-                        value: LogicVec::from(32, true, ::num::FromPrimitive::from_usize(width - 1).unwrap()),
-                        sized: false,
-                    }
-                ), span)), span);
-                let b_expr = Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-                    LogicNumber {
-                        value: LogicVec::from(32, true, BigInt::zero()),
-                        sized: false,
-                    }
-                ), span)), span);
+                let a_expr = reconstruct_i32(*width as i32 - 1);
+                let b_expr = reconstruct_i32(0);
                 dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span));
                 DataTypeKind::IntVec(
                     if *two_state { IntVecTy::Bit } else { IntVecTy::Logic },
@@ -181,8 +160,8 @@ impl<'a> Reconstructor<'a> {
             Ty::Array(base, ub, lb) => {
                 let (ty, mut dim) = self.reconstruct_ty(base, Span::none());
                 let ast_dim = Spanned::new_unspanned(DimKind::Range(
-                    Box::new(reconstruct_int(*ub, Span::none())),
-                    Box::new(reconstruct_int(*lb, Span::none()))
+                    Box::new(reconstruct_i32(*ub)),
+                    Box::new(reconstruct_i32(*lb))
                 ));
                 dim.insert(0, ast_dim);
                 return (ty, dim)
@@ -260,18 +239,18 @@ impl<'a> Reconstructor<'a> {
                 ast::DimKind::Value(Box::new(self.reconstruct_expr(expr)))
             }
             expr::DimKind::Range(ub, lb) => {
-                let ast_ub = reconstruct_int(ub, Span::none());
-                let ast_lb = reconstruct_int(lb, Span::none());
+                let ast_ub = reconstruct_i32(ub);
+                let ast_lb = reconstruct_i32(lb);
                 ast::DimKind::Range(Box::new(ast_ub), Box::new(ast_lb))
             }
             expr::DimKind::PlusRange(ref expr, width) => {
                 let ast_expr = self.reconstruct_expr(expr);
-                let ast_width = reconstruct_int(width, Span::none());
+                let ast_width = reconstruct_i32(width);
                 ast::DimKind::PlusRange(Box::new(ast_expr), Box::new(ast_width))
             }
             expr::DimKind::MinusRange(ref expr, width) => {
                 let ast_expr = self.reconstruct_expr(expr);
-                let ast_width = reconstruct_int(width, Span::none());
+                let ast_width = reconstruct_i32(width);
                 ast::DimKind::MinusRange(Box::new(ast_expr), Box::new(ast_width))
             }
         };
@@ -292,7 +271,7 @@ impl<'a> Reconstructor<'a> {
                 ast::ExprKind::Concat(ast_list, None)
             }
             expr::ExprKind::MultConcat(mul, ref subexpr) => {
-                let ast_mul = reconstruct_int(mul as i32, Span::none());
+                let ast_mul = reconstruct_i32(mul as i32);
                 let ast_subexpr = self.reconstruct_expr(subexpr);
                 ast::ExprKind::MultConcat(Box::new(ast_mul), Box::new(ast_subexpr), None)
             }
@@ -359,7 +338,7 @@ impl<'a> Reconstructor<'a> {
             }
             expr::ExprKind::SignCast(..) => unimplemented!(),
             expr::ExprKind::WidthCast(width, ref rhs) => {
-                let ast_ty = reconstruct_int(width as i32, Span::none());
+                let ast_ty = reconstruct_i32(width as i32);
                 let ast_rhs = self.reconstruct_expr(rhs);
                 ast::ExprKind::TypeCast(Box::new(ast_ty), Box::new(ast_rhs))
             }
@@ -535,8 +514,8 @@ impl<'a> Reconstructor<'a> {
                         inst: vec![HierInst {
                         name: decl.name.clone(),
                         dim: decl.dim.iter().map(|(ub, lb)| {
-                            let ub_expr = reconstruct_int(*ub, Span::none());
-                            let lb_expr = reconstruct_int(*lb, Span::none());
+                            let ub_expr = reconstruct_i32(*ub);
+                            let lb_expr = reconstruct_i32(*lb);
                             Spanned::new(DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)), Span::none())
                         }).collect(),
                         ports: PortConn::Ordered(decl.port.iter().map(|port| {
@@ -632,8 +611,8 @@ impl<'a> Reconstructor<'a> {
                     let intf = Some(Box::new(decl.inst.get_instance().name.clone()));
                     let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
                     let dim = decl.dim.iter().map(|(ub, lb)| {
-                        let ub = reconstruct_int(*ub, Span::none());
-                        let lb = reconstruct_int(*lb, Span::none());
+                        let ub = reconstruct_i32(*ub);
+                        let lb = reconstruct_i32(*lb);
                         Spanned::new_unspanned(DimKind::Range(Box::new(ub), Box::new(lb)))
                     }).collect();
                     ports.push(PortDecl::Interface(intf, modport, vec![DeclAssign {

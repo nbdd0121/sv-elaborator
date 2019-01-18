@@ -1456,9 +1456,11 @@ impl<'a> Elaborator<'a> {
             let expr = if let expr::ExprKind::HierName(id) = parent_expr.value {
                 expr::Expr {
                     value: expr::ExprKind::HierName(
-                        HierId::Select(Box::new(Spanned::new(id, parent_expr.span)), Box::new(Spanned::new(DimKind::Value(Box::new(
-                            super::reconstruct::reconstruct_int(value, dim.span)
-                        )), dim.span)))
+                        HierId::Select(Box::new(Spanned::new(id, parent_expr.span)), Box::new(Spanned::new(DimKind::Value(Box::new({
+                            let mut expr = super::reconstruct::reconstruct_i32(value);
+                            expr.span = dim.span;
+                            expr
+                        })), dim.span)))
                     ),
                     ty: Self::type_of_hier(&hier),
                     span,
