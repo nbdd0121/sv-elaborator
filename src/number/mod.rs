@@ -466,6 +466,38 @@ impl<'a> ops::BitXorAssign<&'a LogicVec> for LogicVec {
     }
 }
 
+impl<'a> ops::BitAndAssign<&'a LogicVec> for LogicVec {
+    fn bitand_assign(&mut self, rhs: &Self) {
+        // The calculation is derived from logical minimisation
+        self.value |= &self.xz;
+        self.value &= &{
+            let mut tmp = rhs.value.clone();
+            tmp |= &rhs.xz;
+            tmp
+        };
+        self.xz |= &rhs.xz;
+        self.xz &= &self.value;
+    }
+}
+
+impl<'a> ops::BitOrAssign<&'a LogicVec> for LogicVec {
+    fn bitor_assign(&mut self, rhs: &Self) {
+        // The calculation is derived from logical minimisation
+        let mut new_xz = !self.value.clone();
+        new_xz &= &rhs.xz;
+        self.value |= &rhs.value;
+        self.value |= &self.xz;
+        self.value |= &rhs.xz;
+        new_xz |= &{
+            let mut tmp = !rhs.value.clone();
+            tmp &= &self.xz;
+            tmp
+        };
+        self.xz &= &rhs.xz;
+        self.xz |= &new_xz;
+    }
+}
+
 impl ops::Not for LogicVec {
     type Output = Self;
     fn not(mut self) -> Self {

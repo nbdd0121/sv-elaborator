@@ -2506,7 +2506,24 @@ impl<'a> Elaborator<'a> {
                     BinaryOp::And |
                     BinaryOp::Or |
                     BinaryOp::Xor |
-                    BinaryOp::Xnor => unimplemented!(),
+                    BinaryOp::Xnor => {
+                        match (lval, rval) {
+                            (Val::Int(mut lval), Val::Int(rval)) => {
+                                match op {
+                                    BinaryOp::And => lval &= &rval,
+                                    BinaryOp::Or => lval |= &rval,
+                                    BinaryOp::Xor => lval ^= &rval,
+                                    BinaryOp::Xnor => {
+                                        lval ^= &rval;
+                                        lval = !lval;
+                                    }
+                                    _ => unreachable!(),
+                                }
+                                Val::Int(lval)
+                            }
+                            _ => unreachable!(),
+                        }
+                    },
                     BinaryOp::Shl |
                     BinaryOp::LShr |
                     BinaryOp::AShr => {
