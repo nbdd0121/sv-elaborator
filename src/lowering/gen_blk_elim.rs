@@ -116,7 +116,7 @@ impl GenBlkEliminator {
                                     break 'resolve_loop v.clone()
                                 }
                             }
-                            unreachable!()
+                            unreachable!("cannot find name {}", name)
                         };
                         // Replace with actual name
                         **name = super::common::name_of(&item).unwrap().clone();

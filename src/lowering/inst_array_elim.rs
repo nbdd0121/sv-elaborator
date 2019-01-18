@@ -231,33 +231,35 @@ impl InstArrayEliminator {
             if let Some(mut port) = port {
                 if let expr::Expr{value: expr::ExprKind::HierName(ref mut id), span, .. } = port {
                     let hier = self.xfrm_hier_id(id);
-                    match hier {
-                        HierItem::Instance(ref decl) => {
-                            // Only transform arrays
-                            if !decl.dim.is_empty() {
-                                // TODO: Deal with more dimensions
-                                assert!(decl.dim.len() == 1);
-                                let (lb, ub) = decl.dim[0];
-                                let (lb, ub) = (cmp::min(lb, ub), cmp::max(lb, ub));
-                                for i in lb..=ub {
-                                    let mut id_clone = id.clone();
-                                    match id_clone {
-                                        ast::HierId::Name(_, ref mut name) |
-                                        ast::HierId::Member(_, ref mut name) => {
-                                            name.value = format!("{}_{}", name.value, i);
-                                        }
-                                        _ => unreachable!(),
-                                    };
-                                    new_list.push(Some(expr::Expr {
-                                        value: expr::ExprKind::HierName(id_clone),
-                                        ty: ty::Ty::Void,
-                                        span,
-                                    }))
+                    let empty_array = [];
+                    let dim: &[_] = match hier {
+                        HierItem::Instance(ref decl) => &decl.dim,
+                        HierItem::InterfacePort(ref decl) => &decl.dim,
+                        HierItem::InstancePart { ref dim, .. } => dim,
+                        _ => &empty_array,
+                    };
+                    // Only transform arrays
+                    if !dim.is_empty() {
+                        // TODO: Deal with more dimensions
+                        assert!(dim.len() == 1);
+                        let (lb, ub) = dim[0];
+                        let (lb, ub) = (cmp::min(lb, ub), cmp::max(lb, ub));
+                        for i in lb..=ub {
+                            let mut id_clone = id.clone();
+                            match id_clone {
+                                ast::HierId::Name(_, ref mut name) |
+                                ast::HierId::Member(_, ref mut name) => {
+                                    name.value = format!("{}_{}", name.value, i);
                                 }
-                                continue;
-                            }
+                                _ => unreachable!(),
+                            };
+                            new_list.push(Some(expr::Expr {
+                                value: expr::ExprKind::HierName(id_clone),
+                                ty: ty::Ty::Void,
+                                span,
+                            }))
                         }
-                        _ => (),
+                        continue;
                     }
                 } else {
                     self.visit_expr(&mut port);
