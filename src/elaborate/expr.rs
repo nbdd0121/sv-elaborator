@@ -32,9 +32,9 @@ pub enum DimKind {
     /// Represent part-select of type `[ expression : expression ]`
     Range(i32, i32),
     /// Represent part-select of type `[ expression +: expression ]`
-    PlusRange(Box<Expr>, i32),
+    PlusRange(Box<Expr>, usize),
     /// Represent part-select of type `[ expression -: expression ]`
-    MinusRange(Box<Expr>, i32),
+    MinusRange(Box<Expr>, usize),
 }
 
 /// Should be boxed when nested in other AST structure.

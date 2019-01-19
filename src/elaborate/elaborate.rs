@@ -1496,12 +1496,12 @@ impl<'a> Elaborator<'a> {
             DimKind::Range(ref ub, ref lb) => {
                 let ub = self.eval_expr_i32(ub);
                 let lb = self.eval_expr_i32(lb);
-                let size = cmp::max(ub, lb) - cmp::min(ub, lb) + 1;
+                let size = (cmp::max(ub, lb) - cmp::min(ub, lb)) as usize + 1;
                 (Spanned::new(expr::DimKind::Range(ub, lb), dim.span), size)
             }
             DimKind::PlusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value, None, None);
-                let mut w = self.eval_expr_i32(width);
+                let mut w = self.eval_expr_i32(width) as usize;
                 if w <= 0 {
                     self.diag.report_error("width must be positive", width.span);
                     // Error recovery
@@ -1511,7 +1511,7 @@ impl<'a> Elaborator<'a> {
             }
             DimKind::MinusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value, None, None);
-                let mut w = self.eval_expr_i32(width);
+                let mut w = self.eval_expr_i32(width) as usize;
                 if w <= 0 {
                     self.diag.report_error("width must be positive", width.span);
                     // Error recovery
@@ -1533,7 +1533,7 @@ impl<'a> Elaborator<'a> {
         };
         (None, expr::Expr {
             value: expr::ExprKind::Select(Box::new(parent_expr), dim),
-            ty: Ty::Int(canonical_element_type.vec(len - 1, 0)),
+            ty: Ty::Int(canonical_element_type.vec(len as i32 - 1, 0)),
             span,
         })
     }

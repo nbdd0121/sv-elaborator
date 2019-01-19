@@ -20,13 +20,19 @@ pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
 }
 
 /// Given a i32, reconstruct the corresponding corresponding constant value.
-pub fn reconstruct_i32(val: i32) -> Expr {
-    let expr = Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(TokenKind::IntegerLiteral(
+pub fn reconstruct_usize(val: usize) -> Expr {
+    Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(TokenKind::IntegerLiteral(
         LogicNumber {
-            value: LogicVec::from(32, true, ::num::FromPrimitive::from_i32(val.abs()).unwrap()),
+            value: LogicVec::from(32, true, ::num::FromPrimitive::from_usize(val).unwrap()),
             sized: false, 
         }
-    ))));
+    ))))
+}
+
+
+/// Given a i32, reconstruct the corresponding corresponding constant value.
+pub fn reconstruct_i32(val: i32) -> Expr {
+    let expr = reconstruct_usize(val.abs() as usize);
     if val >= 0 {
         expr
     } else {
@@ -54,7 +60,7 @@ impl<'a> Reconstructor<'a> {
     }
 
     /// Given an ty::Enum, reconstruct ast::EnumDecl
-    pub fn reconstruct_enum(&self, enu: &Enum, prefix: &str) -> EnumDecl {
+    pub fn reconstruct_enum(&mut self, enu: &Enum, prefix: &str) -> EnumDecl {
         let base = self.reconstruct_ty_int(&enu.base, Span::none());
         let members = enu.elements.borrow().iter().map(|(name, val)| {
             DeclAssign {
@@ -70,7 +76,7 @@ impl<'a> Reconstructor<'a> {
     }
 
     /// Given an ty::Struct, reconstruct ast::AggrDecl
-    pub fn reconstruct_struct(&self, struc: &Struct) -> AggrDecl {
+    pub fn reconstruct_struct(&mut self, struc: &Struct) -> AggrDecl {
         let members = struc.members.iter().map(|(ty, name, init)| {
             let astty = self.reconstruct_ty_int(&ty, Span::none());
             AggrMember {
@@ -116,8 +122,8 @@ impl<'a> Reconstructor<'a> {
             IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
-                let a_expr = reconstruct_i32(*width as i32 - 1);
-                let b_expr = reconstruct_i32(0);
+                let a_expr = reconstruct_usize(*width - 1);
+                let b_expr = reconstruct_usize(0);
                 dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span));
                 DataTypeKind::IntVec(
                     if *two_state { IntVecTy::Bit } else { IntVecTy::Logic },
@@ -195,13 +201,13 @@ impl<'a> Reconstructor<'a> {
         ast_ty
     }
 
-    pub fn reconstruct_val_int(&self, ty: &IntTy, val: &LogicVec, span: Span) -> Expr {
+    pub fn reconstruct_val_int(&mut self, ty: &IntTy, val: &LogicVec, span: Span) -> Expr {
         match ty {
             IntTy::SimpleVec(_, false, _) => {
                 self.reconstruct_const(val, span)
             }
             _ => {
-                let ty = self.reconstruct_ty_int(ty, span);
+                let ty = self.reconstruct_ty_simple(&Ty::Int(ty.clone()));
                 let val = self.reconstruct_const(val, span);
                 Spanned::new(ExprKind::TypeCast(
                     Box::new(Spanned::new(ExprKind::Type(Box::new(ty)), span)),
@@ -211,7 +217,7 @@ impl<'a> Reconstructor<'a> {
         }
     }
 
-    pub fn reconstruct_val(&self, ty: &Ty, val: &Val, span: Span) -> Expr {
+    pub fn reconstruct_val(&mut self, ty: &Ty, val: &Val, span: Span) -> Expr {
         let kind = match ty {
             Ty::Type => {
                 let ty = if let Val::Type(ty) = val { ty } else { unreachable!()};
@@ -245,12 +251,12 @@ impl<'a> Reconstructor<'a> {
             }
             expr::DimKind::PlusRange(ref expr, width) => {
                 let ast_expr = self.reconstruct_expr(expr);
-                let ast_width = reconstruct_i32(width);
+                let ast_width = reconstruct_usize(width);
                 ast::DimKind::PlusRange(Box::new(ast_expr), Box::new(ast_width))
             }
             expr::DimKind::MinusRange(ref expr, width) => {
                 let ast_expr = self.reconstruct_expr(expr);
-                let ast_width = reconstruct_i32(width);
+                let ast_width = reconstruct_usize(width);
                 ast::DimKind::MinusRange(Box::new(ast_expr), Box::new(ast_width))
             }
         };
@@ -271,7 +277,7 @@ impl<'a> Reconstructor<'a> {
                 ast::ExprKind::Concat(ast_list, None)
             }
             expr::ExprKind::MultConcat(mul, ref subexpr) => {
-                let ast_mul = reconstruct_i32(mul as i32);
+                let ast_mul = reconstruct_usize(mul);
                 let ast_subexpr = self.reconstruct_expr(subexpr);
                 ast::ExprKind::MultConcat(Box::new(ast_mul), Box::new(ast_subexpr), None)
             }
@@ -338,7 +344,7 @@ impl<'a> Reconstructor<'a> {
             }
             expr::ExprKind::SignCast(..) => unimplemented!(),
             expr::ExprKind::WidthCast(width, ref rhs) => {
-                let ast_ty = reconstruct_i32(width as i32);
+                let ast_ty = reconstruct_usize(width);
                 let ast_rhs = self.reconstruct_expr(rhs);
                 ast::ExprKind::TypeCast(Box::new(ast_ty), Box::new(ast_rhs))
             }
