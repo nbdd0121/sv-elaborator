@@ -284,7 +284,11 @@ impl<'a> Elaborator<'a> {
                     };
 
                     // Evaluate the expression
-                    let (ty, val) = self.eval_expr(expr, ty.as_ref());
+                    let (result_ty, val) = self.eval_expr(expr, ty.as_ref());
+                    let ty = match ty {
+                        Some(ref v) => v.clone(),
+                        None => result_ty,
+                    };
 
                     // Add it to a temporary scope.
                     let declitem = HierItem::Param(Rc::new(hier::ParamDecl {
