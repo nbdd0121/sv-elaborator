@@ -283,11 +283,11 @@ impl<'a> Elaborator<'a> {
                         return;
                     };
 
-                    // Evaluate the expression
-                    let (result_ty, val) = self.eval_expr(expr, ty.as_ref());
-                    let ty = match ty {
-                        Some(ref v) => v.clone(),
-                        None => result_ty,
+                    // Evaluate the expression. If a ty is specified, then the expression should
+                    // be evaluated in assignment-like context.
+                    let (ty, val) = match ty {
+                        None => self.eval_expr(expr, None),
+                        Some(ref ty) => (ty.clone(), self.eval_expr_assign(expr, ty).1),
                     };
 
                     // Add it to a temporary scope.
@@ -409,7 +409,8 @@ impl<'a> Elaborator<'a> {
             });
 
             let port_connections = port_list.iter().map(|(_, port)| {
-                port.as_ref().map(|port| self.type_check(port, None))
+                // TODO: Should also get types of the ports out
+                port.as_ref().map(|port| self.type_check_assign_todo(port))
             }).collect();
 
             let dim = self.eval_const_unpacked_dim(&inst.dim);
@@ -445,7 +446,10 @@ impl<'a> Elaborator<'a> {
                     };
 
                     // Evaluate the expression
-                    let (ty, val) = self.eval_expr(expr, ty.as_ref());
+                    let (ty, val) = match ty {
+                        None => self.eval_expr(expr, None),
+                        Some(ref ty) => (ty.clone(), self.eval_expr_assign(expr, ty).1),
+                    };
 
                     // Add it to a temporary scope.
                     let declitem = HierItem::Param(Rc::new(hier::ParamDecl {
@@ -543,7 +547,10 @@ impl<'a> Elaborator<'a> {
                 let ty = decl.ty.as_ref().map(|ty| self.eval_ty(ty));
                 for item in &decl.list {
                     if let Some(v) = &item.init {
-                        let (ty, val) = self.eval_expr(v, ty.as_ref());
+                        let (ty, val) = match ty {
+                            None => self.eval_expr(v, None),
+                            Some(ref ty) => (ty.clone(), self.eval_expr_assign(v, ty).1),
+                        };
                         let declitem = HierItem::Param(Rc::new(hier::ParamDecl {
                             kw,
                             name: item.name.clone(),
@@ -575,7 +582,7 @@ impl<'a> Elaborator<'a> {
                             _ => unimplemented!(),
                         }
                     }
-                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check(expr, Some(&ty))));
+                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
                     let decl = Rc::new(hier::DataDecl {
                         lifetime: decl.lifetime,
                         ty: var_ty,
@@ -638,7 +645,8 @@ impl<'a> Elaborator<'a> {
             // These are not handled specially
             Item::ContinuousAssign(list) => {
                 for assign in list {
-                    let assign = self.type_check(assign, None);
+                    // TODO: Should get the type out
+                    let assign = self.type_check_assign_todo(assign);
                     self.add_item(HierItem::ContinuousAssign(Rc::new(assign)));
                 }
             }
@@ -953,6 +961,8 @@ impl<'a> Elaborator<'a> {
                         } else { unreachable!(); }
                     }
                 }
+                // It's not assignment-like context here as each init is a whole assignment expression.
+                // Its subexpression will be treated like assignment-like context.
                 let init = init.iter().map(|expr| self.type_check(expr, None)).collect();
                 let cond = cond.as_ref().map(|expr| Box::new(self.type_check_bool(expr)));
                 let update = update.iter().map(|expr| self.type_check(expr, None)).collect();
@@ -1523,6 +1533,20 @@ impl<'a> Elaborator<'a> {
         })
     }
 
+    fn type_check_assign_pattern(&mut self, _ty: &Ty, pattern: &ast::AssignPattern) -> expr::AssignPattern {
+        let pattern = match pattern {
+            ast::AssignPattern::Simple(list) => {
+                // TODO: They should be considered as assignment-like instead
+                expr::AssignPattern::Simple(
+                    list.iter().map(|item| self.type_check_assign_todo(item)).collect()
+                )
+            }
+            _ => unimplemented!(),
+        };
+        // TODO: Also evaluate within assignment pattern
+        pattern
+    }
+
     /// Perform self-determined type checks and convert expression into an post-elaboration
     /// expression.
     pub fn self_type_check(&mut self, expr: &Expr) -> expr::Expr {
@@ -1642,16 +1666,7 @@ impl<'a> Elaborator<'a> {
             },
             ExprKind::AssignPattern(Some(ref ty), ref pattern) => {
                 let ty = self.eval_ty(ty);
-                let pattern = match pattern {
-                    ast::AssignPattern::Simple(list) => {
-                        // TODO: They should be considered as assignment-like instead
-                        expr::AssignPattern::Simple(
-                            list.iter().map(|item| self.type_check(item, None)).collect()
-                        )
-                    }
-                    _ => unimplemented!(),
-                };
-                // TODO: Also evaluate within assignment pattern
+                let pattern = self.type_check_assign_pattern(&ty, pattern);
                 expr::Expr {
                     value: expr::ExprKind::AssignPattern(Box::new(ty.clone()), pattern),
                     span: expr.span,
@@ -1996,7 +2011,7 @@ impl<'a> Elaborator<'a> {
             }
             ExprKind::Assign(ref lhs, ref rhs) => {
                 let lhs = self.type_check(lhs, None);
-                let rhs = self.type_check(rhs, Some(&lhs.ty));
+                let rhs = self.type_check_assign(rhs, &lhs.ty);
                 expr::Expr {
                     value: expr::ExprKind::Assign(Box::new(lhs), Box::new(rhs)),
                     span: expr.span,
@@ -2005,7 +2020,7 @@ impl<'a> Elaborator<'a> {
             }
             ExprKind::NonblockAssign(ref lhs, ref rhs) => {
                 let lhs = self.type_check(lhs, None);
-                let rhs = self.type_check(rhs, Some(&lhs.ty));
+                let rhs = self.type_check_assign(rhs, &lhs.ty);
                 expr::Expr {
                     value: expr::ExprKind::NonblockAssign(Box::new(lhs), Box::new(rhs)),
                     span: expr.span,
@@ -2299,7 +2314,9 @@ impl<'a> Elaborator<'a> {
         self.insert_cast(expr, ctx)
     }
 
-    /// Two-stage type check. First do self_type_check and then perform size_propagate.
+    /// Two-stage type check. First do self_type_check and then perform size_propagate. If
+    /// target is not none, then the expression will be type-checked in an assignment-like
+    /// context.
     pub fn type_check(&mut self, expr: &Expr, target: Option<&Ty>) -> expr::Expr {
         let mut expr = self.self_type_check(expr);
         let mut ctx = match expr.ty {
@@ -2318,6 +2335,27 @@ impl<'a> Elaborator<'a> {
         }
         self.propagate_size(&mut expr, ctx);
         expr
+    }
+
+    /// Placeholder for those should be in assignment-context but haven't implemented yet.
+    pub fn type_check_assign_todo(&mut self, expr: &Expr) -> expr::Expr {
+        self.type_check(expr, None)
+    }
+
+    pub fn type_check_assign(&mut self, expr: &Expr, target: &Ty) -> expr::Expr {
+        match &expr.value {
+            // For an untyped assignmenet pattern in this context, we can automatically infer
+            // its type.
+            ExprKind::AssignPattern(None, pattern) => {
+                let pattern = self.type_check_assign_pattern(target, pattern);
+                expr::Expr {
+                    value: expr::ExprKind::AssignPattern(Box::new(target.clone()), pattern),
+                    span: expr.span,
+                    ty: target.clone(),
+                }
+            }
+            _ => self.type_check(expr, Some(target)),
+        }
     }
 
     /// Type check an expression, expecting it to be convertable to boolean
@@ -2707,6 +2745,12 @@ impl<'a> Elaborator<'a> {
 
     pub fn eval_expr(&mut self, expr: &Expr, target: Option<&Ty>) -> (Ty, Val) {
         let conv = self.type_check(&expr, target);
+        let val = self.eval_checked_expr(&conv);
+        (conv.ty, val)
+    }
+
+    fn eval_expr_assign(&mut self, expr: &Expr, target: &Ty) -> (Ty, Val) {
+        let conv = self.type_check_assign(&expr, target);
         let val = self.eval_checked_expr(&conv);
         (conv.ty, val)
     }
