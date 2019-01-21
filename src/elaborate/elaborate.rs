@@ -286,7 +286,7 @@ impl<'a> Elaborator<'a> {
                     // Evaluate the expression. If a ty is specified, then the expression should
                     // be evaluated in assignment-like context.
                     let (ty, val) = match ty {
-                        None => self.eval_expr(expr, None),
+                        None => self.eval_expr(expr),
                         Some(ref ty) => (ty.clone(), self.eval_expr_assign(expr, ty).1),
                     };
 
@@ -447,7 +447,7 @@ impl<'a> Elaborator<'a> {
 
                     // Evaluate the expression
                     let (ty, val) = match ty {
-                        None => self.eval_expr(expr, None),
+                        None => self.eval_expr(expr),
                         Some(ref ty) => (ty.clone(), self.eval_expr_assign(expr, ty).1),
                     };
 
@@ -548,7 +548,7 @@ impl<'a> Elaborator<'a> {
                 for item in &decl.list {
                     if let Some(v) = &item.init {
                         let (ty, val) = match ty {
-                            None => self.eval_expr(v, None),
+                            None => self.eval_expr(v),
                             Some(ref ty) => (ty.clone(), self.eval_expr_assign(v, ty).1),
                         };
                         let declitem = HierItem::Param(Rc::new(hier::ParamDecl {
@@ -685,12 +685,7 @@ impl<'a> Elaborator<'a> {
                 self.add_to_scope(&gen.id, HierItem::GenVar(Rc::clone(&genvar)));
 
                 // Evaluate the initial value for the genvar
-                let init = match self.eval_expr_int(&gen.init, Some(true), Some(32)).1.get_two_state().and_then(|v| v.to_i32()) {
-                    None => {
-                        self.diag.report_fatal("genvar must be two-state", gen.init.span);
-                    }
-                    Some(v) => v,
-                };
+                let init = self.eval_expr_i32(&gen.init);
                 if let HierItem::GenVar(genvar) = self.resolve(&gen.id) {
                     *genvar.value.borrow_mut() = init;
                 } else {
@@ -699,7 +694,7 @@ impl<'a> Elaborator<'a> {
 
                 loop {
                     // Evaluate the condition
-                    let (_, result) = self.eval_expr(&gen.cond, None);
+                    let (_, result) = self.eval_expr(&gen.cond);
                     let boolean = match result {
                         Val::Int(vec) => {
                             match vec.get_two_state() {
@@ -751,7 +746,7 @@ impl<'a> Elaborator<'a> {
                     declitem.instances.borrow_mut().push((val, genblk));
 
                     // Execute the update expression
-                    self.eval_expr(&gen.update, None);
+                    self.eval_expr(&gen.update);
                 }
                 self.scopes.pop();
             }
@@ -761,7 +756,7 @@ impl<'a> Elaborator<'a> {
                 // First figure out which block to instantiate
                 let block = 'if_outer: loop {
                     for (cond, block) in &ifgen.if_block {
-                        let (_, result) = self.eval_expr(cond, None);
+                        let (_, result) = self.eval_expr(cond);
                         let boolean = match result {
                             Val::Int(vec) => {
                                 match vec.get_two_state() {
@@ -810,7 +805,7 @@ impl<'a> Elaborator<'a> {
                 // Evaluate all arguments
                 let mut arguments = match &call.args {
                     None => Vec::new(),
-                    Some(list) => list.ordered.iter().map(|expr| self.eval_expr(expr.as_ref().unwrap(), None)).collect(),
+                    Some(list) => list.ordered.iter().map(|expr| self.eval_expr(expr.as_ref().unwrap())).collect(),
                 };
                 let severity = match call.task.as_str() {
                     "$fatal" => {
@@ -929,9 +924,9 @@ impl<'a> Elaborator<'a> {
                 }
             },
             ast::StmtKind::Case { uniq, kw, expr, items } => {
-                let expr = self.type_check(expr, None);
+                let expr = self.type_check(expr);
                 let items = items.iter().map(|(conds, stmt)| {
-                    let conds = conds.iter().map(|cond| self.type_check(cond, None)).collect();
+                    let conds = conds.iter().map(|cond| self.type_check(cond)).collect();
                     let stmt = self.elaborate_stmt(stmt);
                     (conds, stmt)
                 }).collect();
@@ -963,9 +958,9 @@ impl<'a> Elaborator<'a> {
                 }
                 // It's not assignment-like context here as each init is a whole assignment expression.
                 // Its subexpression will be treated like assignment-like context.
-                let init = init.iter().map(|expr| self.type_check(expr, None)).collect();
+                let init = init.iter().map(|expr| self.type_check(expr)).collect();
                 let cond = cond.as_ref().map(|expr| Box::new(self.type_check_bool(expr)));
-                let update = update.iter().map(|expr| self.type_check(expr, None)).collect();
+                let update = update.iter().map(|expr| self.type_check(expr)).collect();
                 let body = Box::new(self.elaborate_stmt(body));
                 if ty.is_some() {
                     self.scopes.pop();
@@ -993,7 +988,7 @@ impl<'a> Elaborator<'a> {
                 expr::StmtKind::SeqBlock(list)
             }
             ast::StmtKind::Expr(expr) => {
-                let expr = self.type_check(expr, None);
+                let expr = self.type_check(expr);
                 expr::StmtKind::Expr(Box::new(expr))
             }
             ast::StmtKind::DataDecl(_decl) => {
@@ -1014,15 +1009,9 @@ impl<'a> Elaborator<'a> {
         for dim in dim.iter().rev() {
             match &dim.value {
                 DimKind::Range(a, b) => {
-                    let (_, ca) = self.eval_expr(a, None);
-                    let (_, cb) = self.eval_expr(b, None);
-                    match (ca, cb) {
-                        (Val::Int(av), Val::Int(bv)) => {
-                            let (ub, lb) = (av.get_two_state().and_then(|x| x.to_i32()).unwrap(), bv.get_two_state().and_then(|x| x.to_i32()).unwrap());
-                            ty = ty.vec(ub, lb);
-                        }
-                        _ => unreachable!(),
-                    }
+                    let ub = self.eval_expr_i32(a);
+                    let lb = self.eval_expr_i32(b);
+                    ty = ty.vec(ub, lb);
                 }
                 _ => self.diag.report_fatal("unexpected dimension format", dim.span),
             }
@@ -1079,9 +1068,14 @@ impl<'a> Elaborator<'a> {
                         // Error recovery: ignore this field
                         continue;
                     };
+                    let ty_ty = Ty::Int(ty.clone());
                     for assign in &member.list {
                         let init = assign.init.as_ref().map(|expr| Box::new({
-                            self.eval_expr_int(expr, Some(ty.sign()), Some(ty.width())).1
+                            let (_, val) = self.eval_expr_assign(expr, &ty_ty);
+                            match val {
+                                Val::Int(val) => val,
+                                _ => unreachable!(),
+                            }
                         }));
                         list.push((ty.clone(), assign.name.clone(), init));
                     }
@@ -1108,6 +1102,7 @@ impl<'a> Elaborator<'a> {
                         }
                     }
                 }).unwrap_or_else(|| IntTy::SimpleVec(32, true, true));
+                let base_ty = Ty::Int(base.clone());
 
                 // Set next_value to all one so that the next generated element will be assigned with 0.
                 let mut next_value = LogicVec::from_int(base.sign(), Int::all_one(base.width()));
@@ -1121,7 +1116,10 @@ impl<'a> Elaborator<'a> {
                 // Process all members
                 for assign in &decl.members {
                     if let Some(init) = &assign.init {
-                        next_value = self.eval_expr_int(init, Some(base.sign()), Some(base.width())).1;
+                        next_value = match self.eval_expr_assign(init, &base_ty).1 {
+                            Val::Int(val) => val,
+                            _ => unreachable!(),
+                        };
                     } else {
                         next_value += 1;
                         if !next_value.is_two_state() {
@@ -1187,7 +1185,7 @@ impl<'a> Elaborator<'a> {
             DataTypeKind::TypeRef(expr) => {
                 // First infer the type of this expression (not necessary constant expression,
                 // but should already have type resolved).
-                let conv = self.type_check(&expr, None);
+                let conv = self.type_check(&expr);
                 match conv.ty {
                     // If it is a type, then we will evaluate it and use the type.
                     Ty::Type => {
@@ -1490,7 +1488,7 @@ impl<'a> Elaborator<'a> {
         };
         let (dim, len) = match dim.value {
             DimKind::Value(ref value) => {
-                let expr = self.type_check_int(value, None, None);
+                let expr = self.type_check_int(value);
                 let dim = Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span);
                 return (None, expr::Expr {
                     value: expr::ExprKind::Select(Box::new(parent_expr), dim),
@@ -1505,12 +1503,12 @@ impl<'a> Elaborator<'a> {
                 (Spanned::new(expr::DimKind::Range(ub, lb), dim.span), size)
             }
             DimKind::PlusRange(ref value, ref width) => {
-                let expr = self.type_check_int(value, None, None);
+                let expr = self.type_check_int(value);
                 let w = self.eval_expr_usize_positive(width);
                 (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w)
             }
             DimKind::MinusRange(ref value, ref width) => {
-                let expr = self.type_check_int(value, None, None);
+                let expr = self.type_check_int(value);
                 let w = self.eval_expr_usize_positive(width);
                 (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w)
             }
@@ -1624,7 +1622,7 @@ impl<'a> Elaborator<'a> {
                 // Type check each subexpressions. They all need to be integral
                 let subexpr: Vec<_> = subexpr
                     .iter()
-                    .map(|expr| self.type_check_int(expr, None, None))
+                    .map(|expr| self.type_check_int(expr))
                     .collect();
                 // Compute the overall width and two_state-ness.
                 let (width, two_state) = subexpr
@@ -1645,7 +1643,7 @@ impl<'a> Elaborator<'a> {
                 // Multiplier must be an integer
                 // TODO: Not necessary positive if within concat, can be zero
                 let mul_val = self.eval_expr_usize_positive(mul);
-                let subexpr = self.type_check_int(subexpr, None, None);
+                let subexpr = self.type_check_int(subexpr);
                 let ty = if let Ty::Int(ref val) = subexpr.ty {
                     IntTy::SimpleVec(val.width() * mul_val, val.two_state(), false)
                 } else { unreachable!() };
@@ -1685,7 +1683,7 @@ impl<'a> Elaborator<'a> {
                 match call.task.as_str() {
                     "$clog2" => {
                         let args = if let Some(args) = &call.args {
-                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v, None))).collect()
+                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
                         } else {
                             unimplemented!()
                         };
@@ -1705,7 +1703,7 @@ impl<'a> Elaborator<'a> {
                             self.diag.report_fatal("$bits must have exactly 1 arguments", call.task.span);
                         }
                         let arg = call.args.as_ref().unwrap().ordered[0].as_ref().unwrap();
-                        let conv = self.type_check(arg, None);
+                        let conv = self.type_check(arg);
                         let ty = match conv.ty {
                             // If it is a type, then we will evaluate it and use the type.
                             Ty::Type => {
@@ -1731,7 +1729,7 @@ impl<'a> Elaborator<'a> {
                     _ => {
                         eprintln!("{:?} unimplemented", call.task);
                         let args = if let Some(args) = &call.args {
-                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v, None))).collect()
+                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
                         } else {
                             unimplemented!()
                         };
@@ -1757,7 +1755,7 @@ impl<'a> Elaborator<'a> {
             }
             // ConstCast(Box<Expr>),
             ExprKind::SignCast(sign, ref inside) => {
-                let inside = self.type_check_int(inside, None, None);
+                let inside = self.type_check_int(inside);
                 let sign = sign == Signing::Signed;
                 let (width, two_state) = match inside.ty {
                     Ty::Int(ref intty) => (intty.width(), intty.two_state()),
@@ -1772,8 +1770,8 @@ impl<'a> Elaborator<'a> {
             ExprKind::TypeCast(ref ty, ref inside) => {
                 // The type of type cast must be a constant expression. We also need to know the
                 // actual type of the expression in order to cast properly.
-                let (_, ty_eval) = self.eval_expr(ty, None);
-                let inside = self.type_check(inside, None);
+                let (_, ty_eval) = self.eval_expr(ty);
+                let inside = self.type_check(inside);
                 match ty_eval {
                     // If it is evaluated to a type, then this is a type cast.
                     Val::Type(ty) => expr::Expr {
@@ -1930,7 +1928,15 @@ impl<'a> Elaborator<'a> {
                     BinaryOp::LShr |
                     BinaryOp::AShr => {
                         let lhs_conv = self.self_type_check_int(lhs);
-                        let rhs_conv = self.type_check_int(rhs, Some(false), None);
+                        let mut rhs_conv = self.type_check_int(rhs);
+
+                        // Make rhs_conv always unsigned
+                        let rhs_ctx = match &rhs_conv.ty {
+                            Ty::Int(subty) => (false, subty.width()),
+                            _ => unreachable!(),
+                        };
+                        self.insert_cast(&mut rhs_conv, rhs_ctx);
+
                         let myty = match &lhs_conv.ty {
                             Ty::Int(subty) => Ty::Int(subty.clone()),
                             _ => unreachable!(),
@@ -2001,7 +2007,7 @@ impl<'a> Elaborator<'a> {
             // PrefixIncDec(IncDec, Option<Box<AttrInst>>, Box<Expr>),
             ExprKind::PostfixIncDec(ref lhs, _, incdec) => {
                 // TODO: Maybe we want to check lvalue here?
-                let lhs = self.type_check_int(lhs, None, None);
+                let lhs = self.type_check_int(lhs);
                 let ty = lhs.ty.clone();
                 expr::Expr {
                     value: expr::ExprKind::PostfixIncDec(Box::new(lhs), incdec),
@@ -2010,7 +2016,7 @@ impl<'a> Elaborator<'a> {
                 }
             }
             ExprKind::Assign(ref lhs, ref rhs) => {
-                let lhs = self.type_check(lhs, None);
+                let lhs = self.type_check(lhs);
                 let rhs = self.type_check_assign(rhs, &lhs.ty);
                 expr::Expr {
                     value: expr::ExprKind::Assign(Box::new(lhs), Box::new(rhs)),
@@ -2019,7 +2025,7 @@ impl<'a> Elaborator<'a> {
                 }
             }
             ExprKind::NonblockAssign(ref lhs, ref rhs) => {
-                let lhs = self.type_check(lhs, None);
+                let lhs = self.type_check(lhs);
                 let rhs = self.type_check_assign(rhs, &lhs.ty);
                 expr::Expr {
                     value: expr::ExprKind::NonblockAssign(Box::new(lhs), Box::new(rhs)),
@@ -2317,29 +2323,21 @@ impl<'a> Elaborator<'a> {
     /// Two-stage type check. First do self_type_check and then perform size_propagate. If
     /// target is not none, then the expression will be type-checked in an assignment-like
     /// context.
-    pub fn type_check(&mut self, expr: &Expr, target: Option<&Ty>) -> expr::Expr {
+    pub fn type_check(&mut self, expr: &Expr) -> expr::Expr {
         let mut expr = self.self_type_check(expr);
-        let mut ctx = match expr.ty {
+        let ctx = match expr.ty {
             // If expression is type-checked to be a simple vector, we need to propagate size
             // back to all context-determined subexpressions.
             Ty::Int(IntTy::SimpleVec(width, _, sign)) => (sign, width),
             _ => return expr,
         };
-        match target {
-            Some(Ty::Int(intty)) => {
-                ctx.0 |= intty.sign();
-                ctx.1 = cmp::max(ctx.1, intty.width());
-            }
-            // TODO: Maybe should add cast here.
-            _ => (),
-        }
         self.propagate_size(&mut expr, ctx);
         expr
     }
 
     /// Placeholder for those should be in assignment-context but haven't implemented yet.
     pub fn type_check_assign_todo(&mut self, expr: &Expr) -> expr::Expr {
-        self.type_check(expr, None)
+        self.type_check(expr)
     }
 
     pub fn type_check_assign(&mut self, expr: &Expr, target: &Ty) -> expr::Expr {
@@ -2354,31 +2352,43 @@ impl<'a> Elaborator<'a> {
                     ty: target.clone(),
                 }
             }
-            _ => self.type_check(expr, Some(target)),
+            _ => {
+                let mut expr = self.self_type_check(expr);
+                let mut ctx = match expr.ty {
+                    // If expression is type-checked to be a simple vector, we need to propagate size
+                    // back to all context-determined subexpressions.
+                    Ty::Int(IntTy::SimpleVec(width, _, sign)) => (sign, width),
+                    _ => return expr,
+                };
+                match target {
+                    Ty::Int(intty) => {
+                        ctx.0 |= intty.sign();
+                        ctx.1 = cmp::max(ctx.1, intty.width());
+                    }
+                    // TODO: Maybe should add cast here.
+                    _ => (),
+                }
+                self.propagate_size(&mut expr, ctx);
+                expr
+            }
         }
     }
 
     /// Type check an expression, expecting it to be convertable to boolean
     pub fn type_check_bool(&mut self, expr: &Expr) -> expr::Expr {
-        self.type_check(expr, None)
+        self.type_check(expr)
     }
 
     /// Type check an integral expression, with desired width and signing.
-    pub fn type_check_int(&mut self, expr: &Expr, sign: Option<bool>, width: Option<usize>) -> expr::Expr {
+    pub fn type_check_int(&mut self, expr: &Expr) -> expr::Expr {
         let mut conv = self.self_type_check_int(expr);
-        let mut ctx = match &conv.ty {
-            Ty::Int(intty) => (intty.sign(), intty.width()),
-            _ => unreachable!(),
+        let ctx = match conv.ty {
+            // If expression is type-checked to be a simple vector, we need to propagate size
+            // back to all context-determined subexpressions.
+            Ty::Int(IntTy::SimpleVec(width, _, sign)) => (sign, width),
+            _ => return conv,
         };
-        // For both sign and width, take the maximum.
-        if let Some(sign) = sign {
-            ctx.0 &= sign;
-        }
-        if let Some(width) = width {
-            ctx.1 = cmp::max(ctx.1, width);
-        }
         self.propagate_size(&mut conv, ctx);
-        self.insert_cast(&mut conv, (sign.unwrap_or(ctx.0), width.unwrap_or(ctx.1)));
         conv
     }
 
@@ -2707,14 +2717,8 @@ impl<'a> Elaborator<'a> {
         }
     }
 
-    pub fn eval_expr_int(&mut self, expr: &Expr, sign: Option<bool>, width: Option<usize>) -> (IntTy, LogicVec) {
-        let conv = self.type_check_int(&expr, sign, width);
-        let val = self.eval_checked_expr(&conv);
-        if let (Ty::Int(ty), Val::Int(val)) = (conv.ty, val) { (ty, val) } else { unreachable!() }
-    }
-
     pub fn eval_expr_i32(&mut self, expr: &Expr) -> i32 {
-        if let (_, Val::Int(val)) = self.eval_expr(expr, None) {
+        if let (_, Val::Int(val)) = self.eval_expr(expr) {
             match val.get_two_state().and_then(|v| v.to_i32()) {
                 None => {
                     self.diag.report_fatal(
@@ -2743,8 +2747,8 @@ impl<'a> Elaborator<'a> {
         }
     }
 
-    pub fn eval_expr(&mut self, expr: &Expr, target: Option<&Ty>) -> (Ty, Val) {
-        let conv = self.type_check(&expr, target);
+    pub fn eval_expr(&mut self, expr: &Expr) -> (Ty, Val) {
+        let conv = self.type_check(&expr);
         let val = self.eval_checked_expr(&conv);
         (conv.ty, val)
     }
