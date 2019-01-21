@@ -569,12 +569,7 @@ impl<'a> Elaborator<'a> {
                                 var_ty = Ty::Array(Box::new(var_ty), ub, lb);
                             }
                             DimKind::Value(a) => {
-                                let mut size = self.eval_expr_i32(a);
-                                if size <= 0 {
-                                    self.diag.report_error("dimension must be positive", a.span);
-                                    // Error recovery
-                                    size = 1;
-                                }
+                                let mut size = self.eval_expr_usize_positive(a) as i32;
                                 var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
                             }
                             _ => unimplemented!(),
@@ -1501,22 +1496,12 @@ impl<'a> Elaborator<'a> {
             }
             DimKind::PlusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value, None, None);
-                let mut w = self.eval_expr_i32(width) as usize;
-                if w <= 0 {
-                    self.diag.report_error("width must be positive", width.span);
-                    // Error recovery
-                    w = 1;
-                }
+                let w = self.eval_expr_usize_positive(width);
                 (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w)
             }
             DimKind::MinusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value, None, None);
-                let mut w = self.eval_expr_i32(width) as usize;
-                if w <= 0 {
-                    self.diag.report_error("width must be positive", width.span);
-                    // Error recovery
-                    w = 1;
-                }
+                let w = self.eval_expr_usize_positive(width);
                 (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w)
             }
             _ => {
@@ -1634,12 +1619,8 @@ impl<'a> Elaborator<'a> {
             }
             ExprKind::MultConcat(ref mul, ref subexpr, ref select) => {
                 // Multiplier must be an integer
-                let mul_val = self.eval_expr_i32(mul);
-                if mul_val <= 0 {
-                    // TODO: Not necessary if within concat
-                    self.diag.report_fatal("multiplier must be positive", mul.span);
-                }
-                let mul_val = mul_val as usize;
+                // TODO: Not necessary positive if within concat, can be zero
+                let mul_val = self.eval_expr_usize_positive(mul);
                 let subexpr = self.type_check_int(subexpr, None, None);
                 let ty = if let Ty::Int(ref val) = subexpr.ty {
                     IntTy::SimpleVec(val.width() * mul_val, val.two_state(), false)
@@ -2713,6 +2694,17 @@ impl<'a> Elaborator<'a> {
         }
     }
 
+    pub fn eval_expr_usize_positive(&mut self, expr: &Expr) -> usize {
+        let value = self.eval_expr_i32(expr);
+        if value <= 0 {
+            self.diag.report_error("this expression must evaluate to positive number", expr.span);
+            // Error recovery
+            1
+        } else {
+            value as usize
+        }
+    }
+
     pub fn eval_expr(&mut self, expr: &Expr, target: Option<&Ty>) -> (Ty, Val) {
         let conv = self.type_check(&expr, target);
         let val = self.eval_checked_expr(&conv);
@@ -2729,7 +2721,7 @@ impl<'a> Elaborator<'a> {
                     (ub, lb)
                 }
                 DimKind::Value(a) => {
-                    let size = self.eval_expr_i32(a);
+                    let size = self.eval_expr_usize_positive(a) as i32;
                     (0, size - 1)
                 }
                 _ => self.diag.report_fatal("unexpected dimension format", dim.span),
