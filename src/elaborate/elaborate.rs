@@ -1760,7 +1760,19 @@ impl<'a> Elaborator<'a> {
                 }
             }
             // ConstCast(Box<Expr>),
-            // SignCast(Signing, Box<Expr>),
+            ExprKind::SignCast(sign, ref inside) => {
+                let inside = self.type_check_int(inside, None, None);
+                let sign = sign == Signing::Signed;
+                let (width, two_state) = match inside.ty {
+                    Ty::Int(ref intty) => (intty.width(), intty.two_state()),
+                    _ => unreachable!(),
+                };
+                expr::Expr {
+                    value: expr::ExprKind::SignCast(sign, Box::new(inside)),
+                    span: expr.span,
+                    ty: Ty::Int(IntTy::SimpleVec(width, two_state, sign)),
+                }
+            }
             ExprKind::TypeCast(ref ty, ref inside) => {
                 // The type of type cast must be a constant expression. We also need to know the
                 // actual type of the expression in order to cast properly.

@@ -742,6 +742,11 @@ impl PrettyPrint {
                     self.print_args(args, true);
                 }
             }
+            ExprKind::SignCast(sign, expr) => {
+                self.append(format!("{}'(", sign));
+                self.print_expr(expr);
+                self.append(")");
+            }
             ExprKind::TypeCast(ty, expr) => {
                 self.print_expr(ty);
                 self.append("'(");

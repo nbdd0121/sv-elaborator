@@ -383,7 +383,7 @@ pub trait AstVisitor {
                 }
             }
             // ConstCast(Box<Expr>),
-            // SignCast(Signing, Box<Expr>),
+            ExprKind::SignCast(_, expr) => self.visit_expr(expr),
             ExprKind::TypeCast(target, expr) => {
                 self.visit_expr(target);
                 self.visit_expr(expr);

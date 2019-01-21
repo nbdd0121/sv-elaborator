@@ -342,7 +342,10 @@ impl<'a> Reconstructor<'a> {
                 let ast_rhs = self.reconstruct_expr(rhs);
                 ast::ExprKind::TypeCast(Box::new(ast_ty_expr), Box::new(ast_rhs))
             }
-            expr::ExprKind::SignCast(..) => unimplemented!(),
+            expr::ExprKind::SignCast(sign, ref rhs) => {
+                let ast_rhs = self.reconstruct_expr(rhs);
+                ast::ExprKind::SignCast(if sign { Signing::Signed } else { Signing::Unsigned }, Box::new(ast_rhs))
+            }
             expr::ExprKind::WidthCast(width, ref rhs) => {
                 let ast_ty = reconstruct_usize(width);
                 let ast_rhs = self.reconstruct_expr(rhs);
