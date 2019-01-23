@@ -668,7 +668,9 @@ impl<'a> Elaborator<'a> {
             Item::HierInstantiation(inst) => {
                 self.elaborate_instantiation(inst);
             }
-            // GenRegion(Vec<Item>),
+            Item::GenRegion(items) => {
+                for item in items { self.elaborate_item(item); }
+            }
             Item::LoopGen(gen) => {
                 // Each generate construct will be assigned an id for external names.
                 self.genblk += 1;
