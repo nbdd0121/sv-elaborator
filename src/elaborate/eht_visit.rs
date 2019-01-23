@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use super::expr::*;
 
 pub trait EhtVisitor {
@@ -102,8 +104,9 @@ pub trait EhtVisitor {
             StmtKind::Expr(expr) => {
                 self.visit_expr(expr);
             }
-            StmtKind::DataDecl(_decl) => {
-                unimplemented!()
+            StmtKind::DataDecl(decl) => {
+                let decl = Rc::get_mut(decl).unwrap();
+                if let Some(expr) = &mut decl.init { self.visit_expr(expr); }
             }
         }
     }

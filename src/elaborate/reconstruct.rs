@@ -455,8 +455,20 @@ impl<'a> Reconstructor<'a> {
                 let expr = self.reconstruct_expr(expr);
                 ast::StmtKind::Expr(Box::new(expr))
             }
-            expr::StmtKind::DataDecl(_decl) => {
-                unimplemented!()
+            expr::StmtKind::DataDecl(decl) => {
+                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                ast::StmtKind::DataDecl(Box::new(DataDecl {
+                    attr: None,
+                    has_const: false,
+                    lifetime: decl.lifetime,
+                    ty,
+                    list: vec![DeclAssign {
+                        name: decl.name.clone(),
+                        dim,
+                        init: init,
+                    }]
+                }))
             }
         };
         ast::Stmt {

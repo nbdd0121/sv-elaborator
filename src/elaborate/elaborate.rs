@@ -570,6 +570,7 @@ impl<'a> Elaborator<'a> {
                 }
             }
             Item::DataDecl(decl) => {
+                // When this is changed it's likely that you also need to fix Stmt's DataDecl
                 if decl.has_const {
                     self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
                 }
@@ -1000,8 +1001,40 @@ impl<'a> Elaborator<'a> {
                 let expr = self.type_check(expr);
                 expr::StmtKind::Expr(Box::new(expr))
             }
-            ast::StmtKind::DataDecl(_decl) => {
-                unimplemented!()
+            ast::StmtKind::DataDecl(decl) => {
+                if decl.has_const {
+                    self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
+                }
+                let ty = self.eval_ty(&decl.ty);
+                // TODO: Should find a way to add all data decls not just the lastone
+                let mut last_one = None;
+                for item in &decl.list {
+                    let mut var_ty = ty.clone();
+                    for dim in item.dim.iter().rev() {
+                        match &dim.value {
+                            DimKind::Range(a, b) => {
+                                let ub = self.eval_expr_i32(a);
+                                let lb = self.eval_expr_i32(b);
+                                var_ty = Ty::Array(Box::new(var_ty), ub, lb);
+                            }
+                            DimKind::Value(a) => {
+                                let mut size = self.eval_expr_usize_positive(a) as i32;
+                                var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
+                            }
+                            _ => unimplemented!(),
+                        }
+                    }
+                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                    let decl = Rc::new(hier::DataDecl {
+                        lifetime: decl.lifetime,
+                        ty: var_ty,
+                        name: item.name.clone(),
+                        init,
+                    });
+                    last_one = Some(Rc::clone(&decl));
+                    self.add_to_scope(&item.name, HierItem::DataDecl(decl));
+                }
+                expr::StmtKind::DataDecl(last_one.unwrap())
             }
         };
         expr::Stmt {
@@ -1691,6 +1724,28 @@ impl<'a> Elaborator<'a> {
                     }
                 }
                 match call.task.as_str() {
+                    "$signed" => {
+                        // The result should be same as signed'(xxx)
+                        let arg_checked = if let Some(args) = &call.args {
+                            args.ordered.len() == 1
+                        } else {
+                            false
+                        };
+                        if !arg_checked {
+                            self.diag.report_fatal("$signed must have exactly 1 arguments", call.task.span);
+                        }
+                        let arg = call.args.as_ref().unwrap().ordered[0].as_ref().unwrap();
+                        let conv = self.type_check_int(arg);
+                        let myty = match conv.ty {
+                            Ty::Int(ref ty) => Ty::Int(IntTy::SimpleVec(ty.width(), ty.two_state(), true)),
+                            _ => unreachable!(),
+                        };
+                        expr::Expr {
+                            value: expr::ExprKind::SignCast(true, Box::new(conv)),
+                            span: expr.span,
+                            ty: myty,
+                        }
+                    }
                     "$clog2" => {
                         let args = if let Some(args) = &call.args {
                             args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
