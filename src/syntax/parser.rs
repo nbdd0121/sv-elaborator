@@ -634,7 +634,7 @@ impl<'a> Parser<'a> {
                 match tf.task.as_str() {
                     // Also the syntax requires first argument of $fatal to be either 0,1,2
                     // literal we relax a little bit here and delay it until elaboration.
-                    "$fatal" | "$error" | "$warning" | "$info" => (),
+                    "fatal" | "error" | "warning" | "info" => (),
                     _ => {
                         self.diag.report_error("only elaboration system task can appear as an item", tf.task.span);
                     }

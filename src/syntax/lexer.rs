@@ -174,9 +174,8 @@ impl<'a> Lexer<'a> {
     }
 
     // Parse all simple identifiers, keywords and system tasks
-    fn parse_identifier(&mut self, ch: char) -> TokenKind {
+    fn parse_identifier(&mut self) -> String {
         let mut name = String::new();
-        name.push(ch);
         loop {
             let next = match self.nextch() {
                 None => break,
@@ -192,27 +191,11 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-        if ch == '$' {
-            match &name as &str {
-                "$" => TokenKind::Dollar,
-                "$unit" => TokenKind::Keyword(Keyword::Unit),
-                "$root" => TokenKind::Keyword(Keyword::Root),
-                _ => TokenKind::SystemTask(name),
-            }
-        } else {
-            // We only recognise keywords outside attributes
-            if !self.attr {
-                match HASHMAP.get::<str>(&name) {
-                    Some(&(ref kw, v)) => if v <= self.keyword { return kw.clone() },
-                    _ => (),
-                }
-            }
-            TokenKind::Id(name)
-        }
+        name
     }
 
     // Parse escaped identifiers (\ is already consumed)
-    fn parse_esc_id(&mut self) -> TokenKind {
+    fn parse_esc_id(&mut self) -> String {
         let mut name = String::new();
         loop {
             let next = match self.nextch() {
@@ -226,7 +209,7 @@ impl<'a> Lexer<'a> {
                 break
             }
         }
-        TokenKind::Id(name)
+        name
     }
 
     // Parse escape sequence (\ is already consumed)
@@ -712,15 +695,59 @@ impl<'a> Lexer<'a> {
                 }
             }
             // Identifiers
-            'a'...'z' | 'A'...'Z' | '_' | '$' => {
-                self.parse_identifier(ch)
+            'a'...'z' | 'A'...'Z' | '_' => {
+                self.pos = self.start;
+                let name = self.parse_identifier();
+                // We only recognise keywords outside attributes
+                if !self.attr {
+                    match HASHMAP.get::<str>(&name) {
+                        Some(&(ref kw, v)) => if v <= self.keyword {
+                            kw.clone()
+                        } else {
+                            TokenKind::Id(name)
+                        },
+                        _ => TokenKind::Id(name),
+                    }
+                } else {
+                    TokenKind::Id(name)
+                }
+            }
+            '$' => {
+                let name = self.parse_identifier();
+                match &name as &str {
+                    "" => TokenKind::Dollar,
+                    "unit" => TokenKind::Keyword(Keyword::Unit),
+                    "root" => TokenKind::Keyword(Keyword::Root),
+                    _ => TokenKind::SystemTask(name),
+                }
             }
             '\\' => {
-                self.parse_esc_id()
+                TokenKind::Id(self.parse_esc_id())
             }
             '`' => {
-                self.report_pos(Severity::Warning, "compiler directive not yet supported", self.start);
-                TokenKind::Whitespace
+                match self.nextch().unwrap_or(' ') {
+                    // Special symbols meaningful inside substitution text.
+                    '"' => TokenKind::Directive("\"".to_owned()),
+                    '`' => TokenKind::Directive("`".to_owned()),
+                    '\\' => {
+                        if self.nextch() == Some('`') && self.nextch() == Some('"') {
+                            TokenKind::Directive("\\`\"".to_owned())
+                        } else {
+                            self.pos = self.start + 1;
+                            TokenKind::Directive(self.parse_esc_id())
+                        }
+                    }
+                    'a'...'z' | 'A'...'Z' | '_' | '$' => {
+                        TokenKind::Directive(self.parse_identifier())
+                    }
+                    _ => {
+                        // Restore the position to undo the nextch
+                        self.pos = self.start + 1;
+                        // Warn about a ` without name following
+                        self.report_pos(Severity::Error, "` without directive name", self.pos);
+                        TokenKind::Unknown
+                    }
+                }
             }
             // Literals
             '0' ... '9' => {

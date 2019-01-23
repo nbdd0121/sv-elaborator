@@ -669,7 +669,7 @@ impl PrettyPrint {
     }
 
     fn print_sys_tf_call(&mut self, obj: &SysTfCall) {
-        self.append(format!("{}", obj.task));
+        self.append(format!("${}", obj.task));
         if let Some(args) = &obj.args {
             self.print_args(args, true);
         }

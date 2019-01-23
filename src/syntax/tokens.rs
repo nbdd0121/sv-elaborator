@@ -369,6 +369,9 @@ pub enum TokenKind {
     /// We borrowed Rust libsyntax's token tree concept, but we tweaked it for simplicity
     DelimGroup(Delim, Box<DelimGroup>),
 
+    /// Preprocessing directive. Will not exist after preprocessor
+    Directive(String),
+
     // These tokens are normally ignored, but we keep them here so that the lexer is also useful
     // potentially for code formatting purposes.
     Eof,

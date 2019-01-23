@@ -807,14 +807,14 @@ impl<'a> Elaborator<'a> {
                     Some(list) => list.ordered.iter().map(|expr| self.eval_expr(expr.as_ref().unwrap())).collect(),
                 };
                 let severity = match call.task.as_str() {
-                    "$fatal" => {
+                    "fatal" => {
                         // For fatal task, we don't care about finish number in elaboration.
                         if !arguments.is_empty() { arguments.remove(0); }
                         Severity::Error
                     }
-                    "$error" => Severity::Error,
-                    "$warning" => Severity::Warning,
-                    "$info" => Severity::Info,
+                    "error" => Severity::Error,
+                    "warning" => Severity::Warning,
+                    "info" => Severity::Info,
                     _ => unreachable!(),
                 };
                 // TODO: Arguments of display
@@ -1225,6 +1225,7 @@ impl<'a> Elaborator<'a> {
             HierItem::LoopGenBlock(_) => Ty::Void, // Not typable
             HierItem::Modport(_) => Ty::Void, // Not typable
             HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(Rc::clone(enu))),
+            HierItem::Comment(_) => unreachable!(),
         }
     }
 
@@ -1680,7 +1681,7 @@ impl<'a> Elaborator<'a> {
                     }
                 }
                 match call.task.as_str() {
-                    "$clog2" => {
+                    "clog2" => {
                         let args = if let Some(args) = &call.args {
                             args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
                         } else {
@@ -1692,7 +1693,7 @@ impl<'a> Elaborator<'a> {
                             ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
                         }
                     }
-                    "$bits" => {
+                    "bits" => {
                         let arg_checked = if let Some(args) = &call.args {
                             args.ordered.len() == 1
                         } else {
@@ -2430,7 +2431,7 @@ impl<'a> Elaborator<'a> {
             // Member(Box<Expr>, Ident),
             expr::ExprKind::SysTfCall(task, args) => {
                 match task.as_str() {
-                    "$clog2" => (),
+                    "clog2" => (),
                     v => unimplemented!("{:?}", v),
                 }
                 let args: Vec<_> = args.iter().map(|v| self.eval_checked_expr(v.as_ref().unwrap())).collect();
