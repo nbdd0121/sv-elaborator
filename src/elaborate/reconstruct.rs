@@ -123,7 +123,12 @@ impl<'a> Reconstructor<'a> {
                     dim
                 )
             }
+            IntTy::SimpleVec(8, true, true) => DataTypeKind::IntAtom(IntAtomTy::Byte, None),
+            IntTy::SimpleVec(16, true, true) => DataTypeKind::IntAtom(IntAtomTy::Shortint, None),
             IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
+            IntTy::SimpleVec(64, true, true) => DataTypeKind::IntAtom(IntAtomTy::Longint, None),
+            IntTy::SimpleVec(32, false, true) => DataTypeKind::IntAtom(IntAtomTy::Integer, None),
+            IntTy::SimpleVec(64, false, false) => DataTypeKind::IntAtom(IntAtomTy::Time, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = reconstruct_usize(*width - 1);
