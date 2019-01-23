@@ -432,6 +432,30 @@ impl<'a> AstVisitor for Resolver<'a> {
                 return;
             }
             Item::FuncDecl(decl) => {
+                self.visit_ty(&mut decl.ty);
+                self.add_to_scope(&mut decl.name, SymbolKind::Var);
+                self.scopes.push(Scope::new());
+                for port in &mut decl.ports {
+                    match port {
+                        PortDecl::Data(_, _, ty, list) => {
+                            self.visit_ty(ty);
+                            for assign in list {
+                                for dim in &mut assign.dim { self.visit_dim(dim); }
+                                if let Some(v) = &mut assign.init { self.visit_expr(v); }
+                                self.add_to_scope(&mut assign.name, SymbolKind::Var);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                    self.visit_port_decl(port)
+                }
+                for stmt in &mut decl.stmts {
+                    self.visit_stmt(stmt);
+                }
+                self.scopes.pop();
+                return;
+            }
+            Item::TaskDecl(decl) => {
                 self.add_to_scope(&mut decl.name, SymbolKind::Var);
                 self.scopes.push(Scope::new());
                 for port in &mut decl.ports {

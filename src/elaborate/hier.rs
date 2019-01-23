@@ -55,6 +55,15 @@ pub struct FuncDecl {
     pub stmts: Vec<ast::Stmt>,
 }
 
+/// Partially resolved function declaration
+#[derive(Debug)]
+pub struct TaskDecl {
+    pub lifetime: ast::Lifetime,
+    pub name: Ident,
+    pub ports: Vec<ast::PortDecl>,
+    pub stmts: Vec<ast::Stmt>,
+}
+
 /// Un-instantiated module during resolution and elaboration
 #[derive(Clone)]
 pub struct DesignDecl {
@@ -211,6 +220,7 @@ pub enum HierItem {
     /// Data declaration
     DataDecl(Rc<DataDecl>),
     FuncDecl(Rc<FuncDecl>),
+    TaskDecl(Rc<TaskDecl>),
     ContinuousAssign(Rc<Expr>),
     Always(ast::AlwaysKw, Rc<Stmt>),
     /// Other items that we don't really care in elaboration

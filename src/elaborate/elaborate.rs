@@ -540,6 +540,14 @@ impl<'a> Elaborator<'a> {
                     stmts: decl.stmts.clone(),
                 })));
             }
+            Item::TaskDecl(decl) => {
+                self.add_to_scope(&decl.name, HierItem::TaskDecl(Rc::new(hier::TaskDecl {
+                    lifetime: decl.lifetime,
+                    name: decl.name.clone(),
+                    ports: decl.ports.clone(),
+                    stmts: decl.stmts.clone(),
+                })));
+            }
             // Package import are already resolved by resolver - discard it.
             Item::PkgImport(_) => (),
             Item::ParamDecl(decl) => {
@@ -1213,6 +1221,7 @@ impl<'a> Elaborator<'a> {
             HierItem::DataPort(decl) => decl.ty.clone(),
             HierItem::DataDecl(decl) => decl.ty.clone(),
             HierItem::FuncDecl(_) => unimplemented!(),
+            HierItem::TaskDecl(_) => unimplemented!(),
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::ContinuousAssign(_) => unreachable!(),
@@ -1742,9 +1751,11 @@ impl<'a> Elaborator<'a> {
             }
             ExprKind::FuncCall { ref expr, ref args, .. } => {
                 let ty = if let ast::ExprKind::HierName(HierId::Name(None, ref name)) = expr.value {
-                    if let HierItem::FuncDecl(decl) = self.resolve(name) {
-                        decl.ty.clone()
-                    } else { unimplemented!() }
+                    match self.resolve(name) {
+                        HierItem::FuncDecl(decl) => decl.ty.clone(),
+                        HierItem::TaskDecl(_) => Ty::Void,
+                        _ => unimplemented!(),
+                    }
                 } else { unimplemented!() };
                 expr::Expr {
                     value: expr::ExprKind::FuncCall { expr: expr.clone(), args: args.clone() },

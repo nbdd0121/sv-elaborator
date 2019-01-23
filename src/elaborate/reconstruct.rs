@@ -512,6 +512,15 @@ impl<'a> Reconstructor<'a> {
                     stmts: decl.stmts.clone(),
                 })));
             }
+            HierItem::TaskDecl(decl) => {
+                list.push(Item::TaskDecl(Box::new(TaskDecl {
+                    attr: None,
+                    lifetime: decl.lifetime,
+                    name: decl.name.clone(),
+                    ports: decl.ports.clone(),
+                    stmts: decl.stmts.clone(),
+                })));
+            }
             HierItem::ContinuousAssign(expr) => {
                 list.push(Item::ContinuousAssign(vec![self.reconstruct_expr(expr)]));
             }

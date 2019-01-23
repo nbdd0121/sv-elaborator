@@ -23,6 +23,15 @@ pub trait AstVisitor {
             }
             Item::PkgImport(_) => (),
             Item::FuncDecl(decl) => {
+                self.visit_ty(&mut decl.ty);
+                for port in &mut decl.ports {
+                    self.visit_port_decl(port)
+                }
+                for stmt in &mut decl.stmts {
+                    self.visit_stmt(stmt);
+                }
+            }
+            Item::TaskDecl(decl) => {
                 for port in &mut decl.ports {
                     self.visit_port_decl(port)
                 }

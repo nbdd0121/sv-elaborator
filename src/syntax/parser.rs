@@ -591,6 +591,8 @@ impl<'a> Parser<'a> {
             }
             // function_declaration
             TokenKind::Keyword(Keyword::Function) => Some(self.parse_func_decl(attr)),
+            // task_declaration
+            TokenKind::Keyword(Keyword::Task) => Some(self.parse_task_decl(attr)),
             // parameter_override
             TokenKind::Keyword(Keyword::Defparam) => {
                 // We've decided not to support defparam at all ever even though the standard
@@ -1897,6 +1899,30 @@ impl<'a> Parser<'a> {
     }
 
     //
+    // A.2.7 Task declarations
+    //
+
+    fn parse_task_decl(&mut self, attr: Option<Box<AttrInst>>) -> Item {
+        self.consume();
+        let lifetime = self.parse_lifetime();
+        // TODO: [ interface_identifier . | class_scope ]
+        let name = self.expect_id();
+        // TODO: tf_port is different from module port
+        let ports = self.parse_port_list();
+        self.expect(TokenKind::Semicolon);
+        let stmts = self.parse_list(Self::parse_stmt_opt);
+        self.expect(TokenKind::Keyword(Keyword::Endtask));
+        self.parse_end_annotation(Some(&name));
+        Item::TaskDecl(Box::new(TaskDecl {
+            attr,
+            lifetime,
+            name,
+            ports: ports.unwrap_or_else(|| Vec::new()),
+            stmts,
+        }))
+    }
+
+    //
     // A.2.9 Interface declarations
     //
 
@@ -2441,6 +2467,7 @@ impl<'a> Parser<'a> {
         let kind = match **self.peek() {
             TokenKind::Keyword(Keyword::End) |
             TokenKind::Keyword(Keyword::Endfunction) |
+            TokenKind::Keyword(Keyword::Endtask) |
             TokenKind::Keyword(Keyword::Else) => return None,
             // null_statement
             TokenKind::Semicolon => {

@@ -270,6 +270,33 @@ impl PrettyPrint {
         self.indent_append("endfunction");
     }
 
+    fn print_task_decl(&mut self, obj: &TaskDecl) {
+        self.append("task ");
+        if obj.lifetime == Lifetime::Automatic {
+            self.append("automatic ");
+        }
+        self.append(format!("{}", obj.name));
+        if obj.ports.len() != 0 {
+            self.append(format!(" (\n"));
+            self.indent();
+            for (item, _, last) in obj.ports.iter().identify_first_last() {
+                self.print_port_decl(item);
+                self.append(format!("{}\n", if { last } { "" } else { "," }));
+            }
+            self.unindent();
+            self.indent_append(format!(")"));
+        }
+        self.append(";\n");
+        self.indent();
+        for stmt in &obj.stmts {
+            self.indent_append("");
+            self.print_stmt(stmt);
+            self.append("\n");
+        }
+        self.unindent();
+        self.indent_append("endtask");
+    }
+
     fn print_data_decl(&mut self, obj: &DataDecl) {
         self.append("");
         if obj.has_const {
@@ -386,6 +413,7 @@ impl PrettyPrint {
             Item::DesignDecl(v) => self.print_module_decl(v),
             Item::PkgDecl(v) => self.print_pkg_decl(v),
             Item::FuncDecl(v) => self.print_func_decl(v),
+            Item::TaskDecl(v) => self.print_task_decl(v),
             Item::PkgImport(items) => {
                 self.append("import ");
                 self.print_comma_list(items, |this, PkgImportItem(pkg, item)| {
