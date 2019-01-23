@@ -645,8 +645,7 @@ impl<'a> Elaborator<'a> {
             // These are not handled specially
             Item::ContinuousAssign(list) => {
                 for assign in list {
-                    // TODO: Should get the type out
-                    let assign = self.type_check_assign_todo(assign);
+                    let assign = self.type_check(assign);
                     self.add_item(HierItem::ContinuousAssign(Rc::new(assign)));
                 }
             }

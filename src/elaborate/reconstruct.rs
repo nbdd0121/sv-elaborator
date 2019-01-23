@@ -61,16 +61,20 @@ impl<'a> Reconstructor<'a> {
 
     /// Given an ty::Enum, reconstruct ast::EnumDecl
     pub fn reconstruct_enum(&mut self, enu: &Enum, prefix: &str) -> EnumDecl {
-        let base = self.reconstruct_ty_int(&enu.base, Span::none());
+        let base = match &enu.base {
+            // int is the default type so don't print it out.
+            IntTy::SimpleVec(32, true, true) => None,
+            v => Some(Box::new(self.reconstruct_ty_int(v, Span::none()))),
+        };
         let members = enu.elements.borrow().iter().map(|(name, val)| {
             DeclAssign {
                 name: Ident::new(format!("{}_{}", prefix, name.value), name.span),
                 dim: Vec::new(),
-                init: Some(Box::new(self.reconstruct_val_int(&enu.base, val, Span::none()))),
+                init: Some(Box::new(self.reconstruct_const(val, Span::none()))),
             }
         }).collect();
         EnumDecl {
-            ty: Some(Box::new(base)),
+            ty: base,
             members,
         }
     }
