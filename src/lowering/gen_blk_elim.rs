@@ -283,6 +283,20 @@ impl EhtVisitor for GenBlkEliminator {
                 self.scopes.pop();
                 return;
             },
+            expr::StmtKind::SeqBlock(list) => {
+                self.scopes.push(HierScope::new());
+                list.iter_mut().for_each(|stmt| self.visit_stmt(stmt));
+                self.scopes.pop();
+                return;
+            }
+            expr::StmtKind::DataDecl(decl) => {
+                {
+                    let decl = Rc::get_mut(decl).unwrap();
+                    if let Some(expr) = &mut decl.init { self.visit_expr(expr); }
+                }
+                self.scopes.last_mut().unwrap().insert(Some(Ident::clone(&decl.name)), HierItem::DataDecl(Rc::clone(decl)));
+                return;
+            }
             _ => (),
         }
         self.do_visit_stmt(stmt);

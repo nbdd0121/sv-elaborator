@@ -123,7 +123,12 @@ impl<'a> Reconstructor<'a> {
                     dim
                 )
             }
+            IntTy::SimpleVec(8, true, true) => DataTypeKind::IntAtom(IntAtomTy::Byte, None),
+            IntTy::SimpleVec(16, true, true) => DataTypeKind::IntAtom(IntAtomTy::Shortint, None),
             IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
+            IntTy::SimpleVec(64, true, true) => DataTypeKind::IntAtom(IntAtomTy::Longint, None),
+            IntTy::SimpleVec(32, false, true) => DataTypeKind::IntAtom(IntAtomTy::Integer, None),
+            IntTy::SimpleVec(64, false, false) => DataTypeKind::IntAtom(IntAtomTy::Time, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = reconstruct_usize(*width - 1);
@@ -450,8 +455,20 @@ impl<'a> Reconstructor<'a> {
                 let expr = self.reconstruct_expr(expr);
                 ast::StmtKind::Expr(Box::new(expr))
             }
-            expr::StmtKind::DataDecl(_decl) => {
-                unimplemented!()
+            expr::StmtKind::DataDecl(decl) => {
+                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                ast::StmtKind::DataDecl(Box::new(DataDecl {
+                    attr: None,
+                    has_const: false,
+                    lifetime: decl.lifetime,
+                    ty,
+                    list: vec![DeclAssign {
+                        name: decl.name.clone(),
+                        dim,
+                        init: init,
+                    }]
+                }))
             }
         };
         ast::Stmt {
@@ -502,6 +519,15 @@ impl<'a> Reconstructor<'a> {
                     attr: None,
                     lifetime: decl.lifetime,
                     ty,
+                    name: decl.name.clone(),
+                    ports: decl.ports.clone(),
+                    stmts: decl.stmts.clone(),
+                })));
+            }
+            HierItem::TaskDecl(decl) => {
+                list.push(Item::TaskDecl(Box::new(TaskDecl {
+                    attr: None,
+                    lifetime: decl.lifetime,
                     name: decl.name.clone(),
                     ports: decl.ports.clone(),
                     stmts: decl.stmts.clone(),

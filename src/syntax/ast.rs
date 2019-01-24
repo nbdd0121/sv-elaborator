@@ -431,6 +431,7 @@ pub enum Item {
     PkgDecl(Box<PkgDecl>),
     PkgImport(Vec<PkgImportItem>),
     FuncDecl(Box<FuncDecl>),
+    TaskDecl(Box<TaskDecl>),
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
 
@@ -670,6 +671,18 @@ pub struct FuncDecl {
     pub attr: Option<Box<AttrInst>>,
     pub lifetime: Lifetime,
     pub ty: DataType,
+    pub name: Ident,
+    pub ports: Vec<PortDecl>,
+    pub stmts: Vec<Stmt>,
+}
+
+//
+// A.2.7 Task declarations
+//
+#[derive(Debug, Clone)]
+pub struct TaskDecl {
+    pub attr: Option<Box<AttrInst>>,
+    pub lifetime: Lifetime,
     pub name: Ident,
     pub ports: Vec<PortDecl>,
     pub stmts: Vec<Stmt>,
