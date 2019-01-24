@@ -87,6 +87,7 @@ fn main() {
 
         let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let tokens = syntax::lex(&src_mgr, &diag_mgr, &src);
+            let tokens = syntax::tk_tree(&diag_mgr, tokens);
             let list = syntax::parse(&diag_mgr, tokens);
             list
         })) {

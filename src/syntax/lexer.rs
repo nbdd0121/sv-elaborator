@@ -725,12 +725,19 @@ impl<'a> Lexer<'a> {
                 TokenKind::Id(self.parse_esc_id())
             }
             '`' => {
-                match self.nextch().unwrap_or(' ') {
+                match self.peekch().unwrap_or(' ') {
                     // Special symbols meaningful inside substitution text.
-                    '"' => TokenKind::Directive("\"".to_owned()),
-                    '`' => TokenKind::Directive("`".to_owned()),
+                    '"' => {
+                        self.nextch();
+                        TokenKind::Directive("\"".to_owned())
+                    }
+                    '`' => {
+                        self.nextch();
+                        TokenKind::Directive("`".to_owned())
+                    }
                     '\\' => {
-                        if self.nextch() == Some('`') && self.nextch() == Some('"') {
+                        self.nextch();
+                        if self.peekch() == Some('`') && self.peekch() == Some('"') {
                             TokenKind::Directive("\\`\"".to_owned())
                         } else {
                             self.pos = self.start + 1;
@@ -741,8 +748,6 @@ impl<'a> Lexer<'a> {
                         TokenKind::Directive(self.parse_identifier())
                     }
                     _ => {
-                        // Restore the position to undo the nextch
-                        self.pos = self.start + 1;
                         // Warn about a ` without name following
                         self.report_pos(Severity::Error, "` without directive name", self.pos);
                         TokenKind::Unknown
@@ -1131,81 +1136,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn next_tree_recurse(&mut self) -> Token {
-        let tok = self.next_span();
-        let delim = match *tok {
-            // Continue processing if this is an open delimiter
-            TokenKind::OpenDelim(delim) => delim,
-            // Otherwise return as-is.
-            _ => return tok,
-        };
-        let exp_close = match delim {
-            // "'{" correspond to "}"
-            Delim::TickBrace => Delim::Brace,
-            _ => delim,
-        };
-        let mut vec = VecDeque::new();
-        // Keep reading token until we see a closing delimiter.
-        let (close_tok, close_delim) = loop {
-            let nxt = self.next_tree_recurse();
-            match *nxt {
-                TokenKind::CloseDelim(delim) => break (nxt, Some(delim)),
-                TokenKind::Eof => break (nxt, None),
-                _ => vec.push_back(nxt)
-            }
-        };
-        match close_delim {
-            None => {
-                self.report_span(
-                    Severity::Error,
-                    "open delimiter that is never closed",
-                    tok.span.start.0,
-                    tok.span.end.0,
-                );
-            }
-            Some(v) if v != exp_close => {
-                // If symbol doesn't match, raise an error
-                self.report_span(
-                    Severity::Error,
-                    format!("unexpected closing delimiter, expecting {:#?}", exp_close),
-                    close_tok.span.start.0,
-                    close_tok.span.end.0,
-                );
-            }
-            _ => (),
-        }
-        let overall_span = tok.span.merge(close_tok.span);
-        Spanned::new(
-            TokenKind::DelimGroup(delim, Box::new(DelimGroup {
-                open: tok,
-                close: close_tok,
-                tokens: vec
-            })),
-            overall_span
-        )
-    }
-
-    fn next_tree(&mut self) -> Token {
-        loop {
-            let tok = self.next_tree_recurse();
-            match *tok {
-                TokenKind::CloseDelim(_) => {
-                    self.report_span(
-                        Severity::Error,
-                        "extra closing delimiter",
-                        tok.span.start.0,
-                        tok.span.end.0,
-                    );
-                }
-                _ => return tok,
-            }
-        }
-    }
-
     fn all(&mut self) -> VecDeque<Token> {
         let mut vec = VecDeque::new();
         loop {
-            let tok = self.next_tree();
+            let tok = self.next_span();
             match *tok {
                 TokenKind::Eof => return vec,
                 _ => vec.push_back(tok),
