@@ -1126,9 +1126,9 @@ impl<'a> Lexer<'a> {
         loop {
             let tok = self.next_tk();
             match tok {
+                // Ignore space and block comment. New line and line comments are not handled here
+                // as preprocessor needs them to know about how to process directives.
                 TokenKind::Whitespace |
-                TokenKind::NewLine |
-                TokenKind::LineComment |
                 TokenKind::BlockComment => continue,
                 _ => ()
             }
