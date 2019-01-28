@@ -5,6 +5,8 @@ use super::{Pos, Span, FatPos, FatSpan};
 use std::rc::Rc;
 use std::cmp;
 use std::cell::RefCell;
+use std::io::{self, Read};
+use std::path::PathBuf;
 use lazycell::LazyCell;
 
 /// Represent a single source file
@@ -128,14 +130,30 @@ struct SrcMgrMut {
     files: Vec<Rc<Source>>,
     /// Offsets where this source end
     end: Vec<usize>,
+    /// Paths to search
+    search_path: Vec<PathBuf>,
 }
 
 impl SrcMgrMut {
-    fn new() -> SrcMgrMut {
-        SrcMgrMut {
-            files: Vec::new(),
-            end: Vec::new(),
-        }
+    /// Lookup a file, load it, add it to source manager and return a Rc to it.
+    fn load_source(&mut self, filename: &str) -> Result<Rc<Source>, io::Error> {
+        let mut file = 'find_file: loop {
+            let mut err = None;
+            for path in &self.search_path {
+                let newpath = path.join(filename);
+                match ::std::fs::File::open(newpath) {
+                    Ok(f) => break 'find_file Ok(f),
+                    Err(e) => err = Some(e),
+                }
+            }
+            break 'find_file Err(err.unwrap())
+        }?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        let src = Rc::new(Source::new((*filename).to_owned(), contents));
+        self.add_source(src.clone());
+        Ok(src)
     }
 
     /// Add a new source file into the source manager.
@@ -199,10 +217,18 @@ pub struct SrcMgr {
 }
 
 impl SrcMgr {
-    pub fn new() -> SrcMgr {
+    pub fn new(search_path: Vec<PathBuf>) -> SrcMgr {
         SrcMgr {
-            mutable: RefCell::new(SrcMgrMut::new()),
+            mutable: RefCell::new(SrcMgrMut {
+                files: Vec::new(),
+                end: Vec::new(),
+                search_path,
+            }),
         }
+    }
+
+    pub fn load_source(&self, filename: &str) -> Result<Rc<Source>, io::Error> {
+        self.mutable.borrow_mut().load_source(filename)
     }
 
     pub fn add_source(&self, src: Rc<Source>) {

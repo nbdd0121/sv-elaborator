@@ -114,7 +114,7 @@ impl<'a> Preprocessor<'a> {
                     if !after_newline {
                         self.diag.report_error("`include must be on its own line", span);
                     }
-                    self.diag.report_span(Severity::Warning, "compiler directive not yet supported", span);
+                    self.parse_include(span);
                 }
                 "define" => self.parse_define(span),
                 "undef" |
@@ -360,6 +360,30 @@ impl<'a> Preprocessor<'a> {
                 }
             }
         }
+    }
+
+    /// Parse an include directive
+    fn parse_include(&mut self, span: Span) {
+        let (filename, span) = match self.next_raw() {
+            // TODO: Also handle <xxx>?
+            Some(Spanned{value: TokenKind::StringLiteral(str), span}) => (str, span),
+            Some(Spanned{value: TokenKind::BinaryOp(BinaryOp::Lt), ..}) => {
+                self.diag.report_error("<filename> style include is not yet supported", span);
+                return;
+            }
+            _ => {
+                self.diag.report_error("expecting file name after `include", span);
+                return;
+            },
+        };
+        let file = match self.mgr.load_source(&filename) {
+            Ok(file) => file,
+            Err(err) => {
+                self.diag.report_error(format!("failed when loading file {}: {}", filename, err), span);
+                return;
+            }
+        };
+        self.stacks.push(super::lex(self.mgr, self.diag, &file));
     }
 
     /// Skip tokens until next branching directive or eof

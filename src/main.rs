@@ -40,6 +40,7 @@ fn main() {
     opts.optopt("o", "", "set output file name", "FILE");
     opts.optopt("t", "", "set toplevel module name", "MODULE");
     opts.optmulti("b", "", "set a module to be a black box", "MODULE");
+    opts.optmulti("I", "", "add a path to the include search path", "PATH");
     opts.optflag("", "parse", "parse only, do not elaborate");
     opts.optflag("h", "help", "print this help message");
 
@@ -56,7 +57,9 @@ fn main() {
     }
 
     // Initailise source manager and diagnostic manager first
-    let src_mgr = Rc::new(SrcMgr::new());
+    let mut include_search_list: Vec<::std::path::PathBuf> = matches.opt_strs("I").into_iter().map(|x| x.into()).collect();
+    include_search_list.insert(0, ::std::path::PathBuf::new());
+    let src_mgr = Rc::new(SrcMgr::new(include_search_list));
     let diag_mgr = DiagMgr::new(src_mgr.clone());
 
     if matches.free.is_empty() {
@@ -105,12 +108,12 @@ fn main() {
     }
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { return; }
+    if diag_mgr.has_error() { ::std::process::exit(1); }
 
     elaborate::resolve(&diag_mgr, &mut files);
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { return; }
+    if diag_mgr.has_error() { ::std::process::exit(1); }
 
     if matches.opt_present("parse") {
         let mut out: Box<dyn Write> = match matches.opt_str("o") {
@@ -135,7 +138,7 @@ fn main() {
     });
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { return; }
+    if diag_mgr.has_error() { ::std::process::exit(1); }
 
     lowering::gen_name_assign(&mut elaborated);
     let elaborated = lowering::loop_gen_elim(elaborated);
