@@ -1575,13 +1575,37 @@ impl<'a> Elaborator<'a> {
         })
     }
 
-    fn type_check_assign_pattern(&mut self, _ty: &Ty, pattern: &ast::AssignPattern) -> expr::AssignPattern {
+    fn type_check_assign_pattern(&mut self, ty: &Ty, pattern: &ast::AssignPattern) -> expr::AssignPattern {
         let pattern = match pattern {
             ast::AssignPattern::Simple(list) => {
-                // TODO: They should be considered as assignment-like instead
-                expr::AssignPattern::Simple(
-                    list.iter().map(|item| self.type_check_assign_todo(item)).collect()
-                )
+                match ty {
+                    // Unpacked array
+                    Ty::Array(element, ..) => {
+                        expr::AssignPattern::Simple(
+                            list.iter().map(|item| self.type_check_assign(item, element)).collect()
+                        )
+                    }
+                    Ty::Int(intty) => {
+                        match intty {
+                            IntTy::Array(element, ..) => {
+                                let element_ty = Ty::Int(IntTy::clone(element));
+                                expr::AssignPattern::Simple(
+                                    list.iter().map(|item| self.type_check_assign(item, &element_ty)).collect()
+                                )
+                            }
+                            _  => {
+                                // TODO: They should be considered as assignment-like instead
+                                expr::AssignPattern::Simple(
+                                    list.iter().map(|item| self.type_check_assign_todo(item)).collect()
+                                )
+                            }
+                        }
+                    }
+                    _ => {
+                        // TODO: span
+                        self.diag.report_fatal("assignment pattern not yet supported for the type", Span::none());
+                    }
+                }
             }
             _ => unimplemented!(),
         };
