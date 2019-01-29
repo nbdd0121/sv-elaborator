@@ -99,7 +99,7 @@ fn main() {
                 if info.downcast_ref::<Severity>().is_some() {
                     continue
                 } else {
-                    return;
+                    ::std::process::exit(1);
                 }
             }
         };

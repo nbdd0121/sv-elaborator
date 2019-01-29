@@ -2232,7 +2232,7 @@ impl<'a> Parser<'a> {
                 this.expect(TokenKind::Semicolon);
                 let cond = this.parse_expr();
                 this.expect(TokenKind::Semicolon);
-                let update = this.parse_expr();
+                let update = this.parse_assign_expr();
                 (genvar, id, init, cond, update)
             });
         let block = self.parse_gen_block();
@@ -2823,7 +2823,7 @@ impl<'a> Parser<'a> {
             this.expect(TokenKind::Semicolon);
             let cond = this.parse_expr_opt().map(Box::new);
             this.expect(TokenKind::Semicolon);
-            let update = this.parse_comma_list(true, false, Self::parse_expr_opt);
+            let update = this.parse_comma_list(true, false, Self::parse_assign_expr_opt);
             (ty, init, cond, update)
         });
         let body = Box::new(self.parse_stmt());

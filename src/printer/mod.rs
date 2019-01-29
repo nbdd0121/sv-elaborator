@@ -298,7 +298,6 @@ impl PrettyPrint {
     }
 
     fn print_data_decl(&mut self, obj: &DataDecl) {
-        self.append("");
         if obj.has_const {
             self.append("const ");
         }
