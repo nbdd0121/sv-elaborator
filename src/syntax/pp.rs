@@ -1,7 +1,8 @@
 use super::tokens::*;
 use super::ast::*;
 
-use super::super::source::{Source, SrcMgr, DiagMgr, Severity, Span};
+use source::{Source, SrcMgr, DiagMgr, Severity, Span};
+use super::lexer::Lexer;
 
 use std::rc::Rc;
 use std::collections::VecDeque;
@@ -14,9 +15,11 @@ pub fn pp<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> VecDeque<
 struct Preprocessor<'a> {
     mgr: &'a SrcMgr,
     diag: &'a DiagMgr,
-    stacks: Vec<VecDeque<Token>>,
+    /// Buffer for tokens pushed back
+    pushback: Vec<Token>,
+    stacks: Vec<Lexer<'a>>,
     macros: HashMap<String, (Span, Option<Vec<(Spanned<String>, Option<Vec<Token>>)>>, VecDeque<Token>)>,
-    // A branch stack indicating whether previous branch is taken and whether an else is encountered
+    /// A branch stack indicating whether previous branch is taken and whether an else is encountered
     branch_stack: Vec<(bool, bool)>,
 }
 
@@ -25,6 +28,7 @@ impl<'a> Preprocessor<'a> {
         Preprocessor {
             mgr,
             diag,
+            pushback: Vec::new(),
             stacks: Vec::new(),
             macros: HashMap::new(),
             branch_stack: Vec::new(),
@@ -32,15 +36,23 @@ impl<'a> Preprocessor<'a> {
     }
 
     fn peek_raw(&mut self) -> Option<&Token> {
-        self.stacks.last_mut().unwrap().front()
+        if self.pushback.is_empty() {
+            if let Some(token) = self.next_raw() {
+                self.pushback.push(token);
+            }
+        }
+        self.pushback.last()
     }
 
     /// Retrieve next raw, unprocessed token
     fn next_raw(&mut self) -> Option<Token> {
+        if !self.pushback.is_empty() {
+            return self.pushback.pop();
+        }
         loop {
             match self.stacks.last_mut() {
                 None => return None,
-                Some(v) => match v.pop_front() {
+                Some(v) => match v.next_span() {
                     None => (),
                     Some(v) => return Some(v),
                 }
@@ -50,15 +62,7 @@ impl<'a> Preprocessor<'a> {
     }
 
     fn pushback_raw(&mut self, tok: Token) {
-        match self.stacks.last_mut() {
-            Some(v) => return v.push_front(tok),
-            None => (),
-        }
-        self.stacks.push({
-            let mut list = VecDeque::new();
-            list.push_back(tok);
-            list
-        });
+        self.pushback.push(tok);
     }
 
     /// Check if a name is one of built-in directive.
@@ -158,7 +162,7 @@ impl<'a> Preprocessor<'a> {
                         // TODO: Replace macro within macro and handle `", ``, etc
                         match self.macros.get(&name) {
                             Some((_, Some(params), list)) => {
-                                let newlist = list.iter().flat_map(|x| {
+                                let newlist: Vec<_> = list.iter().flat_map(|x| {
                                     match x.value {
                                         TokenKind::Id(ref id) => {
                                             if let Some(pos) = params.iter().position(|(x, _)| &x.value == id) {
@@ -171,8 +175,9 @@ impl<'a> Preprocessor<'a> {
                                     x.span = span;
                                     vec![x].into_iter()
                                 }).collect();
-                                eprintln!("{:?}", newlist);
-                                self.stacks.push(newlist)
+                                for tok in newlist.into_iter().rev() {
+                                    self.pushback.push(tok);
+                                }
                             }
                             _ => unreachable!(),
                         }
@@ -180,11 +185,11 @@ impl<'a> Preprocessor<'a> {
                         // TODO: Replace macro within macro and handle `", ``, etc
                         match self.macros.get(&name) {
                             Some((_, _, list)) => {
-                                let mut newlist = list.clone();
-                                for tok in &mut newlist {
+                                for tok in list.iter().rev() {
+                                    let mut tok = tok.clone();
                                     tok.span = span;
+                                    self.pushback.push(tok);
                                 }
-                                self.stacks.push(newlist)
                             }
                             _ => unreachable!(),
                         }
@@ -290,8 +295,6 @@ impl<'a> Preprocessor<'a> {
     fn expect_id(&mut self) -> Option<Spanned<String>> {
         match self.next_raw() {
             Some(Spanned{value: TokenKind::Id(id), span}) => Some(Spanned::new(id, span)),
-            // Temporary workaround
-            Some(Spanned{value: TokenKind::Keyword(Keyword::Assert), span}) => Some(Spanned::new("assert".to_string(), span)),
             Some(v) => {
                 self.pushback_raw(v);
                 None
@@ -303,8 +306,12 @@ impl<'a> Preprocessor<'a> {
     /// Parse a macro definition
     /// The span here is only for diagnostic purposes.
     fn parse_define(&mut self, span: Span) {
+        // The identifier after define can be a keyword
+        self.stacks.last_mut().unwrap().enter_kw_scope(0);
+        let token = self.expect_id();
+        self.stacks.last_mut().unwrap().leave_kw_scope();
         // Read the name of this macro
-        let (name, span) = match self.expect_id() {
+        let (name, span) = match token {
             Some(v) => (v.value, v.span),
             None => {
                 self.diag.report_error("expected identifier name after `define", span);
@@ -536,7 +543,7 @@ impl<'a> Preprocessor<'a> {
                 return;
             }
         };
-        self.stacks.push(super::lex(self.mgr, self.diag, &file));
+        self.stacks.push(Lexer::new(self.mgr, self.diag, &file));
     }
 
     /// Skip tokens until next branching directive or eof
@@ -571,7 +578,7 @@ impl<'a> Preprocessor<'a> {
     }
 
     fn all(&mut self, src: &Rc<Source>) -> VecDeque<Token> {
-        self.stacks.push(super::lex(self.mgr, self.diag, src));
+        self.stacks.push(Lexer::new(self.mgr, self.diag, src));
         let mut vec = VecDeque::new();
         loop {
             match self.process() {

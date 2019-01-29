@@ -9,13 +9,8 @@ use num::{BigUint, Zero, One, Num};
 
 use std::rc::Rc;
 use std::cmp;
-use std::collections::VecDeque;
 
-pub fn lex<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> VecDeque<Token> {
-    Lexer::new(mgr, diag, src).all()
-}
-
-struct Lexer<'a> {
+pub struct Lexer<'a> {
     mgr: &'a SrcMgr,
     diag: &'a DiagMgr,
     src_offset: Pos,
@@ -25,6 +20,7 @@ struct Lexer<'a> {
     src_text: Rc<String>,
     // Start of current token
     start: usize,
+    // 0 -> nothing should be treated as keyword
     // 1, 2, 3, 4 -> Verilog 95, 01, 01-noconfig, 05
     // 5, 6, 7, 8 -> SystemVerilog 05, 09, 12, 17
     keyword: u8,
@@ -33,7 +29,7 @@ struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    fn new(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> Lexer<'a> {
+    pub fn new(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> Lexer<'a> {
         Lexer {
             diag,
             src_offset: mgr.find_src(src).unwrap().start,
@@ -45,6 +41,17 @@ impl<'a> Lexer<'a> {
             keyword_stack: Vec::new(),
             attr: false,
         }
+    }
+
+    /// Enter a new keyword scope
+    pub fn enter_kw_scope(&mut self, v: u8) {
+        self.keyword_stack.push(self.keyword);
+        self.keyword = v;
+    }
+
+    /// Leave a keyword scope
+    pub fn leave_kw_scope(&mut self) {
+        self.keyword = self.keyword_stack.pop().unwrap();
     }
 
     // Character stream handling
@@ -1122,28 +1129,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn next_span(&mut self) -> Token {
+    pub fn next_span(&mut self) -> Option<Token> {
         loop {
             let tok = self.next_tk();
             match tok {
+                TokenKind::Eof => return None,
                 // Ignore space and block comment. New line and line comments are not handled here
                 // as preprocessor needs them to know about how to process directives.
                 TokenKind::Whitespace |
                 TokenKind::BlockComment => continue,
                 _ => ()
             }
-            return Spanned::new(tok, Pos(self.src_offset.0 + self.start).span_to(Pos(self.src_offset.0 + self.pos)));
-        }
-    }
-
-    fn all(&mut self) -> VecDeque<Token> {
-        let mut vec = VecDeque::new();
-        loop {
-            let tok = self.next_span();
-            match *tok {
-                TokenKind::Eof => return vec,
-                _ => vec.push_back(tok),
-            }
+            return Some(Spanned::new(tok, Pos(self.src_offset.0 + self.start).span_to(Pos(self.src_offset.0 + self.pos))));
         }
     }
 }
