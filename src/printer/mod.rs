@@ -869,6 +869,7 @@ impl PrettyPrint {
                 self.print_event_expr(&expr);
                 self.append(")");
             }
+            TimingCtrl::ImplicitEventCtrl => self.append("@*"),
             _ => {
                 eprintln!("{:?}", obj);
                 unimplemented!();

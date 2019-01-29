@@ -15,7 +15,7 @@ struct Preprocessor<'a> {
     mgr: &'a SrcMgr,
     diag: &'a DiagMgr,
     stacks: Vec<VecDeque<Token>>,
-    macros: HashMap<String, (Span, VecDeque<Token>)>,
+    macros: HashMap<String, (Span, Option<Vec<(Spanned<String>, Option<Vec<Token>>)>>, VecDeque<Token>)>,
     // A branch stack indicating whether previous branch is taken and whether an else is encountered
     branch_stack: Vec<(bool, bool)>,
 }
@@ -141,21 +141,52 @@ impl<'a> Preprocessor<'a> {
                     self.diag.report_span(Severity::Warning, "compiler directive not yet supported", span);
                 }
                 _ => {
-                    // TODO: Replace macro within macro and handle `", ``, etc
-                    match self.macros.get(&name) {
+                    let function_like = match self.macros.get(&name) {
                         None => {
                             self.diag.report_error(
                                 format!("cannot find macro {}", name),
                                 span
                             );
+                            continue
                         }
-                        Some((_, list)) => {
-                            let mut newlist = list.clone();
-                            for tok in &mut newlist {
-                                // Replace all token spans in replacement list
-                                tok.span = span;
+                        Some((_, Some(_), _)) => true,
+                        _ => false,
+                    };
+                    if function_like {
+                        // For function-like macro also get its argument list
+                        let args = self.parse_macro_args();
+                        // TODO: Replace macro within macro and handle `", ``, etc
+                        match self.macros.get(&name) {
+                            Some((_, Some(params), list)) => {
+                                let newlist = list.iter().flat_map(|x| {
+                                    match x.value {
+                                        TokenKind::Id(ref id) => {
+                                            if let Some(pos) = params.iter().position(|(x, _)| &x.value == id) {
+                                                return args[pos].clone().into_iter()
+                                            }
+                                        }
+                                        _ => (),
+                                    }
+                                    let mut x = x.clone();
+                                    x.span = span;
+                                    vec![x].into_iter()
+                                }).collect();
+                                eprintln!("{:?}", newlist);
+                                self.stacks.push(newlist)
                             }
-                            self.stacks.push(newlist)
+                            _ => unreachable!(),
+                        }
+                    }else {
+                        // TODO: Replace macro within macro and handle `", ``, etc
+                        match self.macros.get(&name) {
+                            Some((_, _, list)) => {
+                                let mut newlist = list.clone();
+                                for tok in &mut newlist {
+                                    tok.span = span;
+                                }
+                                self.stacks.push(newlist)
+                            }
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -163,6 +194,77 @@ impl<'a> Preprocessor<'a> {
 
             after_newline = false;
         }
+    }
+
+    /// Parse a actual argument list of macro
+    fn parse_macro_args(&mut self) -> Vec<Vec<Token>> {
+        // Expect to see a opening paranthesis
+        match self.peek_raw() {
+            Some(Spanned{value: TokenKind::OpenDelim(Delim::Paren), ..}) => (),
+            _ => {
+                self.diag.report_error("Expected actual arguments for function-like macro", self.peek_raw().unwrap().span);
+                // Error recovery
+                return Vec::new();
+            },
+        }
+        self.next_raw();
+
+        let mut list = Vec::new();
+        loop {
+            let mut tokens = Vec::new();
+            let mut level = 0;
+
+            // Read all tokens, skipping over delimited parenthesis.
+            loop {
+                let tok = self.next_raw().unwrap();
+                let end = match tok.value {
+                    TokenKind::OpenDelim(Delim::Paren) => {
+                        level += 1;
+                        false
+                    }
+                    TokenKind::CloseDelim(Delim::Paren) => {
+                        if level > 0 {
+                            level -= 1;
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    TokenKind::Comma => {
+                        level == 0
+                    }
+                    _ => false,
+                };
+                if end {
+                    self.pushback_raw(tok);
+                    break;
+                }
+                tokens.push(tok);
+            }
+
+            list.push(tokens);
+
+            // Break out from the loop if not comma
+            match self.peek_raw() {
+                Some(Spanned{value: TokenKind::Comma, ..}) => (),
+                _ => break,
+            }
+            // Consume the comma
+            self.next_raw();
+        }
+
+        // Expecting to see a closing parenthesis
+        match self.peek_raw() {
+            Some(Spanned{value: TokenKind::CloseDelim(Delim::Paren), ..}) => (),
+            _ => {
+                self.diag.report_error("Expected closing parenthesis", self.peek_raw().unwrap().span);
+                // Error recovery
+                return list;
+            },
+        }
+        self.next_raw();
+
+        return list;
     }
 
     /// Read all tokens until the next newline (new line will be consumed but not returned)
@@ -188,7 +290,13 @@ impl<'a> Preprocessor<'a> {
     fn expect_id(&mut self) -> Option<Spanned<String>> {
         match self.next_raw() {
             Some(Spanned{value: TokenKind::Id(id), span}) => Some(Spanned::new(id, span)),
-            _ => None,
+            // Temporary workaround
+            Some(Spanned{value: TokenKind::Keyword(Keyword::Assert), span}) => Some(Spanned::new("assert".to_string(), span)),
+            Some(v) => {
+                self.pushback_raw(v);
+                None
+            },
+            None => None,
         }
     }
 
@@ -220,21 +328,66 @@ impl<'a> Preprocessor<'a> {
             _ => false,
         };
 
-        if paren {
-            // Discard the parenthesis
-            self.next_raw();
-            self.diag.report_span(Severity::Warning, "function-like macros not yet supported", span);
-            // TODO: Parse formal args
-            return;
-        }
+        let args = if paren {
+            Some(self.parse_define_args())
+        } else {
+            None
+        };
 
         let list = self.read_until_newline();
 
         // Insert it to the global definitions list and report error for duplicate definition
-        if let Some((old_span, _)) = self.macros.insert(name, (span, list)) {
+        if let Some((old_span, ..)) = self.macros.insert(name, (span, args, list)) {
             self.diag.report_error("duplicate macro definitions", span);
             self.diag.report_span(Severity::Remark, "previous declared here", old_span);
         }
+    }
+
+    /// Parse a formal argument list of `define
+    fn parse_define_args(&mut self) -> Vec<(Spanned<String>, Option<Vec<Token>>)> {
+        // Discard the parenthesis
+        self.next_raw();
+        let mut list = Vec::new();
+        loop {
+            let arg_name = match self.expect_id() {
+                Some(v) => v,
+                None => {
+                    self.diag.report_error("expected identifier in macro formal argument list", self.peek_raw().unwrap().span);
+                    break;
+                }
+            };
+
+            let has_default = match self.peek_raw() {
+                Some(Spanned{value: TokenKind::BinaryOp(BinaryOp::Eq), ..}) => true,
+                _ => false,
+            };
+            if has_default {
+                // Discard the eq symbol
+                self.next_raw();
+                self.diag.report_fatal("default macro argument is not yet supported", self.peek_raw().unwrap().span);
+            }
+
+            list.push((arg_name, None));
+
+            // Break out from the loop if not comma
+            match self.peek_raw() {
+                Some(Spanned{value: TokenKind::Comma, ..}) => (),
+                _ => break,
+            }
+            // Consume the comma
+            self.next_raw();
+        }
+        match self.peek_raw() {
+            Some(Spanned{value: TokenKind::CloseDelim(Delim::Paren), ..}) => (),
+            _ => {
+                self.diag.report_error("Expected closing parenthesis", self.peek_raw().unwrap().span);
+                // Error recovery
+                return list;
+            },
+        }
+        // Discard the parenthesis
+        self.next_raw();
+        return list;
     }
 
     /// Parse an ifdef directive
