@@ -2801,7 +2801,15 @@ impl<'a> Elaborator<'a> {
                 self.eval_checked_expr(&expr)
             }
             // MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
-            // Cond(Box<Expr>, Option<Box<AttrInst>>, Box<Expr>, Box<Expr>),
+            expr::ExprKind::Cond(cond, true_expr, false_expr) => {
+                let cond = Option::<bool>::from(match self.eval_checked_expr(cond) {
+                    Val::Int(val) => {
+                        val.to_bool()
+                    }
+                    _ => unimplemented!(),
+                }).unwrap();
+                self.eval_checked_expr(if cond { true_expr } else { false_expr })
+            }
             v => {
                 eprintln!("{:?}", v);
                 unimplemented!();
