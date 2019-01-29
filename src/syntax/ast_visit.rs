@@ -43,6 +43,17 @@ pub trait AstVisitor {
                 self.visit_param_decl(decl)
             }
             Item::DataDecl(decl) => self.visit_data_decl(decl),
+            Item::NetDecl(decl) => {
+                self.visit_ty(&mut decl.ty);
+                for assign in &mut decl.list {
+                    for dim in &mut assign.dim {
+                        self.visit_dim(dim);
+                    }
+                    if let Some(v) = &mut assign.init {
+                        self.visit_expr(v);
+                    }
+                }
+            }
             Item::Typedef(_, ty, _, dim) => {
                 self.visit_ty(ty);
                 for dim in dim {

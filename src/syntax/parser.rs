@@ -654,7 +654,7 @@ impl<'a> Parser<'a> {
             }
             // also net_declaration
             TokenKind::NetTy(_) => {
-                unimplemented!();
+                Some(Item::NetDecl(Box::new(self.parse_net_decl(attr))))
             }
             // typedef
             TokenKind::Keyword(Keyword::Typedef) => Some(self.parse_typedef(attr)),
@@ -1153,6 +1153,34 @@ impl<'a> Parser<'a> {
             attr,
             has_const,
             lifetime,
+            ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
+            list
+        }
+    }
+
+    /// According to the spec
+    /// `bnf
+    /// net_type [ drive_strength | charge_strength ] [ vectored | scalared ] data_type_or_implicit
+    ///   [ delay3 ] list_of_net_decl_assignments ;
+    /// | net_type_identifier [ delay_control ] list_of_net_decl_assignments ;
+    /// | interconnect implicit_data_type [ # delay_value ] net_identifier { unpacked_dimension }
+    ///   [ , net_identifier { unpacked_dimension } ] ;
+    /// ```
+    /// Note that during parsing we cannot tell the second variant apart from a data declaration if
+    /// delay control is not present.
+    fn parse_net_decl(&mut self, attr: Option<Box<AttrInst>>) -> NetDecl {
+        // Currently we only handle first type of declaration
+        let net = match self.consume().value {
+            TokenKind::NetTy(netty) => netty,
+            _ => unreachable!(),
+        };
+        // TODO: drive_strength | charge_strength
+        // TODO: vectored | scalared
+        let (ty, list) = self.parse_data_type_decl_assign_list();
+        self.expect(TokenKind::Semicolon);
+        NetDecl {
+            attr,
+            net,
             ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
             list
         }

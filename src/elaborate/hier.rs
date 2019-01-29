@@ -45,6 +45,15 @@ pub struct DataDecl {
     pub init: Option<Box<Expr>>,
 }
 
+/// Resolved net declaration
+#[derive(Debug)]
+pub struct NetDecl {
+    pub net: ast::NetTy,
+    pub ty: Ty,
+    pub name: Ident,
+    pub init: Option<Box<Expr>>,
+}
+
 /// Partially resolved function declaration
 #[derive(Debug)]
 pub struct FuncDecl {
@@ -219,6 +228,7 @@ pub enum HierItem {
     Design(Rc<DesignDecl>),
     /// Data declaration
     DataDecl(Rc<DataDecl>),
+    NetDecl(Rc<NetDecl>),
     FuncDecl(Rc<FuncDecl>),
     TaskDecl(Rc<TaskDecl>),
     ContinuousAssign(Rc<Expr>),

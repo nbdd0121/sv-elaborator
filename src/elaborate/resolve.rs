@@ -496,6 +496,19 @@ impl<'a> AstVisitor for Resolver<'a> {
                 }
                 return;
             }
+            Item::NetDecl(decl) => {
+                self.visit_ty(&mut decl.ty);
+                for assign in &mut decl.list {
+                    for dim in &mut assign.dim {
+                        self.visit_dim(dim);
+                    }
+                    if let Some(v) = &mut assign.init {
+                        self.visit_expr(v);
+                    }
+                    self.add_to_scope(&mut assign.name, SymbolKind::Var);
+                }
+                return;
+            }
             Item::Typedef(_, ty, name, dim) => {
                 self.visit_ty(ty);
                 for dim in dim {

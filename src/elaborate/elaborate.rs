@@ -601,6 +601,34 @@ impl<'a> Elaborator<'a> {
                     self.add_to_scope(&item.name, HierItem::DataDecl(decl));
                 }
             }
+            Item::NetDecl(decl) => {
+                let ty = self.eval_ty(&decl.ty);
+                for item in &decl.list {
+                    let mut var_ty = ty.clone();
+                    for dim in item.dim.iter().rev() {
+                        match &dim.value {
+                            DimKind::Range(a, b) => {
+                                let ub = self.eval_expr_i32(a);
+                                let lb = self.eval_expr_i32(b);
+                                var_ty = Ty::Array(Box::new(var_ty), ub, lb);
+                            }
+                            DimKind::Value(a) => {
+                                let mut size = self.eval_expr_usize_positive(a) as i32;
+                                var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
+                            }
+                            _ => unimplemented!(),
+                        }
+                    }
+                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                    let decl = Rc::new(hier::NetDecl {
+                        net: decl.net,
+                        ty: var_ty,
+                        name: item.name.clone(),
+                        init,
+                    });
+                    self.add_to_scope(&item.name, HierItem::NetDecl(decl));
+                }
+            }
             Item::Typedef(_, ty, name, dim) => {
                 let ty = self.eval_ty(ty);
                 let declitem = HierItem::Type(Rc::new(hier::TypedefDecl {
@@ -1255,8 +1283,10 @@ impl<'a> Elaborator<'a> {
             HierItem::Type(_) => Ty::Type,
             HierItem::DataPort(decl) => decl.ty.clone(),
             HierItem::DataDecl(decl) => decl.ty.clone(),
-            HierItem::FuncDecl(_) => unimplemented!(),
-            HierItem::TaskDecl(_) => unimplemented!(),
+            HierItem::NetDecl(decl) => decl.ty.clone(),
+            // For func and task, if we reached here it means they're called without args
+            HierItem::FuncDecl(decl) => decl.ty.clone(),
+            HierItem::TaskDecl(_) => Ty::Void,
             HierItem::InterfacePort(_) => Ty::Void, // Not typable
             HierItem::Design(_) => unimplemented!(), // Not typable
             HierItem::ContinuousAssign(_) => unreachable!(),

@@ -512,6 +512,20 @@ impl<'a> Reconstructor<'a> {
                     }]
                 })));
             }
+            HierItem::NetDecl(decl) => {
+                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                list.push(Item::NetDecl(Box::new(NetDecl {
+                    attr: None,
+                    net: decl.net,
+                    ty,
+                    list: vec![DeclAssign {
+                        name: decl.name.clone(),
+                        dim,
+                        init: init,
+                    }]
+                })));
+            }
             HierItem::FuncDecl(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
                 assert!(dim.is_empty());

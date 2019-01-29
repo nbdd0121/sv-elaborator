@@ -503,6 +503,18 @@ impl PrettyPrint {
                 self.append(";");
             }
             Item::DataDecl(decl) => self.print_data_decl(decl),
+            Item::NetDecl(decl) => {
+                self.append(format!("{} ", decl.net));
+                self.print_type(&decl.ty);
+                self.append(" ");
+                for (item, _, last) in decl.list.iter().identify_first_last() {
+                    self.print_decl_assign(item);
+                    if !last {
+                        self.append(format!(", "));
+                    }
+                }
+                self.append(";");
+            }
             Item::TypedefIntf(_attr, intf, ty, id) => {
                 self.append("typedef ");
                 self.print_hier_id(intf);

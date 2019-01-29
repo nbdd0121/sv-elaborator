@@ -434,6 +434,7 @@ pub enum Item {
     TaskDecl(Box<TaskDecl>),
     ParamDecl(Box<ParamDecl>),
     DataDecl(Box<DataDecl>),
+    NetDecl(Box<NetDecl>),
 
     /// Standard typedef
     Typedef(Option<Box<AttrInst>>, Box<DataType>, Box<Ident>, Vec<Dim>),
@@ -573,6 +574,15 @@ pub struct DataDecl {
     pub attr: Option<Box<AttrInst>>,
     pub has_const: bool,
     pub lifetime: Lifetime,
+    pub ty: DataType,
+    pub list: Vec<DeclAssign>,
+}
+
+/// Once we support all variants of net_declaration we might consider merging this with DataDecl.
+#[derive(Debug, Clone)]
+pub struct NetDecl {
+    pub attr: Option<Box<AttrInst>>,
+    pub net: NetTy,
     pub ty: DataType,
     pub list: Vec<DeclAssign>,
 }
