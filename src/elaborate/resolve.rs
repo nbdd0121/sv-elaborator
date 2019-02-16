@@ -12,6 +12,7 @@ use syntax::ast_visit::AstVisitor;
 
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use num::ToPrimitive;
 
 pub fn resolve(diag: &DiagMgr, units: &mut Vec<Vec<Item>>) {
@@ -101,32 +102,26 @@ impl<'a> Resolver<'a> {
     }
 
     fn add_to_scope_noalloc(&mut self, ident: &Ident, kind: SymbolKind) {
-        if let Some(_) = self.scopes.last_mut().unwrap().map.insert(ident.value.clone(), (
-            ident.symbol,
-            kind
-        )) {
-            self.diag.report_fatal(
-                format!("name {} is already used in other definitions", ident.value),
-                ident.span
-            );
+        match self.scopes.last_mut().unwrap().map.entry(ident.value.clone()) {
+            Entry::Occupied(_) => {
+                self.diag.report_error(
+                    format!("name {} is already used in other definitions", ident.value),
+                    ident.span
+                );
+            }
+            Entry::Vacant(ent) => {
+                ent.insert((ident.symbol, kind));
+            }
         }
     }
 
     fn add_to_scope(&mut self, ident: &mut Ident, kind: SymbolKind) {
         ident.symbol = SymbolId::allocate();
-        if let Some(_) = self.scopes.last_mut().unwrap().map.insert(ident.value.clone(), (
-            ident.symbol,
-            kind
-        )) {
-            self.diag.report_fatal(
-                format!("name {} is already used in other definitions", ident.value),
-                ident.span
-            );
-        }
+        self.add_to_scope_noalloc(ident, kind);
     }
 
     fn resolve(&mut self, ident: &mut Ident) -> SymbolKind {
-        let ret = 'block: loop {
+        let mut ret = 'block: loop {
             for scope in self.scopes.iter_mut().rev() {
                 if let Some((id, kind)) = scope.resolve(&ident.value) {
                     break 'block (id, kind)
@@ -139,17 +134,18 @@ impl<'a> Resolver<'a> {
             break (SymbolId::DUMMY, SymbolKind::Error)
         };
         if let SymbolKind::Conflict = ret.1 {
-            self.diag.report_fatal(
+            self.diag.report_error(
                 format!("name {} is ambiguious: it exists in two wildcard-imported packages", ident.value),
                 ident.span
             );
+            ret = (SymbolId::DUMMY, SymbolKind::Error)
         }
         ident.symbol = ret.0;
         ret.1
     }
 
     fn resolve_unit(&mut self, ident: &mut Ident) -> SymbolKind {
-        let ret = 'block: loop {
+        let mut ret = 'block: loop {
             if let Some((id, kind)) = self.scopes.first_mut().unwrap().resolve(&ident.value) {
                 break 'block (id, kind)
             }
@@ -160,10 +156,11 @@ impl<'a> Resolver<'a> {
             break (SymbolId::DUMMY, SymbolKind::Error)
         };
         if let SymbolKind::Conflict = ret.1 {
-            self.diag.report_fatal(
+            self.diag.report_error(
                 format!("name {} is ambiguious: it exists in two wildcard-imported packages", ident.value),
                 ident.span
             );
+            ret = (SymbolId::DUMMY, SymbolKind::Error)
         }
         ident.symbol = ret.0;
         ret.1
@@ -398,7 +395,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                     }) => (),
                                     (_, SymbolKind::Error) => (),
                                     _ => {
-                                        self.diag.report_fatal(format!("name {} is not an interface", v.value), v.span);
+                                        self.diag.report_error(format!("name {} is not an interface", v.value), v.span);
                                     }
                                 }
                             }
