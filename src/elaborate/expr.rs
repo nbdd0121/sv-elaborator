@@ -70,8 +70,8 @@ pub enum ExprKind {
     /// Call to system task
     SysTfCall(Box<Spanned<String>>, Vec<Option<Expr>>),
     FuncCall {
-        expr: Box<ast::Expr>,
-        args: Option<Box<ast::Args>>,
+        expr: Box<Expr>,
+        args: Vec<Option<Expr>>,
     },
 
     // Casts

@@ -338,10 +338,19 @@ impl<'a> Reconstructor<'a> {
                 }))
             }
             expr::ExprKind::FuncCall { ref expr, ref args } => {
+                let expr = self.reconstruct_expr(expr);
+                let args = args
+                    .iter()
+                    .map(|arg| arg.as_ref().map(|arg| Box::new(self.reconstruct_expr(arg))))
+                    .collect();
+
                 ast::ExprKind::FuncCall {
-                    expr: expr.clone(),
+                    expr: Box::new(expr),
                     attr: None,
-                    args: args.clone(),
+                    args: Some(Box::new(Args {
+                        ordered: args,
+                        named: Vec::new(),
+                    })),
                 }
             }
             expr::ExprKind::ConstCast(..) => unimplemented!(),

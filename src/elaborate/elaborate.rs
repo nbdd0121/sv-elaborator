@@ -1878,16 +1878,27 @@ impl<'a> Elaborator<'a> {
                     }
                 }
             }
-            ExprKind::FuncCall { ref expr, ref args, .. } => {
-                let ty = if let ast::ExprKind::HierName(HierId::Name(None, ref name)) = expr.value {
-                    match self.resolve(name) {
-                        HierItem::FuncDecl(decl) => decl.ty.clone(),
-                        HierItem::TaskDecl(_) => Ty::Void,
-                        _ => unimplemented!(),
+            ExprKind::FuncCall { expr: ref func_expr, ref args, .. } => {
+                // Named argument is not currently supported
+                if let Some(args) = &args {
+                    if !args.named.is_empty() {
+                        self.diag.report_error("named arguments not yet supported", expr.span);
                     }
-                } else { unimplemented!() };
+                }
+                let func_expr = self.type_check(func_expr);
+                let args = if let Some(args) = &args {
+                    args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                } else {
+                    Vec::new()
+                };
+
+                let ty = func_expr.ty.clone();
+
                 expr::Expr {
-                    value: expr::ExprKind::FuncCall { expr: expr.clone(), args: args.clone() },
+                    value: expr::ExprKind::FuncCall {
+                        expr: Box::new(func_expr),
+                        args
+                    },
                     span: expr.span,
                     ty,
                 }
