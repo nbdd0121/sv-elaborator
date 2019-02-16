@@ -943,6 +943,55 @@ impl<'a> Elaborator<'a> {
         self.elaborate_toplevel(toplevel);
     }
 
+    // Elaborate a statement block. This will handle the declaration that are only possible to place at the begin of the block.
+    fn elaborate_block(&mut self, stmts: &[ast::Stmt]) -> Vec<expr::Stmt> {
+        let mut vec = Vec::new();
+        for stmt in stmts {
+            match &stmt.value {
+                ast::StmtKind::DataDecl(decl) => {
+                    if let Some(ref label) = stmt.label {
+                        self.diag.report_error("data declaration shouldn't have label", label.span);
+                    }
+                    if decl.has_const {
+                        self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
+                    }
+                    let ty = self.eval_ty(&decl.ty);
+                    for item in &decl.list {
+                        let mut var_ty = ty.clone();
+                        for dim in item.dim.iter().rev() {
+                            match &dim.value {
+                                DimKind::Range(a, b) => {
+                                    let ub = self.eval_expr_i32(a);
+                                    let lb = self.eval_expr_i32(b);
+                                    var_ty = Ty::Array(Box::new(var_ty), ub, lb);
+                                }
+                                DimKind::Value(a) => {
+                                    let mut size = self.eval_expr_usize_positive(a) as i32;
+                                    var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
+                                }
+                                _ => unimplemented!(),
+                            }
+                        }
+                        let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                        let decl = Rc::new(hier::DataDecl {
+                            lifetime: decl.lifetime,
+                            ty: var_ty,
+                            name: item.name.clone(),
+                            init,
+                        });
+                        vec.push(expr::Stmt {
+                            label: None,
+                            value: expr::StmtKind::DataDecl(Rc::clone(&decl))
+                        });
+                        self.add_to_scope(&item.name, HierItem::DataDecl(decl));
+                    }
+                }
+                _ => vec.push(self.elaborate_stmt(stmt)),
+            }
+        }
+        vec
+    }
+
     fn elaborate_stmt(&mut self, stmt: &ast::Stmt) -> expr::Stmt {
         let kind = match &stmt.value {
             ast::StmtKind::Empty => expr::StmtKind::Empty,
@@ -1021,7 +1070,7 @@ impl<'a> Elaborator<'a> {
             },
             ast::StmtKind::SeqBlock(list) => {
                 self.scopes.push(HierScope::new());
-                let list = list.iter().map(|stmt| self.elaborate_stmt(stmt)).collect();
+                let list = self.elaborate_block(&list);
                 self.scopes.pop();
                 expr::StmtKind::SeqBlock(list)
             }
@@ -1030,39 +1079,7 @@ impl<'a> Elaborator<'a> {
                 expr::StmtKind::Expr(Box::new(expr))
             }
             ast::StmtKind::DataDecl(decl) => {
-                if decl.has_const {
-                    self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
-                }
-                let ty = self.eval_ty(&decl.ty);
-                // TODO: Should find a way to add all data decls not just the lastone
-                let mut last_one = None;
-                for item in &decl.list {
-                    let mut var_ty = ty.clone();
-                    for dim in item.dim.iter().rev() {
-                        match &dim.value {
-                            DimKind::Range(a, b) => {
-                                let ub = self.eval_expr_i32(a);
-                                let lb = self.eval_expr_i32(b);
-                                var_ty = Ty::Array(Box::new(var_ty), ub, lb);
-                            }
-                            DimKind::Value(a) => {
-                                let mut size = self.eval_expr_usize_positive(a) as i32;
-                                var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
-                            }
-                            _ => unimplemented!(),
-                        }
-                    }
-                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
-                    let decl = Rc::new(hier::DataDecl {
-                        lifetime: decl.lifetime,
-                        ty: var_ty,
-                        name: item.name.clone(),
-                        init,
-                    });
-                    last_one = Some(Rc::clone(&decl));
-                    self.add_to_scope(&item.name, HierItem::DataDecl(decl));
-                }
-                expr::StmtKind::DataDecl(last_one.unwrap())
+                self.diag.report_fatal("data declaration can only appear at the beginning of a block", decl.ty.span);
             }
         };
         expr::Stmt {
