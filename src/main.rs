@@ -151,6 +151,11 @@ fn main() {
     let mut elaborated = lowering::gen_blk_elim(elaborated);
     lowering::type_param_elim(&mut elaborated);
 
+    // If a prefix is specified from command line, do an additional transformation
+    if opts.prefix.is_some() {
+        elaborated = lowering::prefix(elaborated, &opts);
+    }
+
     let files = elaborate::reconstruct(&elaborated);
 
     let mut out: Box<dyn Write> = match matches.opt_str("o") {
