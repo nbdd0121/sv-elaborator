@@ -7,6 +7,7 @@ extern crate colored;
 extern crate lazy_static;
 extern crate getopts;
 
+mod opts;
 mod util;
 mod syntax;
 mod source;
@@ -42,6 +43,7 @@ fn main() {
     opts.optmulti("b", "", "set a module to be a black box", "MODULE");
     opts.optmulti("I", "", "add a path to the include search path", "PATH");
     opts.optflag("", "parse", "parse only, do not elaborate");
+    opts.optopt("p", "", "give a prefix to all generated modules", "PREFIX");
     opts.optflag("h", "help", "print this help message");
 
     let matches = match opts.parse(&args[1..]) {
@@ -132,10 +134,13 @@ fn main() {
         return;
     }
 
-    let mut elaborated = elaborate::elaborate(&diag_mgr, &files, match matches.opt_str("t") {
-        None => "chip_top",
-        Some(ref v) => v,
-    });
+    let opts = opts::Opts {
+        blackbox: matches.opt_strs("b"),
+        prefix: matches.opt_str("p"),
+        toplevel: matches.opt_str("t").unwrap_or_else(|| "chip_top".to_owned()),
+    };
+
+    let mut elaborated = elaborate::elaborate(&diag_mgr, &files, &opts);
 
     // Abort elaboration when there are syntax errors.
     if diag_mgr.has_error() { ::std::process::exit(1); }
@@ -164,7 +169,6 @@ fn main() {
         writeln!(out, "{}", printer.take()).unwrap();
     }
 
-    let blackbox = matches.opt_strs("b");
     for (list, name) in files.iter().skip(1).zip(matches.free.iter()) {
         writeln!(out, "/* file: {} */", name).unwrap();
         if list.is_empty() {
@@ -174,7 +178,7 @@ fn main() {
             for i in list {
                 // If it is a design unit specified in blackbox list, do not print it out.
                 if let ast::Item::DesignDecl(ref decl) = i {
-                    if blackbox.iter().any(|item| &decl.name.value == item) {
+                    if opts.blackbox.iter().any(|item| &decl.name.value == item) {
                         continue
                     }
                 }

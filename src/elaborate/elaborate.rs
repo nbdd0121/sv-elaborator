@@ -32,8 +32,10 @@ use super::hier::{self, Ty, Val, HierItem, HierScope};
 use super::ty;
 use super::expr;
 
-pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>, toplevel: &str) -> hier::Source {
-    let mut elaborator = Elaborator::new(diag, toplevel);
+use opts::Opts;
+
+pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>, opts: &Opts) -> hier::Source {
+    let mut elaborator = Elaborator::new(diag, opts);
     elaborator.elaborate(items);
     hier::Source {
         units: elaborator.units,
@@ -45,7 +47,7 @@ pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>, toplevel: &str) -> hier
 
 struct Elaborator<'a> {
     diag: &'a DiagMgr,
-    toplevel_name: &'a str,
+    opts: &'a Opts,
 
     scopes: Vec<HierScope>,
     genblk: usize,
@@ -62,10 +64,10 @@ struct Elaborator<'a> {
 
 impl<'a> Elaborator<'a> {
 
-    pub fn new(diag: &'a DiagMgr, toplevel: &'a str) -> Elaborator<'a> {
+    pub fn new(diag: &'a DiagMgr, opts: &'a Opts) -> Elaborator<'a> {
         Elaborator {
-            diag: diag,
-            toplevel_name: toplevel,
+            diag,
+            opts,
 
             scopes: Vec::new(),
             genblk: 0,
@@ -930,11 +932,11 @@ impl<'a> Elaborator<'a> {
         }
 
         // Find the top-level module
-        let toplevel = match self.scopes[0].find(self.toplevel_name) {
+        let toplevel = match self.scopes[0].find(&self.opts.toplevel) {
             Some(HierItem::Design(item)) => item.clone(),
             _ => {
                 self.diag.report_error(
-                    format!("cannot find toplevel module {}", self.toplevel_name),
+                    format!("cannot find toplevel module {}", self.opts.toplevel),
                     Span::none()
                 );
                 return;
