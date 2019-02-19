@@ -1318,7 +1318,7 @@ impl<'a> Elaborator<'a> {
             HierItem::LoopGenBlock(_) => Ty::Void, // Not typable
             HierItem::Modport(_) => Ty::Void, // Not typable
             HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(Rc::clone(enu))),
-            HierItem::Comment(_) => unreachable!(),
+//            HierItem::Comment(_) => unreachable!(),
         }
     }
 
