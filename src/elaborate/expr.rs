@@ -22,6 +22,7 @@ pub enum Val {
     String, // TODO
     Chandle, // TODO
     Event, // TODO
+    Void,
 }
 
 /// Select expression after type checking

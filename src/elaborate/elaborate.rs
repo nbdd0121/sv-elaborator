@@ -1318,7 +1318,6 @@ impl<'a> Elaborator<'a> {
             HierItem::LoopGenBlock(_) => Ty::Void, // Not typable
             HierItem::Modport(_) => Ty::Void, // Not typable
             HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(Rc::clone(enu))),
-            HierItem::Comment(_) => unreachable!(),
         }
     }
 
@@ -2855,7 +2854,39 @@ impl<'a> Elaborator<'a> {
                     unimplemented!("{:?}", lhs)
                 }
             }
-            // Assign(Box<Expr>, Box<Expr>),
+            expr::ExprKind::Assign(lhs, rhs) => {
+                let val = if let Val::Int(val) = self.eval_checked_expr(&rhs) {
+                    match val.get_two_state().and_then(|v| v.to_i32()) {
+                        None => {
+                            self.diag.report_fatal(
+                                "this expression must evaluate to two-state number",
+                                expr.span
+                            );
+                        },
+                        Some(v) => v,
+                    }
+                } else {
+                    self.diag.report_fatal(
+                        "this expression must evaluate to integral number",
+                        expr.span
+                    );
+                };
+
+                if let expr::ExprKind::HierName(ref name) = lhs.value {
+                    let hier = match self.type_check_hier_id(name, lhs.span).0 {
+                        None => unimplemented!(),
+                        Some(hier) => hier,
+                    };
+                    let var = match hier {
+                        HierItem::GenVar(ref var) => &var.value,
+                        _ => unimplemented!(),
+                    };
+                    *var.borrow_mut() = val;
+                    Val::Void
+                } else {
+                    unimplemented!("{:?}", lhs)
+                }
+            }
             // BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
             expr::ExprKind::Paren(expr) => {
                 self.eval_checked_expr(&expr)
