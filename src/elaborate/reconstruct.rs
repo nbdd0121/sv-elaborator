@@ -490,11 +490,18 @@ impl<'a> Reconstructor<'a> {
     pub fn reconstruct_item(&mut self, item: &HierItem, list: &mut Vec<Item>) {
         match item {
             HierItem::Param(decl) => {
-                let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                let (ty, dim) = if let Ty::FixStr(_) = decl.ty {
+                    // parameter string is not well supported in many tools, so we themselves
+                    // to infer this type.
+                    (None, Vec::new())
+                } else {
+                    let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
+                    (Some(Box::new(ty)), dim)
+                };
                 let expr = self.reconstruct_val(&decl.ty, &decl.init, Span::none());
                 list.push(Item::ParamDecl(Box::new(ParamDecl {
                     kw: decl.kw,
-                    ty: Some(Box::new(ty)),
+                    ty: ty,
                     list: vec![DeclAssign {
                         name: decl.name.clone(),
                         dim,
