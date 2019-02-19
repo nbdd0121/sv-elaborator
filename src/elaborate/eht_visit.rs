@@ -35,7 +35,12 @@ pub trait EhtVisitor {
                     if let Some(arg) = arg { self.visit_expr(arg) }
                 }
             }
-            ExprKind::FuncCall { .. } => (),
+            ExprKind::FuncCall { expr, args } => {
+                self.visit_expr(expr);
+                for arg in args {
+                    if let Some(arg) = arg { self.visit_expr(arg) }
+                }
+            }
             ExprKind::ConstCast(..) => unimplemented!(),
             ExprKind::TypeCast(_, rhs) |
             ExprKind::SignCast(_, rhs) |
