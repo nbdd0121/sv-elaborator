@@ -92,6 +92,7 @@ pub trait AstVisitor {
                                 }
                             }
                         }
+                        PortConn::Resolved(_) => unreachable!(),
                     }
                 }
             }

@@ -225,48 +225,49 @@ impl InstArrayEliminator {
 
     // Part of second stage. Transform ports list, expand instance arrays into list of individual
     // instances.
-    fn xfrm_ports(&mut self, ports: Vec<Option<expr::Expr>>) -> Vec<Option<expr::Expr>> {
+    fn xfrm_ports(&mut self, ports: Vec<hier::PortConn>) -> Vec<hier::PortConn> {
         let mut new_list = Vec::new();
         for mut port in ports {
-            if let Some(mut port) = port {
-                if let expr::Expr{value: expr::ExprKind::HierName(ref mut id), span, .. } = port {
-                    let hier = self.xfrm_hier_id(id);
-                    let empty_array = [];
-                    let dim: &[_] = match hier {
-                        HierItem::Instance(ref decl) => &decl.dim,
-                        HierItem::InterfacePort(ref decl) => &decl.dim,
-                        HierItem::InstancePart { ref dim, .. } => dim,
-                        _ => &empty_array,
-                    };
-                    // Only transform arrays
-                    if !dim.is_empty() {
-                        // TODO: Deal with more dimensions
-                        assert!(dim.len() == 1);
-                        let (lb, ub) = dim[0];
-                        let (lb, ub) = (cmp::min(lb, ub), cmp::max(lb, ub));
-                        for i in lb..=ub {
-                            let mut id_clone = id.clone();
-                            match id_clone {
-                                ast::HierId::Name(_, ref mut name) |
-                                ast::HierId::Member(_, ref mut name) => {
-                                    name.value = format!("{}_{}", name.value, i);
-                                }
-                                _ => unreachable!(),
-                            };
-                            new_list.push(Some(expr::Expr {
-                                value: expr::ExprKind::HierName(id_clone),
-                                ty: ty::Ty::Void,
-                                span,
-                            }))
+            match port {
+                hier::PortConn::Expr(mut port) => {
+                    if let expr::Expr{value: expr::ExprKind::HierName(ref mut id), span, .. } = port {
+                        let hier = self.xfrm_hier_id(id);
+                        let empty_array = [];
+                        let dim: &[_] = match hier {
+                            HierItem::Instance(ref decl) => &decl.dim,
+                            HierItem::InterfacePort(ref decl) => &decl.dim,
+                            HierItem::InstancePart { ref dim, .. } => dim,
+                            _ => &empty_array,
+                        };
+                        // Only transform arrays
+                        if !dim.is_empty() {
+                            // TODO: Deal with more dimensions
+                            assert!(dim.len() == 1);
+                            let (lb, ub) = dim[0];
+                            let (lb, ub) = (cmp::min(lb, ub), cmp::max(lb, ub));
+                            for i in lb..=ub {
+                                let mut id_clone = id.clone();
+                                match id_clone {
+                                    ast::HierId::Name(_, ref mut name) |
+                                    ast::HierId::Member(_, ref mut name) => {
+                                        name.value = format!("{}_{}", name.value, i);
+                                    }
+                                    _ => unreachable!(),
+                                };
+                                new_list.push(hier::PortConn::Expr(expr::Expr {
+                                    value: expr::ExprKind::HierName(id_clone),
+                                    ty: ty::Ty::Void,
+                                    span,
+                                }))
+                            }
+                            continue;
                         }
-                        continue;
+                    } else {
+                        self.visit_expr(&mut port);
                     }
-                } else {
-                    self.visit_expr(&mut port);
+                    new_list.push(hier::PortConn::Expr(port));
                 }
-                new_list.push(Some(port));
-            } else {
-                new_list.push(None);
+                v => new_list.push(v),
             }
         }
         new_list

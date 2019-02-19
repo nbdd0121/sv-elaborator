@@ -316,9 +316,10 @@ impl<'a> Elaborator<'a> {
 
         'next_instance: for inst in &inst.inst {
             // Retrieve the list of port connections.
-            // resolver has already converted all named port connections to position for us.
+            // resolver has already converted all port connections to named for us. However there
+            // may still be omitted connections.
             let port_list = match &inst.ports {
-                PortConn::Ordered(list) => list,
+                PortConn::Resolved(list) => list,
                 _ => unreachable!(),
             };
 
@@ -327,7 +328,9 @@ impl<'a> Elaborator<'a> {
             let mut intf_list = HashMap::new();
             for port in &item.ast.port {
                 match port {
-                    PortDecl::Data(.., list) => index += list.len(),
+                    PortDecl::Data(.., list) => {
+                        index += list.len();
+                    }
                     PortDecl::Interface(intf, _, list) => {
                         index += 1;
                         for assign in list {
@@ -337,7 +340,7 @@ impl<'a> Elaborator<'a> {
                             }
                             // Make sure the interface port is connected
                             let conn = match &port_list[index - 1] {
-                                (_, Some(v)) => v,
+                                (_, Some(Some(v))) => v,
                                 _ => {
                                     self.diag.report_error(
                                         format!("interface port {} must be connected", assign.name),
@@ -412,7 +415,11 @@ impl<'a> Elaborator<'a> {
 
             let port_connections = port_list.iter().map(|(_, port)| {
                 // TODO: Should also get types of the ports out
-                port.as_ref().map(|port| self.type_check_assign_todo(port))
+                match port {
+                    None => hier::PortConn::Omitted,
+                    Some(None) => hier::PortConn::Unconnected,
+                    Some(Some(expr)) => hier::PortConn::Expr(self.type_check_assign_todo(expr)),
+                }
             }).collect();
 
             let dim = self.eval_const_unpacked_dim(&inst.dim);

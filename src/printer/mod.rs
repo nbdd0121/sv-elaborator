@@ -365,6 +365,7 @@ impl PrettyPrint {
                         }
                     }
                 }
+                PortConn::Resolved(_) => unreachable!(),
             }
             self.append("\n");
             self.unindent();

@@ -576,20 +576,32 @@ impl<'a> Reconstructor<'a> {
                 }
             }
             HierItem::Instance(decl) => {
+                let instance = decl.inst.get_instance();
+                let ports = instance.scope.items.iter().zip(decl.port.iter()).flat_map(|(port_decl, port_conn)| {
+                    // Retrive the port name
+                    let name = match port_decl {
+                        HierItem::DataPort(port) => port.name.clone(),
+                        HierItem::InterfacePort(port) => port.name.clone(),
+                        _ => unreachable!(),
+                    };
+                    match port_conn {
+                        hier::PortConn::Omitted => None,
+                        hier::PortConn::Unconnected => Some((None, NamedPortConn::Explicit(name, None))),
+                        hier::PortConn::Expr(port) => Some((None, NamedPortConn::Explicit(name, Some(Box::new(self.reconstruct_expr(port)))))),
+                    }
+                }).collect();
                 list.push(Item::HierInstantiation(Box::new(HierInstantiation {
                     attr: None,
-                    name: decl.inst.get_instance().name.clone(),
+                    name: instance.name.clone(),
                     param: None,
-                        inst: vec![HierInst {
+                    inst: vec![HierInst {
                         name: decl.name.clone(),
                         dim: decl.dim.iter().map(|(ub, lb)| {
                             let ub_expr = reconstruct_i32(*ub);
                             let lb_expr = reconstruct_i32(*lb);
                             Spanned::new(DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)), Span::none())
                         }).collect(),
-                        ports: PortConn::Ordered(decl.port.iter().map(|port| {
-                            (None, port.as_ref().map(|port| Box::new(self.reconstruct_expr(port))))
-                        }).collect()),
+                        ports: PortConn::Named(ports),
                     }]
                 })))
             }

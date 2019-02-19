@@ -123,12 +123,20 @@ pub struct DesignInstantiation {
     pub scope: HierScope,
 }
 
+/// Represent a port connection
+#[derive(Clone)]
+pub enum PortConn {
+    Omitted,
+    Unconnected,
+    Expr(Expr),
+}
+
 /// Represent a instance.
 pub struct InstanceDecl {
     pub inst: DesignInstHandle,
     pub name: Ident,
     pub dim: Vec<(i32, i32)>,
-    pub port: Vec<Option<Expr>>,
+    pub port: Vec<PortConn>,
 }
 
 /// Represent a modport declaration

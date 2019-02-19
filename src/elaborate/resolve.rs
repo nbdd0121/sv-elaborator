@@ -544,26 +544,31 @@ impl<'a> AstVisitor for Resolver<'a> {
                     }
                     let span = single_inst.name.span;
                     ::util::replace_with(&mut single_inst.ports, |port_conn| {
+                        // As resolver, we need to de-sugar implicit and wildcard port
+                        // connections. To make later code easier, we will reorder these ports
+                        // so that they correspond to the order of port declaration. Note that
+                        // for unconnected ports (and omitted ports in ordered variant), we still
+                        // need to omit them because having explicit empty connections will
+                        // suppress default connections if any.
+                        let mut new_list = vec![(None, None); ports.len()];
                         match port_conn {
-                            PortConn::Ordered(mut list) => {
-                                for (_, expr) in list.iter_mut() {
-                                    if let Some(v) = expr { self.visit_expr(v); }
-                                }
+                            PortConn::Ordered(list) => {
                                 if list.len() > ports.len() {
                                     self.diag.report_error(
                                         "instantiation contains more ports connections than declared",
                                         span
                                     );
                                 }
-                                list.resize(ports.len(), (None, None));
-                                PortConn::Ordered(list)
+                                for (dest, (attr, mut expr)) in new_list.iter_mut().zip(list) {
+                                    // A omitted port in ordered list means omitted (instead of
+                                    // forcing unconnection in ordered list).
+                                    if let Some(mut v) = expr {
+                                        self.visit_expr(&mut v);
+                                        *dest = (attr, Some(Some(v)));
+                                    }
+                                }
                             }
                             PortConn::Named(list) => {
-                                // For named port connections, we will reorder them to match declared
-                                // order. This will make task later slightly easier. We don't really
-                                // need to do this in resolver but as resolver need to de-sugar
-                                // implicit and wildcard anyway, we just do it here.
-                                let mut new_list = vec![None; ports.len()];
                                 let mut has_wildcard = false;
                                 for (attr, conn) in list {
                                     // Find the corresponding index in the port list.
@@ -580,7 +585,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                                 }
                                                 Some(id) => id,
                                             };
-                                            if !new_list[id].is_none() {
+                                            if new_list[id].1.is_some() {
                                                 self.diag.report_error(
                                                     "duplicate port connections",
                                                     name.span
@@ -597,14 +602,14 @@ impl<'a> AstVisitor for Resolver<'a> {
                                         NamedPortConn::Explicit(_, mut expr) => {
                                             // Explicit port - just visit the expression and return as is.
                                             if let Some(v) = &mut expr { self.visit_expr(v) };
-                                            new_list[id] = Some((attr, expr));
+                                            new_list[id] = (attr, Some(expr));
                                         }
                                         NamedPortConn::Implicit(mut name) => {
                                             // Implicit port - desugar to explicit port
                                             let mut scope = None;
                                             self.visit_scoped_id(&mut scope, &mut name);
                                             let span = name.span;
-                                            new_list[id] = Some((attr, Some(Box::new(Spanned::new(
+                                            new_list[id] = (attr, Some(Some(Box::new(Spanned::new(
                                                 ExprKind::HierName(HierId::Name(scope, Box::new(name))), span
                                             )))));
                                         }
@@ -612,9 +617,9 @@ impl<'a> AstVisitor for Resolver<'a> {
                                     }
                                 }
                                 if has_wildcard {
-                                    new_list.iter_mut().enumerate().for_each(|(id, v)| {
-                                        if !v.is_none() { return; }
-                                        let mut name = Ident::new_unspanned(ports[id].clone());
+                                    new_list.iter_mut().zip(ports.iter()).for_each(|(v, name)| {
+                                        if v.1.is_some() { return }
+                                        let mut name = Box::new(Ident::new_unspanned(name.clone()));
                                         // Failure to resolve isn't an error for wildcard port
                                         // connection - it shall fall back to default value.
                                         match self.resolve_strong(&mut name) {
@@ -623,22 +628,15 @@ impl<'a> AstVisitor for Resolver<'a> {
                                         }
                                         let mut scope = None;
                                         self.desugar_pkg(&mut scope, &name);
-                                        *v = Some((None, Some(Box::new(Spanned::new_unspanned(
-                                            ExprKind::HierName(HierId::Name(scope, Box::new(name)))
+                                        *v = (None, Some(Some(Box::new(Spanned::new_unspanned(
+                                            ExprKind::HierName(HierId::Name(scope, name))
                                         )))));
                                     });
                                 }
-                                // For everything left unconnected, use default value.
-                                // For simplicity of later passes we also desugar to positional
-                                // connections.
-                                PortConn::Ordered(
-                                    new_list
-                                        .into_iter()
-                                        .map(|v| v.unwrap_or((None, None)))
-                                        .collect()
-                                )
                             }
+                            PortConn::Resolved(_) => unreachable!(),
                         }
+                        PortConn::Resolved(new_list)
                     });
                 }
                 return;

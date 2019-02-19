@@ -746,6 +746,9 @@ pub enum NamedPortConn {
 pub enum PortConn {
     Ordered(Vec<(Option<Box<AttrInst>>, Option<Box<Expr>>)>),
     Named(Vec<(Option<Box<AttrInst>>, NamedPortConn)>),
+    // Not actually producible from syntax, but this is useful for passing port connections from
+    // resolver to elaborator
+    Resolved(Vec<(Option<Box<AttrInst>>, Option<Option<Box<Expr>>>)>),
 }
 
 #[derive(Debug, Clone)]

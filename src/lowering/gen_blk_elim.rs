@@ -193,7 +193,7 @@ impl GenBlkEliminator {
             match &mut item {
                 HierItem::Instance(decl) => {
                     for port in &mut Rc::get_mut(decl).unwrap().port {
-                        if let Some(port) = port { self.visit_expr(port) }
+                        if let hier::PortConn::Expr(port) = port { self.visit_expr(port) }
                     }
                 }
                 HierItem::Design(decl) => {
