@@ -15,6 +15,7 @@ pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
         source,
         global_qualify: true,
         simple_ty_map: HashMap::new(),
+        force_sized: false,
     };
     reconstructor.reconstruct()
 }
@@ -24,7 +25,7 @@ pub fn reconstruct_usize(val: usize) -> Expr {
     Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(TokenKind::IntegerLiteral(
         LogicNumber {
             value: LogicVec::from(32, true, ::num::FromPrimitive::from_usize(val).unwrap()),
-            sized: false, 
+            sized: false,
         }
     ))))
 }
@@ -46,6 +47,8 @@ struct Reconstructor<'a> {
     global_qualify: bool,
     /// Map from a type to an global_types:: identifier
     simple_ty_map: HashMap<Ty, Ident>,
+    /// If this is true, then all numbers will be displayed as sized
+    force_sized: bool,
 }
 
 impl<'a> Reconstructor<'a> {
@@ -54,7 +57,7 @@ impl<'a> Reconstructor<'a> {
         Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
             LogicNumber {
                 value: val.clone(),
-                sized: val.width() != 32 || !val.signed, 
+                sized: self.force_sized || val.width() != 32 || !val.signed,
             }
         ), span)), span)
     }
@@ -282,7 +285,11 @@ impl<'a> Reconstructor<'a> {
             }
             expr::ExprKind::EmptyQueue => unimplemented!(),
             expr::ExprKind::Concat(ref list) => {
+                // Within concatenation, unsized literals should not exist
+                let backup = self.force_sized;
+                self.force_sized = true;
                 let ast_list = list.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                self.force_sized = backup;
                 ast::ExprKind::Concat(ast_list, None)
             }
             expr::ExprKind::MultConcat(mul, ref subexpr) => {
@@ -740,7 +747,7 @@ impl<'a> Reconstructor<'a> {
         }).collect();
 
         let mut units = Vec::new();
-        for unit in &self.source.units { 
+        for unit in &self.source.units {
             let mut list = Vec::new();
             for item in &unit.items {
                 self.reconstruct_item(item, &mut list);
