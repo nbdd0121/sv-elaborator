@@ -108,6 +108,24 @@ impl<'a> Reconstructor<'a> {
     }
 
     pub fn reconstruct_ty_int(&self, ty: &IntTy, span: Span) -> DataType {
+        // First handle all atom types (int, longint, etc)
+        let atom = match ty {
+            IntTy::SimpleVec(8, true, true) => Some(IntAtomTy::Byte),
+            IntTy::SimpleVec(16, true, true) => Some(IntAtomTy::Shortint),
+            IntTy::SimpleVec(32, true, true) => Some(IntAtomTy::Int),
+            IntTy::SimpleVec(64, true, true) => Some(IntAtomTy::Longint),
+            IntTy::SimpleVec(32, false, true) => Some(IntAtomTy::Integer),
+            // Even though "time" literally means logic [63:0], it still may confuse people reading
+            // the generated source code. Avoid it.
+            // IntTy::SimpleVec(64, false, false) => Some(IntAtomTy::Time),
+            _ => None,
+        };
+        match atom {
+            Some(atom) => return Spanned::new(DataTypeKind::IntAtom(atom, None), span),
+            _ => (),
+        }
+
+        // Now remove arrays and build a dimension list
         let mut inner = ty;
         let mut dim = Vec::new();
         while let IntTy::Array(element, ub, lb) = inner {
@@ -117,6 +135,7 @@ impl<'a> Reconstructor<'a> {
             let b_expr = reconstruct_i32(*lb);
             dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span))
         }
+
         let kind = match inner {
             IntTy::Array(..) => unreachable!(),
             IntTy::Logic(two_state, sign) => {
@@ -126,14 +145,6 @@ impl<'a> Reconstructor<'a> {
                     dim
                 )
             }
-            IntTy::SimpleVec(8, true, true) => DataTypeKind::IntAtom(IntAtomTy::Byte, None),
-            IntTy::SimpleVec(16, true, true) => DataTypeKind::IntAtom(IntAtomTy::Shortint, None),
-            IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
-            IntTy::SimpleVec(64, true, true) => DataTypeKind::IntAtom(IntAtomTy::Longint, None),
-            IntTy::SimpleVec(32, false, true) => DataTypeKind::IntAtom(IntAtomTy::Integer, None),
-            // Even though "time" literally means logic [63:0], it still may confuse people reading
-            // the generated source code. Avoid it.
-            // IntTy::SimpleVec(64, false, false) => DataTypeKind::IntAtom(IntAtomTy::Time, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = reconstruct_usize(*width - 1);
