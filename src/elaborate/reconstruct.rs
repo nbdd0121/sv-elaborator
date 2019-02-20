@@ -131,7 +131,9 @@ impl<'a> Reconstructor<'a> {
             IntTy::SimpleVec(32, true, true) => DataTypeKind::IntAtom(IntAtomTy::Int, None),
             IntTy::SimpleVec(64, true, true) => DataTypeKind::IntAtom(IntAtomTy::Longint, None),
             IntTy::SimpleVec(32, false, true) => DataTypeKind::IntAtom(IntAtomTy::Integer, None),
-            IntTy::SimpleVec(64, false, false) => DataTypeKind::IntAtom(IntAtomTy::Time, None),
+            // Even though "time" literally means logic [63:0], it still may confuse people reading
+            // the generated source code. Avoid it.
+            // IntTy::SimpleVec(64, false, false) => DataTypeKind::IntAtom(IntAtomTy::Time, None),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = reconstruct_usize(*width - 1);
