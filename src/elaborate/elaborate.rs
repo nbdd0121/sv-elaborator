@@ -594,7 +594,7 @@ impl<'a> Elaborator<'a> {
                                 var_ty = Ty::Array(Box::new(var_ty), ub, lb);
                             }
                             DimKind::Value(a) => {
-                                let mut size = self.eval_expr_usize_positive(a) as i32;
+                                let size = self.eval_expr_usize_positive(a) as i32;
                                 var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
                             }
                             _ => unimplemented!(),
@@ -622,7 +622,7 @@ impl<'a> Elaborator<'a> {
                                 var_ty = Ty::Array(Box::new(var_ty), ub, lb);
                             }
                             DimKind::Value(a) => {
-                                let mut size = self.eval_expr_usize_positive(a) as i32;
+                                let size = self.eval_expr_usize_positive(a) as i32;
                                 var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
                             }
                             _ => unimplemented!(),
@@ -975,7 +975,7 @@ impl<'a> Elaborator<'a> {
                                     var_ty = Ty::Array(Box::new(var_ty), ub, lb);
                                 }
                                 DimKind::Value(a) => {
-                                    let mut size = self.eval_expr_usize_positive(a) as i32;
+                                    let size = self.eval_expr_usize_positive(a) as i32;
                                     var_ty = Ty::Array(Box::new(var_ty), 0, size - 1)
                                 }
                                 _ => unimplemented!(),
@@ -2204,8 +2204,8 @@ impl<'a> Elaborator<'a> {
             // MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
             ExprKind::Cond(ref cond, _, ref true_expr, ref false_expr) => {
                 let cond_conv = self.type_check_bool(cond);
-                let mut true_conv = self.self_type_check(true_expr);
-                let mut false_conv = self.self_type_check(false_expr);
+                let true_conv = self.self_type_check(true_expr);
+                let false_conv = self.self_type_check(false_expr);
                 let myty = match (&true_conv.ty, &false_conv.ty) {
                     (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign())),
                     _ => unimplemented!(),

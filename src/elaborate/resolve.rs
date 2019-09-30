@@ -559,7 +559,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                                         span
                                     );
                                 }
-                                for (dest, (attr, mut expr)) in new_list.iter_mut().zip(list) {
+                                for (dest, (attr, expr)) in new_list.iter_mut().zip(list) {
                                     // A omitted port in ordered list means omitted (instead of
                                     // forcing unconnection in ordered list).
                                     if let Some(mut v) = expr {

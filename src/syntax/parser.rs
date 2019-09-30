@@ -1327,7 +1327,7 @@ impl<'a> Parser<'a> {
 
         match self.consume_if_id() {
             Some(name) => {
-                let mut dim = self.parse_list(Self::parse_dim_opt);
+                let dim = self.parse_list(Self::parse_dim_opt);
                 let init = match self.consume_if(TokenKind::Assign) {
                     None => None,
                     Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
@@ -3104,9 +3104,9 @@ impl<'a> Parser<'a> {
         };
 
         loop {
-
+            let leq_as_assign = self.leq_as_assign;
             let (op, new_prec) = match **self.peek() {
-                TokenKind::BinaryOp(BinaryOp::Leq) if self.leq_as_assign => break,
+                TokenKind::BinaryOp(BinaryOp::Leq) if leq_as_assign => break,
                 TokenKind::BinaryOp(op) => {
                     let new_prec = Self::get_bin_op_prec(op);
                     // Can only proceed if precedence is higher
@@ -3381,7 +3381,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let begin_span = self.peek().span;
                 let scope = self.parse_scope();
-                let mut id = self.parse_hier_id(scope);
+                let id = self.parse_hier_id(scope);
 
                 // Not a primary expressison
                 if id.is_none() {
@@ -3389,7 +3389,7 @@ impl<'a> Parser<'a> {
                 } else {
                     // TODO: This is a hack. Could do better
                     let span = begin_span.start.span_to(self.peek().span.end);
-                    let mut expr = Spanned::new(ExprKind::HierName(id.unwrap().value), span);
+                    let expr = Spanned::new(ExprKind::HierName(id.unwrap().value), span);
 
                     match **self.peek() {
                         // If next is '{, then this is actually an assignment pattern

@@ -227,7 +227,7 @@ impl InstArrayEliminator {
     // instances.
     fn xfrm_ports(&mut self, ports: Vec<hier::PortConn>) -> Vec<hier::PortConn> {
         let mut new_list = Vec::new();
-        for mut port in ports {
+        for port in ports {
             match port {
                 hier::PortConn::Expr(mut port) => {
                     if let expr::Expr{value: expr::ExprKind::HierName(ref mut id), span, .. } = port {

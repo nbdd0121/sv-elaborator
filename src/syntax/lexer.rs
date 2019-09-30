@@ -189,7 +189,7 @@ impl<'a> Lexer<'a> {
                 Some(v) => v
             };
             match next {
-                'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '$' => {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '$' => {
                     name.push(next);
                 }
                 _ => {
@@ -244,7 +244,7 @@ impl<'a> Lexer<'a> {
             'f' => Some(12 as char),
             'a' => Some(7 as char),
             // Octal escape sequence
-            '0' ... '7' => {
+            '0' ..= '7' => {
                 self.pushback(next);
                 let mut codepoint: u8 = 0;
                 for _ in 0..3 {
@@ -336,7 +336,7 @@ impl<'a> Lexer<'a> {
             };
             match next {
                 '_' => (),
-                '0' ... '9' => {
+                '0' ..= '9' => {
                     str.push(next);
                 },
                 'x' | 'X' | 'z' | 'Z' | '?' => {
@@ -393,7 +393,7 @@ impl<'a> Lexer<'a> {
         let num_after_ws = match self.peekch() {
             None => false,
             Some(v) => match v {
-                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' | 'x' | 'X' | 'z' | 'Z' | '?' => true,
+                '0' ..= '9' | 'a' ..= 'f' | 'A' ..= 'F' | 'x' | 'X' | 'z' | 'Z' | '?' => true,
                 // TODO: If + or - is specified here, probably give a better suggestion
                 _ => false
             }
@@ -426,7 +426,7 @@ impl<'a> Lexer<'a> {
                     while self.nextch_if('_') {}
                     LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::one())
                 }
-                '0' ... '9' => {
+                '0' ..= '9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
                     LogicVec::new_xz(cmp::max(num.bits(), 1), signed, num, BigUint::zero())
@@ -444,7 +444,7 @@ impl<'a> Lexer<'a> {
             };
             match next {
                 '_' => (),
-                '0' ... '9' | 'a' ... 'f' | 'A' ... 'F' => {
+                '0' ..= '9' | 'a' ..= 'f' | 'A' ..= 'F' => {
                     if !next.is_digit(radix) {
                         self.report_pos(
                             Severity::Error,
@@ -518,7 +518,7 @@ impl<'a> Lexer<'a> {
             let num_after_dot = match self.peekch() {
                 None => false,
                 Some(v) => match v {
-                    '0' ... '9' | 'x' | 'X' | 'z' | 'Z' => true,
+                    '0' ..= '9' | 'x' | 'X' | 'z' | 'Z' => true,
                     _ => false
                 }
             };
@@ -552,7 +552,7 @@ impl<'a> Lexer<'a> {
                 let num_after_exp = match self.peekch() {
                     None => false,
                     Some(v) => match v {
-                        '0' ... '9' | 'x' | 'X' | 'z' | 'Z' => true,
+                        '0' ..= '9' | 'x' | 'X' | 'z' | 'Z' => true,
                         _ => false
                     }
                 };
@@ -702,7 +702,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             // Identifiers
-            'a'...'z' | 'A'...'Z' | '_' => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 self.pos = self.start;
                 let name = self.parse_identifier();
                 // We only recognise keywords outside attributes
@@ -751,7 +751,7 @@ impl<'a> Lexer<'a> {
                             TokenKind::Directive(self.parse_esc_id())
                         }
                     }
-                    'a'...'z' | 'A'...'Z' | '_' | '$' => {
+                    'a'..='z' | 'A'..='Z' | '_' | '$' => {
                         TokenKind::Directive(self.parse_identifier())
                     }
                     _ => {
@@ -762,7 +762,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             // Literals
-            '0' ... '9' => {
+            '0' ..= '9' => {
                 self.pushback(ch);
                 self.parse_number()
             }
