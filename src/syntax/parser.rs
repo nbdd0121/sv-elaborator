@@ -2117,6 +2117,10 @@ impl<'a> Parser<'a> {
     /// ```
     fn parse_port_conn(&mut self) -> PortConn {
         self.parse_delim(Delim::Paren, |this| {
+            if let TokenKind::Eof = **this.peek() {
+                return PortConn::Ordered(Vec::new());
+            }
+
             // One list for each type of argument.
             let mut ordered = Vec::new();
             let mut named = Vec::new();
