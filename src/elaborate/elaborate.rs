@@ -1871,6 +1871,19 @@ impl<'a> Elaborator<'a> {
                             ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
                         }
                     }
+                    "fatal" | "error" | "warning" | "info" | "display" => {
+                        let args = if let Some(args) = &call.args {
+                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                        } else {
+                            unimplemented!()
+                        };
+                        expr::Expr {
+                            value: expr::ExprKind::SysTfCall(Box::new(call.task.clone()), args),
+                            span: expr.span,
+                            ty: Ty::Void,
+                        }
+
+                    }
                     _ => {
                         eprintln!("{:?} unimplemented", call.task);
                         let args = if let Some(args) = &call.args {
