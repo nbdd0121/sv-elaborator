@@ -1,16 +1,16 @@
 //! Convert instance arrays and interface array ports into multiple non-array ones.
 
-use std::rc::Rc;
+use num::ToPrimitive;
 use std::cmp;
 use std::collections::HashMap;
-use num::ToPrimitive;
+use std::rc::Rc;
 
-use syntax::tokens;
-use syntax::ast::{self, Ident};
-use elaborate::ty;
-use elaborate::expr;
-use elaborate::hier::{self, HierScope, HierItem, InstanceDecl, InterfacePortDecl};
-use elaborate::eht_visit::EhtVisitor;
+use crate::elaborate::eht_visit::EhtVisitor;
+use crate::elaborate::expr;
+use crate::elaborate::hier::{self, HierItem, HierScope, InstanceDecl, InterfacePortDecl};
+use crate::elaborate::ty;
+use crate::syntax::ast::{self, Ident};
+use crate::syntax::tokens;
 
 pub fn inst_array_elim(source: hier::Source) -> hier::Source {
     let mut elim = InstArrayEliminator {
@@ -66,8 +66,14 @@ impl InstArrayEliminator {
         for unit in &mut units {
             self.gather_array(unit);
         }
-        let units: Vec<_> = units.into_iter().map(|scope| self.xfrm_scope(scope)).collect();
-        self.units = units.into_iter().map(|scope| self.expand_array(scope)).collect();
+        let units: Vec<_> = units
+            .into_iter()
+            .map(|scope| self.xfrm_scope(scope))
+            .collect();
+        self.units = units
+            .into_iter()
+            .map(|scope| self.expand_array(scope))
+            .collect();
     }
 
     /// First stage of instance array elimination: gather arrays.
@@ -149,16 +155,14 @@ impl InstArrayEliminator {
                         // Packaged name, retrieve from package
                         self.pkgs[&pkg.value].scope.find(&name).unwrap().clone()
                     }
-                    None => {
-                        'resolve_loop: loop {
-                            for scope in self.scopes.iter().rev() {
-                                if let Some(v) = scope.find(&name) {
-                                    break 'resolve_loop v.clone()
-                                }
+                    None => 'resolve_loop: loop {
+                        for scope in self.scopes.iter().rev() {
+                            if let Some(v) = scope.find(&name) {
+                                break 'resolve_loop v.clone();
                             }
-                            unreachable!()
                         }
-                    }
+                        unreachable!()
+                    },
                     _ => unimplemented!(),
                 }
             }
@@ -174,42 +178,39 @@ impl InstArrayEliminator {
                     HierItem::InstancePart { inst, .. } => {
                         inst.get_instance().scope.find(&name).unwrap().clone()
                     }
-                    HierItem::GenBlock(decl) => {
-                        decl.scope.find(&name).unwrap().clone()
-                    }
-                    _ => unreachable!()
+                    HierItem::GenBlock(decl) => decl.scope.find(&name).unwrap().clone(),
+                    _ => unreachable!(),
                 }
             }
             ast::HierId::Select(..) => {
                 let mut hier = None;
-                ::util::replace_with(id, |id| {
+                crate::util::replace_with(id, |id| {
                     // Move out parent and the bit-select out from original ast::HierId
-                    let (mut parent, parent_hier, sel) = if let ast::HierId::Select(mut parent, sel) = id {
-                        let hier = self.xfrm_hier_id(&mut parent);
-                        let sel = dim_to_i32(&sel);
-                        (*parent, hier, sel)
-                    } else { unreachable!() };
+                    let (mut parent, parent_hier, sel) =
+                        if let ast::HierId::Select(mut parent, sel) = id {
+                            let hier = self.xfrm_hier_id(&mut parent);
+                            let sel = dim_to_i32(&sel);
+                            (*parent, hier, sel)
+                        } else {
+                            unreachable!()
+                        };
                     hier = Some(match parent_hier {
-                        HierItem::Instance(ref inst) => {
-                            HierItem::InstancePart {
-                                inst: inst.inst.clone(),
-                                modport: None,
-                                dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
-                            }
-                        }
-                        HierItem::InterfacePort(ref decl) => {
-                            HierItem::InstancePart {
-                                inst: decl.inst.clone(),
-                                modport: decl.modport.clone(),
-                                dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
-                            }
-                        }
+                        HierItem::Instance(ref inst) => HierItem::InstancePart {
+                            inst: inst.inst.clone(),
+                            modport: None,
+                            dim: inst.dim.iter().skip(1).map(Clone::clone).collect(),
+                        },
+                        HierItem::InterfacePort(ref decl) => HierItem::InstancePart {
+                            inst: decl.inst.clone(),
+                            modport: decl.modport.clone(),
+                            dim: decl.dim.iter().skip(1).map(Clone::clone).collect(),
+                        },
                         _ => unreachable!(),
                     });
                     // Mutate the parent's name to include the dimension
                     match parent.value {
-                        ast::HierId::Name(_, ref mut name) |
-                        ast::HierId::Member(_, ref mut name) => {
+                        ast::HierId::Name(_, ref mut name)
+                        | ast::HierId::Member(_, ref mut name) => {
                             name.value = format!("{}_{}", name.value, sel);
                         }
                         _ => unreachable!(),
@@ -230,7 +231,12 @@ impl InstArrayEliminator {
         for port in ports {
             match port {
                 hier::PortConn::Expr(mut port) => {
-                    if let expr::Expr{value: expr::ExprKind::HierName(ref mut id), span, .. } = port {
+                    if let expr::Expr {
+                        value: expr::ExprKind::HierName(ref mut id),
+                        span,
+                        ..
+                    } = port
+                    {
                         let hier = self.xfrm_hier_id(id);
                         let empty_array = [];
                         let dim: &[_] = match hier {
@@ -248,8 +254,8 @@ impl InstArrayEliminator {
                             for i in lb..=ub {
                                 let mut id_clone = id.clone();
                                 match id_clone {
-                                    ast::HierId::Name(_, ref mut name) |
-                                    ast::HierId::Member(_, ref mut name) => {
+                                    ast::HierId::Name(_, ref mut name)
+                                    | ast::HierId::Member(_, ref mut name) => {
                                         name.value = format!("{}_{}", name.value, i);
                                     }
                                     _ => unreachable!(),
@@ -287,29 +293,40 @@ impl InstArrayEliminator {
                 HierItem::Instance(decl) => {
                     if decl.dim.is_empty() {
                         // If this is not an array, visit its own ports
-                        ::util::replace_with(&mut Rc::get_mut(decl).unwrap().port, |ports| self.xfrm_ports(ports));
+                        crate::util::replace_with(&mut Rc::get_mut(decl).unwrap().port, |ports| {
+                            self.xfrm_ports(ports)
+                        });
                     } else {
                         // Otherwise we visit ports of its clones instead
                         let ptr = &**decl as *const _ as usize;
                         let (lb, ub, mut map) = self.map.remove(&ptr).unwrap();
                         for (_, inst) in &mut map {
                             if let HierItem::Instance(decl) = inst {
-                                ::util::replace_with(&mut Rc::get_mut(decl).unwrap().port, |ports| self.xfrm_ports(ports));
-                            } else { unreachable!() }
+                                crate::util::replace_with(
+                                    &mut Rc::get_mut(decl).unwrap().port,
+                                    |ports| self.xfrm_ports(ports),
+                                );
+                            } else {
+                                unreachable!()
+                            }
                         }
                         self.map.insert(ptr, (lb, ub, map));
                     }
                 }
                 HierItem::Design(decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
-                        ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.xfrm_scope(scope));
+                        crate::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| {
+                            self.xfrm_scope(scope)
+                        });
                     }
                 }
                 HierItem::ContinuousAssign(expr) => {
                     self.visit_expr(Rc::get_mut(expr).unwrap());
                 }
                 HierItem::GenBlock(genblk) => {
-                    ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
+                    crate::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| {
+                        self.xfrm_scope(scope)
+                    });
                 }
                 // TODO: There're more cases where we need to visit expressions
                 _ => (),
@@ -328,7 +345,10 @@ impl InstArrayEliminator {
                     // This is not an array, return as is.
                     if decl.dim.is_empty() {
                         let ident = decl.name.clone();
-                        self.scopes.last_mut().unwrap().insert(Some(ident), HierItem::Instance(decl));
+                        self.scopes
+                            .last_mut()
+                            .unwrap()
+                            .insert(Some(ident), HierItem::Instance(decl));
                         continue;
                     }
                     let ptr = &*decl as *const _ as usize;
@@ -337,8 +357,13 @@ impl InstArrayEliminator {
                         let inst = map.remove(&i).unwrap();
                         if let HierItem::Instance(decl) = inst {
                             let ident = decl.name.clone();
-                            self.scopes.last_mut().unwrap().insert(Some(ident), HierItem::Instance(decl));
-                        } else { unreachable!() }
+                            self.scopes
+                                .last_mut()
+                                .unwrap()
+                                .insert(Some(ident), HierItem::Instance(decl));
+                        } else {
+                            unreachable!()
+                        }
                     }
                     continue;
                 }
@@ -346,7 +371,10 @@ impl InstArrayEliminator {
                     // This is not an array, return as is.
                     if decl.dim.is_empty() {
                         let ident = decl.name.clone();
-                        self.scopes.last_mut().unwrap().insert(Some(ident), HierItem::InterfacePort(decl));
+                        self.scopes
+                            .last_mut()
+                            .unwrap()
+                            .insert(Some(ident), HierItem::InterfacePort(decl));
                         continue;
                     }
                     let ptr = &*decl as *const _ as usize;
@@ -355,19 +383,28 @@ impl InstArrayEliminator {
                         let inst = map.remove(&i).unwrap();
                         if let HierItem::InterfacePort(decl) = inst {
                             let ident = decl.name.clone();
-                            self.scopes.last_mut().unwrap().insert(Some(ident), HierItem::InterfacePort(decl));
-                        } else { unreachable!() }
+                            self.scopes
+                                .last_mut()
+                                .unwrap()
+                                .insert(Some(ident), HierItem::InterfacePort(decl));
+                        } else {
+                            unreachable!()
+                        }
                     }
                     continue;
                 }
                 HierItem::Design(ref mut decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
-                        ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.expand_array(scope));
+                        crate::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| {
+                            self.expand_array(scope)
+                        });
                     }
                     None
                 }
                 HierItem::GenBlock(ref mut genblk) => {
-                    ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_array(scope));
+                    crate::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| {
+                        self.expand_array(scope)
+                    });
                     genblk.name.as_ref().map(|name| Ident::clone(name))
                 }
                 ref item => super::common::name_of(item).map(Ident::clone),

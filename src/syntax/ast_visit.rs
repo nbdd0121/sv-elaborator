@@ -39,9 +39,7 @@ pub trait AstVisitor {
                     self.visit_stmt(stmt);
                 }
             }
-            Item::ParamDecl(decl) => {
-                self.visit_param_decl(decl)
-            }
+            Item::ParamDecl(decl) => self.visit_param_decl(decl),
             Item::DataDecl(decl) => self.visit_data_decl(decl),
             Item::NetDecl(decl) => {
                 self.visit_ty(&mut decl.ty);
@@ -78,15 +76,19 @@ pub trait AstVisitor {
                     }
                     match &mut single_inst.ports {
                         PortConn::Ordered(list) => {
-                             for (_, expr) in list {
-                                if let Some(v) = expr { self.visit_expr(v); }
+                            for (_, expr) in list {
+                                if let Some(v) = expr {
+                                    self.visit_expr(v);
+                                }
                             }
                         }
                         PortConn::Named(list) => {
                             for (_, conn) in list {
                                 match conn {
                                     NamedPortConn::Explicit(_, expr) => {
-                                        if let Some(v) = expr { self.visit_expr(v); }
+                                        if let Some(v) = expr {
+                                            self.visit_expr(v);
+                                        }
                                     }
                                     _ => (),
                                 }
@@ -190,13 +192,11 @@ pub trait AstVisitor {
             _ => unimplemented!(),
         }
     }
-    
+
     fn visit_dim(&mut self, dim: &mut Dim) {
         match &mut dim.value {
             DimKind::Value(expr) => self.visit_expr(expr),
-            DimKind::Range(ub, lb) |
-            DimKind::PlusRange(ub, lb) |
-            DimKind::MinusRange(ub, lb) => {
+            DimKind::Range(ub, lb) | DimKind::PlusRange(ub, lb) | DimKind::MinusRange(ub, lb) => {
                 self.visit_expr(ub);
                 self.visit_expr(lb);
             }
@@ -218,10 +218,14 @@ pub trait AstVisitor {
 
     fn visit_args(&mut self, arg: &mut Args) {
         for expr in &mut arg.ordered {
-            if let Some(v) = expr { self.visit_expr(v); }
+            if let Some(v) = expr {
+                self.visit_expr(v);
+            }
         }
         for (_, expr) in &mut arg.named {
-            if let Some(v) = expr { self.visit_expr(v); }
+            if let Some(v) = expr {
+                self.visit_expr(v);
+            }
         }
     }
 
@@ -238,11 +242,8 @@ pub trait AstVisitor {
 
     fn do_visit_ty(&mut self, ty: &mut DataType) {
         match &mut ty.value {
-            DataTypeKind::Type |
-            DataTypeKind::IntAtom(..) |
-            DataTypeKind::Real(_) => (),
-            DataTypeKind::Implicit(_, dim) |
-            DataTypeKind::IntVec(_, _, dim) => {
+            DataTypeKind::Type | DataTypeKind::IntAtom(..) | DataTypeKind::Real(_) => (),
+            DataTypeKind::Implicit(_, dim) | DataTypeKind::IntVec(_, _, dim) => {
                 for dim in dim {
                     self.visit_dim(dim);
                 }
@@ -266,8 +267,7 @@ pub trait AstVisitor {
                     self.visit_dim(dim);
                 }
             }
-            DataTypeKind::String |
-            DataTypeKind::Chandle => (),
+            DataTypeKind::String | DataTypeKind::Chandle => (),
             // VirtualInterface, // TODO
             DataTypeKind::Event => (),
             DataTypeKind::HierName(_, _, dim) => {
@@ -300,26 +300,53 @@ pub trait AstVisitor {
             StmtKind::If(_, cond, tst, fst) => {
                 self.visit_expr(cond);
                 self.visit_stmt(tst);
-                if let Some(v) = fst { self.visit_stmt(v); }
+                if let Some(v) = fst {
+                    self.visit_stmt(v);
+                }
             }
             StmtKind::Case { expr, items, .. } => {
                 self.visit_expr(expr);
                 for (cond, stmt) in items {
-                    for expr in cond { self.visit_expr(expr); }
+                    for expr in cond {
+                        self.visit_expr(expr);
+                    }
                     self.visit_stmt(stmt);
                 }
             }
-            StmtKind::For { ty, init, cond, update, body } => {
-                if let Some(ty) = ty { self.visit_ty(ty); }
-                for expr in init { self.visit_expr(expr); }
-                if let Some(expr) = cond { self.visit_expr(expr); }
-                for expr in update { self.visit_expr(expr); }
+            StmtKind::For {
+                ty,
+                init,
+                cond,
+                update,
+                body,
+            } => {
+                if let Some(ty) = ty {
+                    self.visit_ty(ty);
+                }
+                for expr in init {
+                    self.visit_expr(expr);
+                }
+                if let Some(expr) = cond {
+                    self.visit_expr(expr);
+                }
+                for expr in update {
+                    self.visit_expr(expr);
+                }
                 self.visit_stmt(body);
             }
-            StmtKind::Assert { expr, success, failure, .. } => {
+            StmtKind::Assert {
+                expr,
+                success,
+                failure,
+                ..
+            } => {
                 self.visit_expr(expr);
-                if let Some(stmt) = success { self.visit_stmt(stmt) }
-                if let Some(stmt) = failure { self.visit_stmt(stmt) }
+                if let Some(stmt) = success {
+                    self.visit_stmt(stmt)
+                }
+                if let Some(stmt) = failure {
+                    self.visit_stmt(stmt)
+                }
             }
             StmtKind::SeqBlock(stmts) => {
                 for stmt in stmts {
@@ -363,7 +390,9 @@ pub trait AstVisitor {
             ExprKind::HierName(id) => self.visit_hier_name(id),
             // EmptyQueue,
             ExprKind::Concat(list, select) => {
-                for expr in list { self.visit_expr(expr); }
+                for expr in list {
+                    self.visit_expr(expr);
+                }
                 if let Some(select) = select {
                     self.visit_dim(select);
                 }
@@ -381,7 +410,9 @@ pub trait AstVisitor {
                 }
                 match pattern {
                     AssignPattern::Simple(list) => {
-                        for expr in list { self.visit_expr(expr); }
+                        for expr in list {
+                            self.visit_expr(expr);
+                        }
                     }
                     AssignPattern::Keyed(list) => {
                         for (key, expr) in list {
@@ -392,12 +423,18 @@ pub trait AstVisitor {
                     }
                     AssignPattern::Mult(mul, list) => {
                         self.visit_expr(mul);
-                        for expr in list { self.visit_expr(expr); }
+                        for expr in list {
+                            self.visit_expr(expr);
+                        }
                     }
                 }
             }
             ExprKind::SysTfCall(call) => self.visit_sys_tf_call(call),
-            ExprKind::FuncCall { expr, attr: _, args } => {
+            ExprKind::FuncCall {
+                expr,
+                attr: _,
+                args,
+            } => {
                 self.visit_expr(expr);
                 if let Some(v) = args {
                     self.visit_args(v);
@@ -418,8 +455,7 @@ pub trait AstVisitor {
             }
             ExprKind::PrefixIncDec(_, _, expr) => self.visit_expr(expr),
             ExprKind::PostfixIncDec(expr, _, _) => self.visit_expr(expr),
-            ExprKind::Assign(lhs, rhs) |
-            ExprKind::NonblockAssign(lhs, rhs) => {
+            ExprKind::Assign(lhs, rhs) | ExprKind::NonblockAssign(lhs, rhs) => {
                 self.visit_expr(lhs);
                 self.visit_expr(rhs);
             }

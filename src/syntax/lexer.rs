@@ -1,14 +1,14 @@
-use super::tokens::*;
 use super::ast::*;
+use super::tokens::*;
 
+use super::super::number::{LogicNumber, LogicValue, LogicVec};
+use super::super::source::{DiagMgr, Diagnostic, Pos, Severity, Source, SrcMgr};
 use super::kw_map::HASHMAP;
-use super::super::source::{Source, SrcMgr, Diagnostic, DiagMgr, Severity, Pos};
-use super::super::number::{LogicValue, LogicVec, LogicNumber};
 
-use num::{BigUint, Zero, One, Num};
+use num::{BigUint, Num, One, Zero};
 
-use std::rc::Rc;
 use std::cmp;
+use std::rc::Rc;
 
 pub struct Lexer<'a> {
     mgr: &'a SrcMgr,
@@ -94,18 +94,26 @@ impl<'a> Lexer<'a> {
         self.report_diag(Diagnostic::new(
             severity,
             msg.into(),
-            Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))
+            Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end)),
         ));
     }
 
     fn report_span_with_hint<M: Into<String>>(
-        &self, severity: Severity, msg: M, hint: String, start: usize, end: usize
+        &self,
+        severity: Severity,
+        msg: M,
+        hint: String,
+        start: usize,
+        end: usize,
     ) {
-        self.report_diag(Diagnostic::new(
-            severity,
-            msg.into(),
-            Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end))
-        ).fix_primary(hint));
+        self.report_diag(
+            Diagnostic::new(
+                severity,
+                msg.into(),
+                Pos(self.src_offset.0 + start).span_to(Pos(self.src_offset.0 + end)),
+            )
+            .fix_primary(hint),
+        );
     }
 
     fn report_diag(&self, msg: Diagnostic) {
@@ -120,7 +128,7 @@ impl<'a> Lexer<'a> {
             self.report_pos(
                 Severity::Warning,
                 "found line ending with cr but without lf",
-                self.pos
+                self.pos,
             );
         }
     }
@@ -137,9 +145,9 @@ impl<'a> Lexer<'a> {
                     ' ' | '\t' | '\x0c' | '\n' => (),
                     _ => {
                         self.pushback(v);
-                        return
+                        return;
                     }
-                }
+                },
             }
         }
     }
@@ -152,7 +160,7 @@ impl<'a> Lexer<'a> {
                 None => return,
                 Some('\r') => {
                     self.skip_crlf();
-                    return
+                    return;
                 }
                 Some('\n') => return,
                 _ => (),
@@ -167,12 +175,12 @@ impl<'a> Lexer<'a> {
             match next {
                 None => {
                     self.report_pos(Severity::Error, "unterminated /* comment", self.start);
-                    return
-                },
+                    return;
+                }
                 Some('\r') => self.skip_crlf(),
                 Some('*') => {
                     if self.nextch_if('/') {
-                        return
+                        return;
                     }
                 }
                 _ => (),
@@ -186,7 +194,7 @@ impl<'a> Lexer<'a> {
         loop {
             let next = match self.nextch() {
                 None => break,
-                Some(v) => v
+                Some(v) => v,
             };
             match next {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '$' => {
@@ -194,7 +202,7 @@ impl<'a> Lexer<'a> {
                 }
                 _ => {
                     self.pushback(next);
-                    break
+                    break;
                 }
             }
         }
@@ -207,13 +215,13 @@ impl<'a> Lexer<'a> {
         loop {
             let next = match self.nextch() {
                 None => break,
-                Some(v) => v
+                Some(v) => v,
             };
             if next.is_ascii_graphic() {
                 name.push(next);
             } else {
                 self.pushback(next);
-                break
+                break;
             }
         }
         name
@@ -223,10 +231,14 @@ impl<'a> Lexer<'a> {
     fn parse_escape_seq(&mut self) -> Option<char> {
         let next = match self.nextch() {
             None => {
-                self.report_pos(Severity::Error, "string literal is not terminated", self.start);
-                return None
+                self.report_pos(
+                    Severity::Error,
+                    "string literal is not terminated",
+                    self.start,
+                );
+                return None;
             }
-            Some(v) => v
+            Some(v) => v,
         };
         match next {
             // SystemVerilog spec does not mention about this, so
@@ -244,19 +256,19 @@ impl<'a> Lexer<'a> {
             'f' => Some(12 as char),
             'a' => Some(7 as char),
             // Octal escape sequence
-            '0' ..= '7' => {
+            '0'..='7' => {
                 self.pushback(next);
                 let mut codepoint: u8 = 0;
                 for _ in 0..3 {
                     let digit = match self.nextch() {
                         None => break,
-                        Some(v) => v
+                        Some(v) => v,
                     };
                     match digit.to_digit(8) {
                         Some(v) => codepoint = codepoint * 8 + v as u8,
                         _ => {
                             self.pushback(digit);
-                            break
+                            break;
                         }
                     }
                 }
@@ -274,9 +286,9 @@ impl<'a> Lexer<'a> {
                                 Severity::Error,
                                 "\\x should be followed by two hex digits",
                                 start - 2,
-                                self.pos + 1
+                                self.pos + 1,
                             );
-                            return None
+                            return None;
                         }
                         Some(v) => {
                             self.nextch();
@@ -305,22 +317,30 @@ impl<'a> Lexer<'a> {
         loop {
             let next = match self.nextch() {
                 None => {
-                    self.report_pos(Severity::Error, "string literal is not terminated", self.start);
-                    break
+                    self.report_pos(
+                        Severity::Error,
+                        "string literal is not terminated",
+                        self.start,
+                    );
+                    break;
                 }
-                Some(v) => v
+                Some(v) => v,
             };
             match next {
                 '"' => break,
                 '\r' | '\n' => {
-                    self.report_pos(Severity::Error, "string literal is not terminated", self.start);
-                    break
-                },
+                    self.report_pos(
+                        Severity::Error,
+                        "string literal is not terminated",
+                        self.start,
+                    );
+                    break;
+                }
                 '\\' => match self.parse_escape_seq() {
                     None => continue,
-                    Some(v) => content.push(v)
-                }
-                _ => content.push(next)
+                    Some(v) => content.push(v),
+                },
+                _ => content.push(next),
             }
         }
         TokenKind::StringLiteral(content)
@@ -336,20 +356,20 @@ impl<'a> Lexer<'a> {
             };
             match next {
                 '_' => (),
-                '0' ..= '9' => {
+                '0'..='9' => {
                     str.push(next);
-                },
+                }
                 'x' | 'X' | 'z' | 'Z' | '?' => {
                     self.report_pos(
                         Severity::Error,
                         "X or Zs are not allowed when base is decimal",
-                        self.pos - 1
+                        self.pos - 1,
                     );
                     str.push('0');
                 }
                 _ => {
                     self.pushback(next);
-                    break
+                    break;
                 }
             }
         }
@@ -364,7 +384,7 @@ impl<'a> Lexer<'a> {
                 self.nextch();
                 true
             }
-            _ => false
+            _ => false,
         };
 
         // Parse radix
@@ -374,14 +394,10 @@ impl<'a> Lexer<'a> {
             Some('o') | Some('O') => (8, '7', 2),
             Some('h') | Some('H') => (16, 'f', 4),
             _ => {
-                self.report_pos(
-                    Severity::Error,
-                    "missing base specifier",
-                    self.pos,
-                );
+                self.report_pos(Severity::Error, "missing base specifier", self.pos);
 
                 // Error recovery, treat it as zero
-                return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero())
+                return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero());
             }
         };
         self.nextch();
@@ -393,22 +409,18 @@ impl<'a> Lexer<'a> {
         let num_after_ws = match self.peekch() {
             None => false,
             Some(v) => match v {
-                '0' ..= '9' | 'a' ..= 'f' | 'A' ..= 'F' | 'x' | 'X' | 'z' | 'Z' | '?' => true,
+                '0'..='9' | 'a'..='f' | 'A'..='F' | 'x' | 'X' | 'z' | 'Z' | '?' => true,
                 // TODO: If + or - is specified here, probably give a better suggestion
-                _ => false
-            }
+                _ => false,
+            },
         };
 
         if !num_after_ws {
             self.pos = pos;
-            self.report_pos(
-                Severity::Error,
-                "missing digits after base specifier",
-                pos,
-            );
+            self.report_pos(Severity::Error, "missing digits after base specifier", pos);
 
             // Error recovery, treat it as zero
-            return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero())
+            return LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::zero());
         }
 
         // Radix 10 is special: no X or Z allowed it other digits are present
@@ -426,13 +438,13 @@ impl<'a> Lexer<'a> {
                     while self.nextch_if('_') {}
                     LogicVec::new_xz(1, signed, BigUint::zero(), BigUint::one())
                 }
-                '0' ..= '9' => {
+                '0'..='9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
                     LogicVec::new_xz(cmp::max(num.bits(), 1), signed, num, BigUint::zero())
                 }
                 _ => unreachable!(),
-            }
+            };
         }
 
         let mut str = String::new();
@@ -444,7 +456,7 @@ impl<'a> Lexer<'a> {
             };
             match next {
                 '_' => (),
-                '0' ..= '9' | 'a' ..= 'f' | 'A' ..= 'F' => {
+                '0'..='9' | 'a'..='f' | 'A'..='F' => {
                     if !next.is_digit(radix) {
                         self.report_pos(
                             Severity::Error,
@@ -457,7 +469,7 @@ impl<'a> Lexer<'a> {
                         str.push(next);
                         xz.push('0');
                     }
-                },
+                }
                 'x' | 'X' => {
                     str.push(maxch);
                     xz.push(maxch);
@@ -468,7 +480,7 @@ impl<'a> Lexer<'a> {
                 }
                 _ => {
                     self.pushback(next);
-                    break
+                    break;
                 }
             }
         }
@@ -477,8 +489,8 @@ impl<'a> Lexer<'a> {
             str.len() * log2,
             signed,
             BigUint::from_str_radix(&str, radix).unwrap(),
-            BigUint::from_str_radix(&xz, radix).unwrap()
-        )
+            BigUint::from_str_radix(&xz, radix).unwrap(),
+        );
     }
 
     // Try parse time literal suffix. Returns the parsed time unit in terms of seconds
@@ -518,9 +530,9 @@ impl<'a> Lexer<'a> {
             let num_after_dot = match self.peekch() {
                 None => false,
                 Some(v) => match v {
-                    '0' ..= '9' | 'x' | 'X' | 'z' | 'Z' => true,
-                    _ => false
-                }
+                    '0'..='9' | 'x' | 'X' | 'z' | 'Z' => true,
+                    _ => false,
+                },
             };
 
             if !num_after_dot {
@@ -528,10 +540,10 @@ impl<'a> Lexer<'a> {
                     Severity::Error,
                     "no digit after dot in real number literal; do you want to mean '.0'?",
                     format!("{}0", &self.src_text[start..self.pos]),
-                    start, 
+                    start,
                     self.pos,
                 );
-                return TokenKind::RealLiteral(str.parse::<f64>().unwrap())
+                return TokenKind::RealLiteral(str.parse::<f64>().unwrap());
             }
 
             str.push('.');
@@ -543,8 +555,8 @@ impl<'a> Lexer<'a> {
                 has_exp = true;
                 str.push('e');
 
-                if self.nextch_if('+') {}
-                else if self.nextch_if('-') {
+                if self.nextch_if('+') {
+                } else if self.nextch_if('-') {
                     str.push('-');
                 }
 
@@ -552,21 +564,22 @@ impl<'a> Lexer<'a> {
                 let num_after_exp = match self.peekch() {
                     None => false,
                     Some(v) => match v {
-                        '0' ..= '9' | 'x' | 'X' | 'z' | 'Z' => true,
-                        _ => false
-                    }
+                        '0'..='9' | 'x' | 'X' | 'z' | 'Z' => true,
+                        _ => false,
+                    },
                 };
 
                 if !num_after_exp {
                     self.report_span(
                         Severity::Error,
                         "expected exponent in real number literal",
-                        start, self.pos + 1,
+                        start,
+                        self.pos + 1,
                     );
 
                     // Error recovery: assume exponent part is actually 0
                     str.push('0');
-                    return TokenKind::RealLiteral(str.parse::<f64>().unwrap())
+                    return TokenKind::RealLiteral(str.parse::<f64>().unwrap());
                 }
 
                 str.push_str(&self.parse_decimal());
@@ -586,19 +599,17 @@ impl<'a> Lexer<'a> {
                             index_before_time,
                         );
                     }
-                    return TokenKind::TimeLiteral(parsed * v)
+                    return TokenKind::TimeLiteral(parsed * v);
                 }
                 None => (),
             }
 
-            return TokenKind::RealLiteral(parsed)
+            return TokenKind::RealLiteral(parsed);
         }
 
         // Parsing time unit
         match self.try_parse_time_unit() {
-            Some(v) => {
-                return TokenKind::TimeLiteral(str.parse::<f64>().unwrap() * v)
-            }
+            Some(v) => return TokenKind::TimeLiteral(str.parse::<f64>().unwrap() * v),
             None => (),
         }
 
@@ -611,7 +622,7 @@ impl<'a> Lexer<'a> {
                 Some(v) => match v {
                     's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => true,
                     _ => false,
-                }
+                },
             };
 
             if has_base {
@@ -623,7 +634,8 @@ impl<'a> Lexer<'a> {
                         self.report_span(
                             Severity::Error,
                             "size specifier cannot be zero",
-                            start, size_pos
+                            start,
+                            size_pos,
                         );
 
                         // Error recovery
@@ -644,7 +656,7 @@ impl<'a> Lexer<'a> {
                 num = num.xz_extend_or_trunc(size);
                 return TokenKind::IntegerLiteral(LogicNumber {
                     sized: true,
-                    value: num
+                    value: num,
                 });
             }
         }
@@ -661,7 +673,7 @@ impl<'a> Lexer<'a> {
                 true,
                 num,
                 BigUint::zero(),
-            )
+            ),
         })
     }
 
@@ -671,7 +683,7 @@ impl<'a> Lexer<'a> {
         // Early return if result is EOF
         let ch = match self.nextch() {
             None => return TokenKind::Eof,
-            Some(v) => v
+            Some(v) => v,
         };
 
         match ch {
@@ -684,23 +696,21 @@ impl<'a> Lexer<'a> {
             }
             '\n' => TokenKind::NewLine,
             // Comments
-            '/' => {
-                match self.peekch() {
-                    Some('/') => {
-                        self.skip_line_comment();
-                        TokenKind::LineComment
-                    }
-                    Some('*') =>{
-                        self.skip_block_comment();
-                        TokenKind::BlockComment
-                    }
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::Div)
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Div)
+            '/' => match self.peekch() {
+                Some('/') => {
+                    self.skip_line_comment();
+                    TokenKind::LineComment
                 }
-            }
+                Some('*') => {
+                    self.skip_block_comment();
+                    TokenKind::BlockComment
+                }
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::Div)
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Div),
+            },
             // Identifiers
             'a'..='z' | 'A'..='Z' | '_' => {
                 self.pos = self.start;
@@ -708,11 +718,13 @@ impl<'a> Lexer<'a> {
                 // We only recognise keywords outside attributes
                 if !self.attr {
                     match HASHMAP.get::<str>(&name) {
-                        Some(&(ref kw, v)) => if v <= self.keyword {
-                            kw.clone()
-                        } else {
-                            TokenKind::Id(name)
-                        },
+                        Some(&(ref kw, v)) => {
+                            if v <= self.keyword {
+                                kw.clone()
+                            } else {
+                                TokenKind::Id(name)
+                            }
+                        }
                         _ => TokenKind::Id(name),
                     }
                 } else {
@@ -728,9 +740,7 @@ impl<'a> Lexer<'a> {
                     _ => TokenKind::SystemTask(name),
                 }
             }
-            '\\' => {
-                TokenKind::Id(self.parse_esc_id())
-            }
+            '\\' => TokenKind::Id(self.parse_esc_id()),
             '`' => {
                 match self.peekch().unwrap_or(' ') {
                     // Special symbols meaningful inside substitution text.
@@ -762,44 +772,42 @@ impl<'a> Lexer<'a> {
                 }
             }
             // Literals
-            '0' ..= '9' => {
+            '0'..='9' => {
                 self.pushback(ch);
                 self.parse_number()
             }
-            '\'' => {
-                match self.peekch().unwrap_or(' ') {
-                    's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
-                        let num = self.parse_based_number();
-                        let size = cmp::max(num.width() + num.signed() as usize, 32);
-                        let num = num.xz_extend_or_trunc(size);
-                        TokenKind::IntegerLiteral(LogicNumber {
-                            sized: false,
-                            value: num
-                        })
-                    }
-                    '{' => {
-                        self.nextch();
-                        TokenKind::OpenDelim(Delim::TickBrace)
-                    }
-                    '0' => {
-                        self.nextch();
-                        TokenKind::UnbasedLiteral(LogicValue::Zero)
-                    }
-                    '1' => {
-                        self.nextch();
-                        TokenKind::UnbasedLiteral(LogicValue::One)
-                    }
-                    'z' | 'Z' | '?' => {
-                        self.nextch();
-                        TokenKind::UnbasedLiteral(LogicValue::Z)
-                    }
-                    'x' | 'X' => {
-                        self.nextch();
-                        TokenKind::UnbasedLiteral(LogicValue::X)
-                    }
-                    _ => TokenKind::Tick
+            '\'' => match self.peekch().unwrap_or(' ') {
+                's' | 'S' | 'd' | 'D' | 'b' | 'B' | 'o' | 'O' | 'h' | 'H' => {
+                    let num = self.parse_based_number();
+                    let size = cmp::max(num.width() + num.signed() as usize, 32);
+                    let num = num.xz_extend_or_trunc(size);
+                    TokenKind::IntegerLiteral(LogicNumber {
+                        sized: false,
+                        value: num,
+                    })
                 }
-            }
+                '{' => {
+                    self.nextch();
+                    TokenKind::OpenDelim(Delim::TickBrace)
+                }
+                '0' => {
+                    self.nextch();
+                    TokenKind::UnbasedLiteral(LogicValue::Zero)
+                }
+                '1' => {
+                    self.nextch();
+                    TokenKind::UnbasedLiteral(LogicValue::One)
+                }
+                'z' | 'Z' | '?' => {
+                    self.nextch();
+                    TokenKind::UnbasedLiteral(LogicValue::Z)
+                }
+                'x' | 'X' => {
+                    self.nextch();
+                    TokenKind::UnbasedLiteral(LogicValue::X)
+                }
+                _ => TokenKind::Tick,
+            },
             '"' => self.parse_string(),
             // Delimiters
             '(' => {
@@ -808,7 +816,12 @@ impl<'a> Lexer<'a> {
                         TokenKind::ParenedStar
                     } else {
                         if self.attr {
-                            self.report_span(Severity::Error, "attribute (* cannot be nested", self.start, self.pos);
+                            self.report_span(
+                                Severity::Error,
+                                "attribute (* cannot be nested",
+                                self.start,
+                                self.pos,
+                            );
                         }
                         self.attr = true;
                         TokenKind::OpenDelim(Delim::Attr)
@@ -823,73 +836,72 @@ impl<'a> Lexer<'a> {
             '{' => TokenKind::OpenDelim(Delim::Brace),
             '}' => TokenKind::CloseDelim(Delim::Brace),
             // Operators
-            '+' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::Add)
-                    }
-                    Some('+') => {
-                        self.nextch();
-                        TokenKind::IncDec(IncDec::Inc)
-                    }
-                    Some(':') => {
-                        self.nextch();
-                        TokenKind::PlusColon
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Add)
+            '+' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::Add)
                 }
-            }
-            '-' => {
-                match self.peekch() {
-                    Some(':') => {
-                        self.nextch();
-                        TokenKind::MinusColon
-                    }
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::Sub)
-                    }
-                    Some('-') => {
-                        self.nextch();
-                        TokenKind::IncDec(IncDec::Dec)
-                    }
-                    Some('>') => {
-                        self.nextch();
-                        if self.nextch_if('>') {
-                            TokenKind::NonblockTrigger
-                        } else {
-                            TokenKind::BinaryOp(BinaryOp::Imply)
-                        }
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Sub)
+                Some('+') => {
+                    self.nextch();
+                    TokenKind::IncDec(IncDec::Inc)
                 }
-            }
-            '*' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::Mul)
-                    }
-                    Some('*') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::Power)
-                    }
-                    Some('>') => {
-                        self.nextch();
-                        TokenKind::FullConnect
-                    }
-                    Some(')') => {
-                        self.nextch();
-                        if !self.attr {
-                            self.report_span(Severity::Error, "attribute *) without corresponding (*", self.start, self.pos);
-                        }
-                        self.attr = false;
-                        TokenKind::CloseDelim(Delim::Attr)
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Mul)
+                Some(':') => {
+                    self.nextch();
+                    TokenKind::PlusColon
                 }
-            }
+                _ => TokenKind::BinaryOp(BinaryOp::Add),
+            },
+            '-' => match self.peekch() {
+                Some(':') => {
+                    self.nextch();
+                    TokenKind::MinusColon
+                }
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::Sub)
+                }
+                Some('-') => {
+                    self.nextch();
+                    TokenKind::IncDec(IncDec::Dec)
+                }
+                Some('>') => {
+                    self.nextch();
+                    if self.nextch_if('>') {
+                        TokenKind::NonblockTrigger
+                    } else {
+                        TokenKind::BinaryOp(BinaryOp::Imply)
+                    }
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Sub),
+            },
+            '*' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::Mul)
+                }
+                Some('*') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::Power)
+                }
+                Some('>') => {
+                    self.nextch();
+                    TokenKind::FullConnect
+                }
+                Some(')') => {
+                    self.nextch();
+                    if !self.attr {
+                        self.report_span(
+                            Severity::Error,
+                            "attribute *) without corresponding (*",
+                            self.start,
+                            self.pos,
+                        );
+                    }
+                    self.attr = false;
+                    TokenKind::CloseDelim(Delim::Attr)
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Mul),
+            },
             '%' => {
                 if self.nextch_if('=') {
                     TokenKind::BinaryOpAssign(BinaryOp::Mod)
@@ -897,121 +909,109 @@ impl<'a> Lexer<'a> {
                     TokenKind::BinaryOp(BinaryOp::Mod)
                 }
             }
-            '&' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::And)
+            '&' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::And)
+                }
+                Some('&') => {
+                    self.nextch();
+                    if self.nextch_if('&') {
+                        TokenKind::TripleAnd
+                    } else {
+                        TokenKind::BinaryOp(BinaryOp::LAnd)
                     }
-                    Some('&') => {
-                        self.nextch();
-                        if self.nextch_if('&') {
-                            TokenKind::TripleAnd
-                        } else {
-                            TokenKind::BinaryOp(BinaryOp::LAnd)
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::And),
+            },
+            '^' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOpAssign(BinaryOp::Xor)
+                }
+                Some('|') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::Xnor)
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Xor),
+            },
+            '|' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    if self.nextch_if('>') {
+                        TokenKind::NonOverlapImply
+                    } else {
+                        TokenKind::BinaryOpAssign(BinaryOp::Or)
+                    }
+                }
+                Some('|') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::LOr)
+                }
+                Some('-') => {
+                    self.nextch();
+                    if self.nextch_if('>') {
+                        TokenKind::OverlapImply
+                    } else {
+                        self.pushback('-');
+                        TokenKind::BinaryOp(BinaryOp::Or)
+                    }
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Or),
+            },
+            '=' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    match self.peekch() {
+                        Some('=') => {
+                            self.nextch();
+                            TokenKind::BinaryOp(BinaryOp::CaseEq)
                         }
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::And)
-                }
-            }
-            '^' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOpAssign(BinaryOp::Xor)
-                    }
-                    Some('|') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::Xnor)
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Xor)
-                }
-            }
-            '|' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        if self.nextch_if('>') {
-                            TokenKind::NonOverlapImply
-                        } else {
-                            TokenKind::BinaryOpAssign(BinaryOp::Or)
+                        Some('?') => {
+                            self.nextch();
+                            TokenKind::BinaryOp(BinaryOp::WildEq)
                         }
+                        _ => TokenKind::BinaryOp(BinaryOp::Eq),
                     }
-                    Some('|') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::LOr)
-                    }
-                    Some('-') => {
-                        self.nextch();
-                        if self.nextch_if('>') {
-                            TokenKind::OverlapImply
-                        } else {
-                            self.pushback('-');
-                            TokenKind::BinaryOp(BinaryOp::Or)
+                }
+                Some('>') => {
+                    self.nextch();
+                    TokenKind::ParConnect
+                }
+                _ => TokenKind::Assign,
+            },
+            '!' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    match self.peekch() {
+                        Some('=') => {
+                            self.nextch();
+                            TokenKind::BinaryOp(BinaryOp::CaseNeq)
                         }
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Or)
-                }
-            }
-            '=' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        match self.peekch() {
-                            Some('=') => {
-                                self.nextch();
-                                TokenKind::BinaryOp(BinaryOp::CaseEq)
-                            }
-                            Some('?') => {
-                                self.nextch();
-                                TokenKind::BinaryOp(BinaryOp::WildEq)
-                            }
-                            _ => TokenKind::BinaryOp(BinaryOp::Eq)
+                        Some('?') => {
+                            self.nextch();
+                            TokenKind::BinaryOp(BinaryOp::WildNeq)
                         }
+                        _ => TokenKind::BinaryOp(BinaryOp::Neq),
                     }
-                    Some('>') => {
-                        self.nextch();
-                        TokenKind::ParConnect
-                    }
-                    _ => TokenKind::Assign
                 }
-            }
-            '!' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        match self.peekch() {
-                            Some('=') => {
-                                self.nextch();
-                                TokenKind::BinaryOp(BinaryOp::CaseNeq)
-                            }
-                            Some('?') => {
-                                self.nextch();
-                                TokenKind::BinaryOp(BinaryOp::WildNeq)
-                            }
-                            _ => TokenKind::BinaryOp(BinaryOp::Neq)
-                        }
-                    }
-                    _ => TokenKind::UnaryOp(UnaryOp::LNot)
+                _ => TokenKind::UnaryOp(UnaryOp::LNot),
+            },
+            '~' => match self.peekch() {
+                Some('&') => {
+                    self.nextch();
+                    TokenKind::UnaryOp(UnaryOp::Nand)
                 }
-            }
-            '~' => {
-                match self.peekch() {
-                    Some('&') => {
-                        self.nextch();
-                        TokenKind::UnaryOp(UnaryOp::Nand)
-                    }
-                    Some('|') => {
-                        self.nextch();
-                        TokenKind::UnaryOp(UnaryOp::Nor)
-                    }
-                    Some('^') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::Xnor)
-                    }
-                    _ => TokenKind::UnaryOp(UnaryOp::Not)
+                Some('|') => {
+                    self.nextch();
+                    TokenKind::UnaryOp(UnaryOp::Nor)
                 }
-            }
+                Some('^') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::Xnor)
+                }
+                _ => TokenKind::UnaryOp(UnaryOp::Not),
+            },
             '#' => {
                 if self.nextch_if('#') {
                     TokenKind::CycleDelay
@@ -1027,103 +1027,99 @@ impl<'a> Lexer<'a> {
                     TokenKind::Dot
                 }
             }
-            ':' => {
-                match self.peekch() {
-                    Some(':') => {
-                        self.nextch();
-                        TokenKind::ScopeSep
-                    }
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::DistEq
-                    }
-                    Some('/') => {
-                        self.nextch();
-                        TokenKind::DistDiv
-                    }
-                    _ => TokenKind::Colon,
+            ':' => match self.peekch() {
+                Some(':') => {
+                    self.nextch();
+                    TokenKind::ScopeSep
                 }
-            }
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::DistEq
+                }
+                Some('/') => {
+                    self.nextch();
+                    TokenKind::DistDiv
+                }
+                _ => TokenKind::Colon,
+            },
             ';' => TokenKind::Semicolon,
-            '<' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::Leq)
-                    }
-                    Some('<') => {
-                        self.nextch();
-                        match self.peekch() {
-                            Some('<') => {
-                                self.nextch();
-                                if self.nextch_if('=') {
-                                    TokenKind::BinaryOpAssign(BinaryOp::Shl)
-                                } else {
-                                    TokenKind::BinaryOp(BinaryOp::Shl)
-                                }
-                            }
-                            Some('=') => {
-                                self.nextch();
+            '<' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::Leq)
+                }
+                Some('<') => {
+                    self.nextch();
+                    match self.peekch() {
+                        Some('<') => {
+                            self.nextch();
+                            if self.nextch_if('=') {
                                 TokenKind::BinaryOpAssign(BinaryOp::Shl)
+                            } else {
+                                TokenKind::BinaryOp(BinaryOp::Shl)
                             }
-                            _ => TokenKind::LShl
                         }
-                    }
-                    Some('-') => {
-                        self.nextch();
-                        if self.nextch_if('>') {
-                            TokenKind::BinaryOp(BinaryOp::Equiv)
-                        } else {
-                            self.pushback('-');
-                            TokenKind::BinaryOp(BinaryOp::Lt)
+                        Some('=') => {
+                            self.nextch();
+                            TokenKind::BinaryOpAssign(BinaryOp::Shl)
                         }
+                        _ => TokenKind::LShl,
                     }
-                    _ => TokenKind::BinaryOp(BinaryOp::Lt)
                 }
-            }
-            '>' => {
-                match self.peekch() {
-                    Some('=') => {
-                        self.nextch();
-                        TokenKind::BinaryOp(BinaryOp::Geq)
+                Some('-') => {
+                    self.nextch();
+                    if self.nextch_if('>') {
+                        TokenKind::BinaryOp(BinaryOp::Equiv)
+                    } else {
+                        self.pushback('-');
+                        TokenKind::BinaryOp(BinaryOp::Lt)
                     }
-                    Some('>') => {
-                        self.nextch();
-                        match self.peekch() {
-                            Some('>') => {
-                                self.nextch();
-                                if self.nextch_if('=') {
-                                    TokenKind::BinaryOpAssign(BinaryOp::AShr)
-                                } else {
-                                    TokenKind::BinaryOp(BinaryOp::AShr)
-                                }
-                            }
-                            Some('=') => {
-                                self.nextch();
-                                TokenKind::BinaryOpAssign(BinaryOp::LShr)
-                            }
-                            _ => TokenKind::BinaryOp(BinaryOp::LShr)
-                        }
-                    }
-                    _ => TokenKind::BinaryOp(BinaryOp::Gt)
                 }
-            }
+                _ => TokenKind::BinaryOp(BinaryOp::Lt),
+            },
+            '>' => match self.peekch() {
+                Some('=') => {
+                    self.nextch();
+                    TokenKind::BinaryOp(BinaryOp::Geq)
+                }
+                Some('>') => {
+                    self.nextch();
+                    match self.peekch() {
+                        Some('>') => {
+                            self.nextch();
+                            if self.nextch_if('=') {
+                                TokenKind::BinaryOpAssign(BinaryOp::AShr)
+                            } else {
+                                TokenKind::BinaryOp(BinaryOp::AShr)
+                            }
+                        }
+                        Some('=') => {
+                            self.nextch();
+                            TokenKind::BinaryOpAssign(BinaryOp::LShr)
+                        }
+                        _ => TokenKind::BinaryOp(BinaryOp::LShr),
+                    }
+                }
+                _ => TokenKind::BinaryOp(BinaryOp::Gt),
+            },
             '?' => TokenKind::Question,
-            '@' => {
-                match self.peekch() {
-                    Some('@') => {
-                        self.nextch();
-                        TokenKind::AtAt
-                    }
-                    Some('*') => {
-                        self.nextch();
-                        TokenKind::AtStar
-                    }
-                    _ => TokenKind::At,
+            '@' => match self.peekch() {
+                Some('@') => {
+                    self.nextch();
+                    TokenKind::AtAt
                 }
-            }
+                Some('*') => {
+                    self.nextch();
+                    TokenKind::AtStar
+                }
+                _ => TokenKind::At,
+            },
             _ => {
-                self.report_pos(Severity::Error, "unknown character in source file", self.start);
+                self.report_pos(
+                    Severity::Error,
+                    "unknown character in source file",
+                    self.start,
+                );
                 TokenKind::Unknown
             }
         }
@@ -1136,11 +1132,13 @@ impl<'a> Lexer<'a> {
                 TokenKind::Eof => return None,
                 // Ignore space and block comment. New line and line comments are not handled here
                 // as preprocessor needs them to know about how to process directives.
-                TokenKind::Whitespace |
-                TokenKind::BlockComment => continue,
-                _ => ()
+                TokenKind::Whitespace | TokenKind::BlockComment => continue,
+                _ => (),
             }
-            return Some(Spanned::new(tok, Pos(self.src_offset.0 + self.start).span_to(Pos(self.src_offset.0 + self.pos))));
+            return Some(Spanned::new(
+                tok,
+                Pos(self.src_offset.0 + self.start).span_to(Pos(self.src_offset.0 + self.pos)),
+            ));
         }
     }
 }

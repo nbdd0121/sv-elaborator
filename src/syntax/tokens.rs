@@ -1,9 +1,9 @@
 #![warn(dead_code)]
 
-use super::super::number::{LogicValue, LogicNumber};
+use super::super::number::{LogicNumber, LogicValue};
 
-use std::fmt;
 use std::collections::VecDeque;
+use std::fmt;
 
 use super::ast::*;
 
@@ -209,7 +209,6 @@ pub enum Keyword {
     Interconnect,
     Nettype,
     Soft,
-
     // SV 17
     // No new keywords
 }
@@ -227,7 +226,6 @@ impl fmt::Display for Keyword {
         write!(f, "{}", str)
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -313,7 +311,6 @@ pub enum TokenKind {
      * // "[->"
      * GotoRepeatStart,
      */
-
     /// Represent an unary operator.
     /// Exclude +, -, &, |, ^, ~^, which will be parsed as BinaryOp
     UnaryOp(UnaryOp),

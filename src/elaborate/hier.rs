@@ -1,13 +1,13 @@
 //! This module represent elaborated hierachical items.
 
-use syntax::ast::{self, Ident, SymbolId};
-use syntax::tokens;
+use crate::syntax::ast::{self, Ident, SymbolId};
+use crate::syntax::tokens;
 
-use std::rc::{Rc, Weak};
+pub use super::expr::{Expr, Stmt, Val};
+pub use super::ty::{Enum, IntTy, Struct, Ty};
 use std::cell::RefCell;
 use std::collections::HashMap;
-pub use super::ty::{IntTy, Ty, Struct, Enum};
-pub use super::expr::{Expr, Stmt, Val};
+use std::rc::{Rc, Weak};
 
 /// Resolved and evaluated parameter declaration
 #[derive(Debug, Clone, PartialEq)]
@@ -194,7 +194,7 @@ impl HierScope {
     pub fn find<'a>(&'a self, name: &str) -> Option<&'a HierItem> {
         match self.names.get(name) {
             None => None,
-            Some(index) => Some(&self.items[*index])
+            Some(index) => Some(&self.items[*index]),
         }
     }
 }

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use super::tokens::{Keyword, TokenKind};
 use super::ast::*;
+use super::tokens::{Keyword, TokenKind};
+use std::collections::HashMap;
 
-lazy_static!{
+lazy_static! {
 pub static ref HASHMAP: HashMap<&'static str, (TokenKind, u8)> = {
     let mut m = HashMap::new();
 

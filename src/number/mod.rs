@@ -1,7 +1,7 @@
-use num::{BigUint, BigInt, bigint::Sign, One, Zero, FromPrimitive};
+use num::{bigint::Sign, BigInt, BigUint, FromPrimitive, One, Zero};
+use std::cmp;
 use std::fmt;
 use std::ops;
-use std::cmp;
 
 mod int;
 pub use self::int::Int;
@@ -65,25 +65,16 @@ pub struct LogicVec {
 }
 
 impl LogicVec {
-
     /// Construct a LogicVec from Int's
     pub fn new(signed: bool, value: Int, xz: Int) -> LogicVec {
         assert!(value.width() == xz.width());
-        LogicVec {
-            signed,
-            value,
-            xz,
-        }
+        LogicVec { signed, value, xz }
     }
 
     /// Construct a two-state LogicVec from Int
     pub fn from_int(signed: bool, value: Int) -> LogicVec {
         let xz = Int::zero(value.width());
-        LogicVec {
-            signed,
-            value,
-            xz,
-        }
+        LogicVec { signed, value, xz }
     }
 
     /// Construct a 4-state logic array from 2-state logic.
@@ -104,12 +95,7 @@ impl LogicVec {
             value &= val;
         }
 
-        LogicVec::new_xz(
-            width,
-            signed,
-            value,
-            BigUint::zero(),
-        )
+        LogicVec::new_xz(width, signed, value, BigUint::zero())
     }
 
     /// Convert from BigInt
@@ -173,7 +159,10 @@ impl LogicVec {
             if self.signed {
                 Some(self.value.clone().to_bigint())
             } else {
-                Some(BigInt::from_biguint(Sign::Minus, self.value.clone().to_biguint()))
+                Some(BigInt::from_biguint(
+                    Sign::Minus,
+                    self.value.clone().to_biguint(),
+                ))
             }
         } else {
             None
@@ -531,7 +520,7 @@ impl LogicVec {
     pub fn logic_eq(&self, rhs: &Self) -> LogicValue {
         if self.is_two_state() && rhs.is_two_state() {
             // Simple case, direct comparision
-            return (self.value == rhs.value).into()
+            return (self.value == rhs.value).into();
         }
 
         // Otherwise XNOR them together for bitwise-equality test
@@ -542,7 +531,6 @@ impl LogicVec {
         // Then covnert the value to boolean
         val.to_bool()
     }
-
 
     /// Convert to boolean (single LogicValue)
     pub fn to_bool(&self) -> LogicValue {
@@ -564,7 +552,8 @@ impl LogicVec {
             self.value.signed_cmp(&rhs.value)
         } else {
             self.value.cmp(&rhs.value)
-        } == cmp::Ordering::Less).into()
+        } == cmp::Ordering::Less)
+            .into()
     }
 
     pub fn le(&self, rhs: &Self) -> LogicValue {
@@ -576,7 +565,8 @@ impl LogicVec {
             self.value.signed_cmp(&rhs.value)
         } else {
             self.value.cmp(&rhs.value)
-        } != cmp::Ordering::Greater).into()
+        } != cmp::Ordering::Greater)
+            .into()
     }
 }
 
@@ -598,8 +588,8 @@ impl fmt::Debug for LogicVec {
                 write!(f, "h{:X}", value)
             }
         } else {
-            let mut str = format!("{:0width$b}", value, width=width).into_bytes();
-            let xz = format!("{:0width$b}", xz, width=width).into_bytes();
+            let mut str = format!("{:0width$b}", value, width = width).into_bytes();
+            let xz = format!("{:0width$b}", xz, width = width).into_bytes();
             for i in 0..xz.len() {
                 if xz[i] == b'1' {
                     str[i] = if str[i] == b'0' { b'z' } else { b'x' }
@@ -625,7 +615,7 @@ impl fmt::Display for LogicNumber {
 
         // In this case we can simply print out a decimal
         if self.value.is_two_state() && !self.sized && self.value.signed {
-            return write!(f, "{}", value)
+            return write!(f, "{}", value);
         }
         if self.sized {
             write!(f, "{}", width)?;
@@ -637,8 +627,8 @@ impl fmt::Display for LogicNumber {
         if xz.is_zero() {
             write!(f, "d{}", value)
         } else {
-            let mut str = format!("{:0width$b}", value, width=width).into_bytes();
-            let xz = format!("{:0width$b}", xz, width=width).into_bytes();
+            let mut str = format!("{:0width$b}", value, width = width).into_bytes();
+            let xz = format!("{:0width$b}", xz, width = width).into_bytes();
             for i in 0..xz.len() {
                 if xz[i] == b'1' {
                     str[i] = if str[i] == b'0' { b'z' } else { b'x' }

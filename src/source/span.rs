@@ -2,8 +2,8 @@
 
 use super::Source;
 
-use std::rc::Rc;
 use std::cmp;
+use std::rc::Rc;
 use std::usize;
 
 /// Represent a unique position within all source managed files.
@@ -21,16 +21,13 @@ impl Pos {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: Pos,
-    pub end: Pos
+    pub end: Pos,
 }
 
 impl Span {
     /// Creata a new span
     pub fn new(a: Pos, b: Pos) -> Span {
-        Span {
-            start: a, 
-            end: b,
-        }
+        Span { start: a, end: b }
     }
 
     /// Create a dummy span.
@@ -64,7 +61,7 @@ impl FatPos {
     pub fn new(src: Rc<Source>, pos: usize) -> FatPos {
         FatPos {
             source: src,
-            pos: pos
+            pos: pos,
         }
     }
 }

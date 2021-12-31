@@ -1,12 +1,12 @@
-use super::tokens::*;
 use super::ast::*;
+use super::tokens::*;
 
-use source::{Source, SrcMgr, DiagMgr, Severity, Span};
 use super::lexer::Lexer;
+use crate::source::{DiagMgr, Severity, Source, Span, SrcMgr};
 
-use std::rc::Rc;
-use std::collections::VecDeque;
 use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::rc::Rc;
 
 pub fn pp<'a>(mgr: &'a SrcMgr, diag: &'a DiagMgr, src: &Rc<Source>) -> VecDeque<Token> {
     Preprocessor::new(mgr, diag).all(src)
@@ -18,7 +18,14 @@ struct Preprocessor<'a> {
     /// Buffer for tokens pushed back
     pushback: Vec<Token>,
     stacks: Vec<Lexer<'a>>,
-    macros: HashMap<String, (Span, Option<Vec<(Spanned<String>, Option<Vec<Token>>)>>, VecDeque<Token>)>,
+    macros: HashMap<
+        String,
+        (
+            Span,
+            Option<Vec<(Spanned<String>, Option<Vec<Token>>)>>,
+            VecDeque<Token>,
+        ),
+    >,
     /// A branch stack indicating whether previous branch is taken and whether an else is encountered
     branch_stack: Vec<(bool, bool)>,
 }
@@ -55,7 +62,7 @@ impl<'a> Preprocessor<'a> {
                 Some(v) => match v.next_span() {
                     None => (),
                     Some(v) => return Some(v),
-                }
+                },
             }
             self.stacks.pop();
         }
@@ -68,28 +75,28 @@ impl<'a> Preprocessor<'a> {
     /// Check if a name is one of built-in directive.
     fn is_directive(name: &str) -> bool {
         match name {
-            "resetall" |
-            "include" |
-            "define" |
-            "undef" |
-            "undefineall" |
-            "ifdef" |
-            "else" |
-            "elsif" |
-            "endif" |
-            "ifndef" |
-            "timescale" |
-            "default_nettype" |
-            "unconnected_drive" |
-            "nounconnected_drive" |
-            "celldefine" |
-            "endcelldefine" |
-            "pragma" |
-            "line" |
-            "__FILE__" |
-            "__LINE__" |
-            "begin_keywords" |
-            "end_keywords" => true,
+            "resetall"
+            | "include"
+            | "define"
+            | "undef"
+            | "undefineall"
+            | "ifdef"
+            | "else"
+            | "elsif"
+            | "endif"
+            | "ifndef"
+            | "timescale"
+            | "default_nettype"
+            | "unconnected_drive"
+            | "nounconnected_drive"
+            | "celldefine"
+            | "endcelldefine"
+            | "pragma"
+            | "line"
+            | "__FILE__"
+            | "__LINE__"
+            | "begin_keywords"
+            | "end_keywords" => true,
             _ => false,
         }
     }
@@ -99,10 +106,19 @@ impl<'a> Preprocessor<'a> {
         loop {
             let (name, span) = match self.next_raw() {
                 // Found a directive
-                Some(Spanned{value: TokenKind::Directive(name), span}) => (name, span),
+                Some(Spanned {
+                    value: TokenKind::Directive(name),
+                    span,
+                }) => (name, span),
                 // Newline token, set after_newline and continue
-                Some(Spanned{value: TokenKind::NewLine, ..}) |
-                Some(Spanned{value: TokenKind::LineComment, ..}) => {
+                Some(Spanned {
+                    value: TokenKind::NewLine,
+                    ..
+                })
+                | Some(Spanned {
+                    value: TokenKind::LineComment,
+                    ..
+                }) => {
                     after_newline = true;
                     continue;
                 }
@@ -112,46 +128,56 @@ impl<'a> Preprocessor<'a> {
 
             match name.as_ref() {
                 "resetall" => {
-                    self.diag.report_span(Severity::Warning, "compiler directive not yet supported", span);
+                    self.diag.report_span(
+                        Severity::Warning,
+                        "compiler directive not yet supported",
+                        span,
+                    );
                 }
                 "include" => {
                     if !after_newline {
-                        self.diag.report_error("`include must be on its own line", span);
+                        self.diag
+                            .report_error("`include must be on its own line", span);
                     }
                     self.parse_include(span);
                 }
                 "define" => self.parse_define(span),
-                "undef" |
-                "undefineall" => {
-                    self.diag.report_span(Severity::Warning, "compiler directive not yet supported", span);
+                "undef" | "undefineall" => {
+                    self.diag.report_span(
+                        Severity::Warning,
+                        "compiler directive not yet supported",
+                        span,
+                    );
                 }
                 "ifdef" => self.parse_ifdef(span, true),
                 "ifndef" => self.parse_ifdef(span, false),
                 "else" => self.parse_else(span),
                 "elsif" => self.parse_elsif(span),
                 "endif" => self.parse_endif(span),
-                "timescale" |
-                "default_nettype" |
-                "unconnected_drive" |
-                "nounconnected_drive" |
-                "celldefine" |
-                "endcelldefine" |
-                "pragma" |
-                "line" |
-                "__FILE__" |
-                "__LINE__" |
-                "begin_keywords" |
-                "end_keywords" => {
-                    self.diag.report_span(Severity::Warning, "compiler directive not yet supported", span);
+                "timescale"
+                | "default_nettype"
+                | "unconnected_drive"
+                | "nounconnected_drive"
+                | "celldefine"
+                | "endcelldefine"
+                | "pragma"
+                | "line"
+                | "__FILE__"
+                | "__LINE__"
+                | "begin_keywords"
+                | "end_keywords" => {
+                    self.diag.report_span(
+                        Severity::Warning,
+                        "compiler directive not yet supported",
+                        span,
+                    );
                 }
                 _ => {
                     let function_like = match self.macros.get(&name) {
                         None => {
-                            self.diag.report_error(
-                                format!("cannot find macro {}", name),
-                                span
-                            );
-                            continue
+                            self.diag
+                                .report_error(format!("cannot find macro {}", name), span);
+                            continue;
                         }
                         Some((_, Some(_), _)) => true,
                         _ => false,
@@ -162,26 +188,31 @@ impl<'a> Preprocessor<'a> {
                         // TODO: Replace macro within macro and handle `", ``, etc
                         match self.macros.get(&name) {
                             Some((_, Some(params), list)) => {
-                                let newlist: Vec<_> = list.iter().flat_map(|x| {
-                                    match x.value {
-                                        TokenKind::Id(ref id) => {
-                                            if let Some(pos) = params.iter().position(|(x, _)| &x.value == id) {
-                                                return args[pos].clone().into_iter()
+                                let newlist: Vec<_> = list
+                                    .iter()
+                                    .flat_map(|x| {
+                                        match x.value {
+                                            TokenKind::Id(ref id) => {
+                                                if let Some(pos) =
+                                                    params.iter().position(|(x, _)| &x.value == id)
+                                                {
+                                                    return args[pos].clone().into_iter();
+                                                }
                                             }
+                                            _ => (),
                                         }
-                                        _ => (),
-                                    }
-                                    let mut x = x.clone();
-                                    x.span = span;
-                                    vec![x].into_iter()
-                                }).collect();
+                                        let mut x = x.clone();
+                                        x.span = span;
+                                        vec![x].into_iter()
+                                    })
+                                    .collect();
                                 for tok in newlist.into_iter().rev() {
                                     self.pushback.push(tok);
                                 }
                             }
                             _ => unreachable!(),
                         }
-                    }else {
+                    } else {
                         // TODO: Replace macro within macro and handle `", ``, etc
                         match self.macros.get(&name) {
                             Some((_, _, list)) => {
@@ -205,12 +236,18 @@ impl<'a> Preprocessor<'a> {
     fn parse_macro_args(&mut self) -> Vec<Vec<Token>> {
         // Expect to see a opening paranthesis
         match self.peek_raw() {
-            Some(Spanned{value: TokenKind::OpenDelim(Delim::Paren), ..}) => (),
+            Some(Spanned {
+                value: TokenKind::OpenDelim(Delim::Paren),
+                ..
+            }) => (),
             _ => {
-                self.diag.report_error("Expected actual arguments for function-like macro", self.peek_raw().unwrap().span);
+                self.diag.report_error(
+                    "Expected actual arguments for function-like macro",
+                    self.peek_raw().unwrap().span,
+                );
                 // Error recovery
                 return Vec::new();
-            },
+            }
         }
         self.next_raw();
 
@@ -235,9 +272,7 @@ impl<'a> Preprocessor<'a> {
                             true
                         }
                     }
-                    TokenKind::Comma => {
-                        level == 0
-                    }
+                    TokenKind::Comma => level == 0,
                     _ => false,
                 };
                 if end {
@@ -251,7 +286,10 @@ impl<'a> Preprocessor<'a> {
 
             // Break out from the loop if not comma
             match self.peek_raw() {
-                Some(Spanned{value: TokenKind::Comma, ..}) => (),
+                Some(Spanned {
+                    value: TokenKind::Comma,
+                    ..
+                }) => (),
                 _ => break,
             }
             // Consume the comma
@@ -260,12 +298,18 @@ impl<'a> Preprocessor<'a> {
 
         // Expecting to see a closing parenthesis
         match self.peek_raw() {
-            Some(Spanned{value: TokenKind::CloseDelim(Delim::Paren), ..}) => (),
+            Some(Spanned {
+                value: TokenKind::CloseDelim(Delim::Paren),
+                ..
+            }) => (),
             _ => {
-                self.diag.report_error("Expected closing parenthesis", self.peek_raw().unwrap().span);
+                self.diag.report_error(
+                    "Expected closing parenthesis",
+                    self.peek_raw().unwrap().span,
+                );
                 // Error recovery
                 return list;
-            },
+            }
         }
         self.next_raw();
 
@@ -282,8 +326,7 @@ impl<'a> Preprocessor<'a> {
                 Some(v) => v,
             };
             match tok.value {
-                TokenKind::NewLine |
-                TokenKind::LineComment => break,
+                TokenKind::NewLine | TokenKind::LineComment => break,
                 _ => (),
             }
             list.push_back(tok);
@@ -294,11 +337,14 @@ impl<'a> Preprocessor<'a> {
     /// Read an identifier
     fn expect_id(&mut self) -> Option<Spanned<String>> {
         match self.next_raw() {
-            Some(Spanned{value: TokenKind::Id(id), span}) => Some(Spanned::new(id, span)),
+            Some(Spanned {
+                value: TokenKind::Id(id),
+                span,
+            }) => Some(Spanned::new(id, span)),
             Some(v) => {
                 self.pushback_raw(v);
                 None
-            },
+            }
             None => None,
         }
     }
@@ -314,7 +360,8 @@ impl<'a> Preprocessor<'a> {
         let (name, span) = match token {
             Some(v) => (v.value, v.span),
             None => {
-                self.diag.report_error("expected identifier name after `define", span);
+                self.diag
+                    .report_error("expected identifier name after `define", span);
                 // Error recovery: Discard until newline
                 self.read_until_newline();
                 return;
@@ -322,7 +369,8 @@ impl<'a> Preprocessor<'a> {
         };
 
         if Self::is_directive(&name) {
-            self.diag.report_error("directive name cannot be used as macro names", span);
+            self.diag
+                .report_error("directive name cannot be used as macro names", span);
             // Error recovery: Discard until newline
             self.read_until_newline();
             return;
@@ -331,7 +379,10 @@ impl<'a> Preprocessor<'a> {
         // Check if this macro is function-like.
         let paren = match self.peek_raw().unwrap() {
             // If this is a parenthesis that immediately follows the name
-            Spanned{value: TokenKind::OpenDelim(Delim::Paren), span: p_span} if p_span.start == span.end => true,
+            Spanned {
+                value: TokenKind::OpenDelim(Delim::Paren),
+                span: p_span,
+            } if p_span.start == span.end => true,
             _ => false,
         };
 
@@ -346,7 +397,8 @@ impl<'a> Preprocessor<'a> {
         // Insert it to the global definitions list and report error for duplicate definition
         if let Some((old_span, ..)) = self.macros.insert(name, (span, args, list)) {
             self.diag.report_error("duplicate macro definitions", span);
-            self.diag.report_span(Severity::Remark, "previous declared here", old_span);
+            self.diag
+                .report_span(Severity::Remark, "previous declared here", old_span);
         }
     }
 
@@ -359,38 +411,56 @@ impl<'a> Preprocessor<'a> {
             let arg_name = match self.expect_id() {
                 Some(v) => v,
                 None => {
-                    self.diag.report_error("expected identifier in macro formal argument list", self.peek_raw().unwrap().span);
+                    self.diag.report_error(
+                        "expected identifier in macro formal argument list",
+                        self.peek_raw().unwrap().span,
+                    );
                     break;
                 }
             };
 
             let has_default = match self.peek_raw() {
-                Some(Spanned{value: TokenKind::BinaryOp(BinaryOp::Eq), ..}) => true,
+                Some(Spanned {
+                    value: TokenKind::BinaryOp(BinaryOp::Eq),
+                    ..
+                }) => true,
                 _ => false,
             };
             if has_default {
                 // Discard the eq symbol
                 self.next_raw();
-                self.diag.report_fatal("default macro argument is not yet supported", self.peek_raw().unwrap().span);
+                self.diag.report_fatal(
+                    "default macro argument is not yet supported",
+                    self.peek_raw().unwrap().span,
+                );
             }
 
             list.push((arg_name, None));
 
             // Break out from the loop if not comma
             match self.peek_raw() {
-                Some(Spanned{value: TokenKind::Comma, ..}) => (),
+                Some(Spanned {
+                    value: TokenKind::Comma,
+                    ..
+                }) => (),
                 _ => break,
             }
             // Consume the comma
             self.next_raw();
         }
         match self.peek_raw() {
-            Some(Spanned{value: TokenKind::CloseDelim(Delim::Paren), ..}) => (),
+            Some(Spanned {
+                value: TokenKind::CloseDelim(Delim::Paren),
+                ..
+            }) => (),
             _ => {
-                self.diag.report_error("Expected closing parenthesis", self.peek_raw().unwrap().span);
+                self.diag.report_error(
+                    "Expected closing parenthesis",
+                    self.peek_raw().unwrap().span,
+                );
                 // Error recovery
                 return list;
-            },
+            }
         }
         // Discard the parenthesis
         self.next_raw();
@@ -409,7 +479,8 @@ impl<'a> Preprocessor<'a> {
         let name = match self.expect_id() {
             Some(v) => v.value,
             None => {
-                self.diag.report_error("expected identifier name after `ifdef or `ifndef", span);
+                self.diag
+                    .report_error("expected identifier name after `ifdef or `ifndef", span);
                 // Error recovery: Return a non-existing name, thus treating as untaken
                 "".to_owned()
             }
@@ -427,7 +498,8 @@ impl<'a> Preprocessor<'a> {
         match self.branch_stack.last() {
             None => {
                 // An elsif without corresponding if
-                self.diag.report_error("`elsif without matching `ifdef or `ifndef", span);
+                self.diag
+                    .report_error("`elsif without matching `ifdef or `ifndef", span);
                 return;
             }
             Some((_, true)) => {
@@ -458,7 +530,8 @@ impl<'a> Preprocessor<'a> {
         let name = match self.expect_id() {
             Some(v) => v.value,
             None => {
-                self.diag.report_error("expected identifier name after `ifdef or `ifndef", span);
+                self.diag
+                    .report_error("expected identifier name after `ifdef or `ifndef", span);
                 // Error recovery: Return a non-existing name, thus treating as untaken
                 "".to_owned()
             }
@@ -476,7 +549,8 @@ impl<'a> Preprocessor<'a> {
         match self.branch_stack.last() {
             None => {
                 // An elsif without corresponding if
-                self.diag.report_error("`else without matching `ifdef or `ifndef", span);
+                self.diag
+                    .report_error("`else without matching `ifdef or `ifndef", span);
                 return;
             }
             Some((_, true)) => {
@@ -511,7 +585,8 @@ impl<'a> Preprocessor<'a> {
         match self.branch_stack.pop() {
             None => {
                 // An endif without corresponding if
-                self.diag.report_error("`endif without matching `ifdef or `ifndef", span);
+                self.diag
+                    .report_error("`endif without matching `ifdef or `ifndef", span);
             }
             Some(_) => {
                 // If previous branch is not taken, then we still need to ignore things after this `endif
@@ -526,20 +601,31 @@ impl<'a> Preprocessor<'a> {
     fn parse_include(&mut self, span: Span) {
         let (filename, span) = match self.next_raw() {
             // TODO: Also handle <xxx>?
-            Some(Spanned{value: TokenKind::StringLiteral(str), span}) => (str, span),
-            Some(Spanned{value: TokenKind::BinaryOp(BinaryOp::Lt), ..}) => {
-                self.diag.report_error("<filename> style include is not yet supported", span);
+            Some(Spanned {
+                value: TokenKind::StringLiteral(str),
+                span,
+            }) => (str, span),
+            Some(Spanned {
+                value: TokenKind::BinaryOp(BinaryOp::Lt),
+                ..
+            }) => {
+                self.diag
+                    .report_error("<filename> style include is not yet supported", span);
                 return;
             }
             _ => {
-                self.diag.report_error("expecting file name after `include", span);
+                self.diag
+                    .report_error("expecting file name after `include", span);
                 return;
-            },
+            }
         };
         let file = match self.mgr.load_source(&filename) {
             Ok(file) => file,
             Err(err) => {
-                self.diag.report_error(format!("failed when loading file {}: {}", filename, err), span);
+                self.diag.report_error(
+                    format!("failed when loading file {}: {}", filename, err),
+                    span,
+                );
                 return;
             }
         };
@@ -559,11 +645,7 @@ impl<'a> Preprocessor<'a> {
                 TokenKind::Directive(ref name) => {
                     match name.as_ref() {
                         // Branching directive
-                        "ifdef" |
-                        "ifndef" |
-                        "else" |
-                        "elsif" |
-                        "endif" => (),
+                        "ifdef" | "ifndef" | "else" | "elsif" | "endif" => (),
                         _ => continue,
                     }
                 }
@@ -584,10 +666,9 @@ impl<'a> Preprocessor<'a> {
             match self.process() {
                 None => break,
                 Some(v) => match v.value {
-                    TokenKind::NewLine |
-                    TokenKind::LineComment => (),
+                    TokenKind::NewLine | TokenKind::LineComment => (),
                     _ => vec.push_back(v),
-                }
+                },
             }
         }
         vec

@@ -4,8 +4,8 @@
 
 use std::rc::Rc;
 
-use syntax::ast::Ident;
-use elaborate::hier::{self, HierScope, HierItem};
+use crate::elaborate::hier::{self, HierItem, HierScope};
+use crate::syntax::ast::Ident;
 
 pub fn gen_name_assign(source: &mut hier::Source) {
     for unit in &mut source.units {

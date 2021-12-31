@@ -2,6 +2,7 @@
 name = "sv-elaborator"
 version = "0.1.0"
 authors = ["Gary Guo <gary@garyguo.net>"]
+edition = "2021"
 
 [dependencies]
 num = "0.2"

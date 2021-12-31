@@ -1,7 +1,7 @@
-use syntax::ast::*;
-use syntax::tokens::{TokenKind, Keyword};
+use crate::syntax::ast::*;
+use crate::syntax::tokens::{Keyword, TokenKind};
 
-use util::IdentifyFirstLast;
+use crate::util::IdentifyFirstLast;
 
 use std::convert::AsRef;
 
@@ -53,7 +53,12 @@ impl PrettyPrint {
         }
     }
 
-    fn print_sep_list<T>(&mut self, sep: &'static str, obj: &Vec<T>, mut f: impl FnMut(&mut Self, &T)) {
+    fn print_sep_list<T>(
+        &mut self,
+        sep: &'static str,
+        obj: &Vec<T>,
+        mut f: impl FnMut(&mut Self, &T),
+    ) {
         for (item, _, last) in obj.iter().identify_first_last() {
             f(self, item);
             if !last {
@@ -112,7 +117,14 @@ impl PrettyPrint {
     }
 
     fn print_param_decl(&mut self, obj: &ParamDecl) {
-        self.indent_append(format!("{} ", if obj.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
+        self.indent_append(format!(
+            "{} ",
+            if obj.kw == Keyword::Parameter {
+                "parameter"
+            } else {
+                "localparam"
+            }
+        ));
         if let Some(ty) = &obj.ty {
             self.print_type(ty);
             self.append(" ");
@@ -381,7 +393,9 @@ impl PrettyPrint {
             self.indent();
         }
         for (v, _, last) in obj.ordered.iter().identify_first_last() {
-            if !inline { self.indent_append(""); }
+            if !inline {
+                self.indent_append("");
+            }
             if let Some(v) = v {
                 self.print_expr(v);
             }
@@ -390,7 +404,9 @@ impl PrettyPrint {
             }
         }
         for ((id, v), _, last) in obj.named.iter().identify_first_last() {
-            if !inline { self.indent_append(""); }
+            if !inline {
+                self.indent_append("");
+            }
             self.append(format!(".{}(", id));
             if let Some(v) = v {
                 self.print_expr(v);
@@ -490,7 +506,14 @@ impl PrettyPrint {
                 self.append(";");
             }
             Item::ParamDecl(decl) => {
-                self.append(format!("{} ", if decl.kw == Keyword::Parameter { "parameter" } else { "localparam" }));
+                self.append(format!(
+                    "{} ",
+                    if decl.kw == Keyword::Parameter {
+                        "parameter"
+                    } else {
+                        "localparam"
+                    }
+                ));
                 if let Some(ty) = &decl.ty {
                     self.print_type(ty);
                     self.append(" ");
@@ -535,23 +558,19 @@ impl PrettyPrint {
                 self.print_comma_list(decl, |this, decl| {
                     this.append(format!("{} (\n", decl.0));
                     this.indent();
-                    this.print_comma_list_newline(&decl.1, |this, item| {
-                        match item {
-                            ModportPortDecl::Simple(_attr, dir, list) => {
-                                this.append(format!("{} ", dir));
-                                this.print_comma_list(list, |this, item| {
-                                    match item {
-                                        ModportSimplePort::Named(name) => this.append(format!("{}", name)),
-                                        ModportSimplePort::Explicit(name, expr) => {
-                                            this.append(format!(".{}(", name));
-                                            this.print_expr(expr);
-                                            this.append(")");
-                                        }
-                                    }
-                                });
-                            }
-                            _ => unimplemented!(),
+                    this.print_comma_list_newline(&decl.1, |this, item| match item {
+                        ModportPortDecl::Simple(_attr, dir, list) => {
+                            this.append(format!("{} ", dir));
+                            this.print_comma_list(list, |this, item| match item {
+                                ModportSimplePort::Named(name) => this.append(format!("{}", name)),
+                                ModportSimplePort::Explicit(name, expr) => {
+                                    this.append(format!(".{}(", name));
+                                    this.print_expr(expr);
+                                    this.append(")");
+                                }
+                            });
                         }
+                        _ => unimplemented!(),
                     });
                     this.unindent();
                     this.indent_append(")");
@@ -776,7 +795,11 @@ impl PrettyPrint {
                 self.append("}");
             }
             ExprKind::SysTfCall(tf) => self.print_sys_tf_call(tf),
-            ExprKind::FuncCall { expr, attr: _, args } => {
+            ExprKind::FuncCall {
+                expr,
+                attr: _,
+                args,
+            } => {
                 self.print_expr(expr);
                 if let Some(args) = args {
                     self.print_args(args, true);
@@ -852,9 +875,7 @@ impl PrettyPrint {
                     self.print_expr(&v);
                 }
             }
-            EventExpr::List(v) => {
-                self.print_sep_list(" or ", v, Self::print_event_expr)
-            }
+            EventExpr::List(v) => self.print_sep_list(" or ", v, Self::print_event_expr),
             EventExpr::Paren(v) => {
                 self.append("(");
                 self.print_event_expr(v);
@@ -901,7 +922,12 @@ impl PrettyPrint {
                     self.print_stmt(&v);
                 }
             }
-            StmtKind::Case { uniq, kw, expr, items } => {
+            StmtKind::Case {
+                uniq,
+                kw,
+                expr,
+                items,
+            } => {
                 if let Some(v) = uniq {
                     self.append(format!("{} ", v));
                 }
@@ -925,7 +951,13 @@ impl PrettyPrint {
                 self.unindent();
                 self.indent_append("endcase");
             }
-            StmtKind::For { ty, init, cond, update, body } => {
+            StmtKind::For {
+                ty,
+                init,
+                cond,
+                update,
+                body,
+            } => {
                 self.append("for (");
                 if let Some(ty) = ty {
                     self.print_type(ty);
@@ -933,13 +965,20 @@ impl PrettyPrint {
                 }
                 self.print_comma_list(init, Self::print_expr);
                 self.append("; ");
-                if let Some(expr) = cond { self.print_expr(expr); }
+                if let Some(expr) = cond {
+                    self.print_expr(expr);
+                }
                 self.append("; ");
                 self.print_comma_list(update, Self::print_expr);
                 self.append(") ");
                 self.print_stmt(body);
             }
-            StmtKind::Assert { kind: (), expr, success, failure } => {
+            StmtKind::Assert {
+                kind: (),
+                expr,
+                success,
+                failure,
+            } => {
                 self.append("assert (");
                 self.print_expr(expr);
                 self.append(")");

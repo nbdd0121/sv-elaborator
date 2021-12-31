@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use syntax::ast::Ident;
-use elaborate::hier::HierItem;
+use crate::elaborate::hier::HierItem;
+use crate::syntax::ast::Ident;
 
 pub fn name_of_mut(item: &mut HierItem) -> Option<&mut Ident> {
     match item {

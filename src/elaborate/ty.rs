@@ -1,12 +1,12 @@
 //! This module represent elaborated and grounded types. Everything here contains no symbolic
 //! references to other types.
 
+use std::cell::RefCell;
 use std::cmp;
 use std::rc::Rc;
-use std::cell::RefCell;
 
-use number::LogicVec;
-use syntax::ast::{Ident, RealTy};
+use crate::number::LogicVec;
+use crate::syntax::ast::{Ident, RealTy};
 
 /// A packed integral data type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -27,12 +27,11 @@ pub enum IntTy {
 }
 
 impl IntTy {
-
     /// Create a vector of given type.
     pub fn vec(self, upper: i32, lower: i32) -> Self {
         if lower == 0 && upper >= 0 {
             if let IntTy::Logic(two_state, sign) = self {
-                return IntTy::SimpleVec((upper + 1) as usize, two_state, sign)
+                return IntTy::SimpleVec((upper + 1) as usize, two_state, sign);
             }
         }
         IntTy::Array(Box::new(self), upper, lower)

@@ -4,16 +4,16 @@
 //! fact, before we elaborate further and deal with parameterisation and generate blocks we are
 //! unable to resolve further.
 
-use syntax::ast;
-use syntax::ast::*;
-use syntax::tokens::*;
-use source::*;
-use syntax::ast_visit::AstVisitor;
+use crate::source::*;
+use crate::syntax::ast;
+use crate::syntax::ast::*;
+use crate::syntax::ast_visit::AstVisitor;
+use crate::syntax::tokens::*;
 
-use std::rc::Rc;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use num::ToPrimitive;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub fn resolve(diag: &DiagMgr, units: &mut Vec<Vec<Item>>) {
     let mut resolver = Resolver::new(diag);
@@ -26,7 +26,7 @@ enum SymbolKind {
     /// All kind of top-level design unit
     Design {
         interface: bool,
-        ports: Rc<Vec<String>>
+        ports: Rc<Vec<String>>,
     },
     /// A hierachical instance.
     Instance,
@@ -65,12 +65,12 @@ impl Scope {
 
     fn resolve(&mut self, name: &String) -> Option<(SymbolId, SymbolKind)> {
         if let Some(v) = self.map.get(name) {
-            return Some(v.clone())
+            return Some(v.clone());
         }
         if let Some(v) = self.weak.remove(name) {
             // If a symbol is found in weak hashmap, move it to strong one.
             self.map.insert(name.to_owned(), v.clone());
-            return Some(v)
+            return Some(v);
         }
         None
     }
@@ -91,7 +91,6 @@ struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-
     fn new(diag: &'a DiagMgr) -> Resolver<'a> {
         Resolver {
             diag: diag,
@@ -102,11 +101,17 @@ impl<'a> Resolver<'a> {
     }
 
     fn add_to_scope_noalloc(&mut self, ident: &Ident, kind: SymbolKind) {
-        match self.scopes.last_mut().unwrap().map.entry(ident.value.clone()) {
+        match self
+            .scopes
+            .last_mut()
+            .unwrap()
+            .map
+            .entry(ident.value.clone())
+        {
             Entry::Occupied(_) => {
                 self.diag.report_error(
                     format!("name {} is already used in other definitions", ident.value),
-                    ident.span
+                    ident.span,
                 );
             }
             Entry::Vacant(ent) => {
@@ -124,19 +129,22 @@ impl<'a> Resolver<'a> {
         let mut ret = 'block: loop {
             for scope in self.scopes.iter_mut().rev() {
                 if let Some((id, kind)) = scope.resolve(&ident.value) {
-                    break 'block (id, kind)
+                    break 'block (id, kind);
                 }
             }
             self.diag.report_error(
                 format!("name {} does not exist in the scope", ident.value),
-                ident.span
+                ident.span,
             );
-            break (SymbolId::DUMMY, SymbolKind::Error)
+            break (SymbolId::DUMMY, SymbolKind::Error);
         };
         if let SymbolKind::Conflict = ret.1 {
             self.diag.report_error(
-                format!("name {} is ambiguious: it exists in two wildcard-imported packages", ident.value),
-                ident.span
+                format!(
+                    "name {} is ambiguious: it exists in two wildcard-imported packages",
+                    ident.value
+                ),
+                ident.span,
             );
             ret = (SymbolId::DUMMY, SymbolKind::Error)
         }
@@ -147,18 +155,21 @@ impl<'a> Resolver<'a> {
     fn resolve_unit(&mut self, ident: &mut Ident) -> SymbolKind {
         let mut ret = 'block: loop {
             if let Some((id, kind)) = self.scopes.first_mut().unwrap().resolve(&ident.value) {
-                break 'block (id, kind)
+                break 'block (id, kind);
             }
             self.diag.report_error(
                 format!("name {} does not exist in the scope", ident.value),
-                ident.span
+                ident.span,
             );
-            break (SymbolId::DUMMY, SymbolKind::Error)
+            break (SymbolId::DUMMY, SymbolKind::Error);
         };
         if let SymbolKind::Conflict = ret.1 {
             self.diag.report_error(
-                format!("name {} is ambiguious: it exists in two wildcard-imported packages", ident.value),
-                ident.span
+                format!(
+                    "name {} is ambiguious: it exists in two wildcard-imported packages",
+                    ident.value
+                ),
+                ident.span,
             );
             ret = (SymbolId::DUMMY, SymbolKind::Error)
         }
@@ -178,7 +189,8 @@ impl<'a> Resolver<'a> {
         // This is an explicit import, retrieve from the pkg_items.
         let symbol = match pkg_items.get(&ident.value) {
             None => {
-                self.diag.report_error("cannot find the name in package", ident.span);
+                self.diag
+                    .report_error("cannot find the name in package", ident.span);
                 (SymbolId::DUMMY, SymbolKind::Error)
             }
             Some(ret) => ret.clone(),
@@ -192,10 +204,10 @@ impl<'a> Resolver<'a> {
         let ret = 'block: loop {
             for scope in self.scopes.iter_mut().rev() {
                 if let Some(v) = scope.map.get(&ident.value) {
-                    break 'block v.clone()
+                    break 'block v.clone();
                 }
             }
-            return None
+            return None;
         };
         ident.symbol = ret.0;
         Some(ret.1)
@@ -206,8 +218,7 @@ impl<'a> Resolver<'a> {
         let mut port_list = Vec::new();
         for port in ports {
             match port {
-                PortDecl::Data(.., list) |
-                PortDecl::Interface(.., list) => {
+                PortDecl::Data(.., list) | PortDecl::Interface(.., list) => {
                     for assign in list {
                         port_list.push(assign.name.value.clone());
                     }
@@ -284,7 +295,10 @@ impl<'a> Resolver<'a> {
     fn desugar_pkg(&self, scope: &mut Option<ast::Scope>, id: &Ident) {
         // If this name comes from a package, desugar it.
         if let Some(pkg) = self.pkg_ref.get(&id.symbol) {
-            *scope = Some(ast::Scope::Name(None, Box::new(Ident::new_unspanned(String::clone(pkg)))));
+            *scope = Some(ast::Scope::Name(
+                None,
+                Box::new(Ident::new_unspanned(String::clone(pkg))),
+            ));
         }
     }
 
@@ -317,7 +331,8 @@ impl<'a> Resolver<'a> {
                 // First get the package from global package list.
                 let pkg_items = match self.pkg.get(&import.0.value) {
                     None => {
-                        self.diag.report_error("cannot find this package", import.0.span);
+                        self.diag
+                            .report_error("cannot find this package", import.0.span);
                         continue;
                     }
                     Some(v) => v,
@@ -327,7 +342,9 @@ impl<'a> Resolver<'a> {
                 let scope = self.scopes.last_mut().unwrap();
                 for (name, (id, kind)) in pkg_items {
                     if let Some(_) = scope.weak.insert(name.to_owned(), (*id, kind.clone())) {
-                        scope.weak.insert(name.to_owned(), (SymbolId::DUMMY, SymbolKind::Conflict));
+                        scope
+                            .weak
+                            .insert(name.to_owned(), (SymbolId::DUMMY, SymbolKind::Conflict));
                     }
                 }
             }
@@ -341,8 +358,12 @@ impl<'a> AstVisitor for Resolver<'a> {
             self.visit_ty(ty);
         }
         for assign in &mut decl.list {
-            for dim in &mut assign.dim { self.visit_dim(dim); }
-            if let Some(v) = &mut assign.init { self.visit_expr(v); }
+            for dim in &mut assign.dim {
+                self.visit_dim(dim);
+            }
+            if let Some(v) = &mut assign.init {
+                self.visit_expr(v);
+            }
             self.add_to_scope(&mut assign.name, SymbolKind::Param);
         }
     }
@@ -356,10 +377,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                         interface: decl.kw == Keyword::Interface,
                         ports: Rc::new(Self::port_list(&decl.port)),
                     };
-                    self.add_to_scope(
-                        &mut decl.name,
-                        symbol
-                    );
+                    self.add_to_scope(&mut decl.name, symbol);
                 }
 
                 // Introduce new scope
@@ -380,28 +398,43 @@ impl<'a> AstVisitor for Resolver<'a> {
                         PortDecl::Data(_, _, ty, list) => {
                             self.visit_ty(ty);
                             for assign in list {
-                                for dim in &mut assign.dim { self.visit_dim(dim); }
-                                if let Some(v) = &mut assign.init { self.visit_expr(v); }
+                                for dim in &mut assign.dim {
+                                    self.visit_dim(dim);
+                                }
+                                if let Some(v) = &mut assign.init {
+                                    self.visit_expr(v);
+                                }
                                 self.add_to_scope(&mut assign.name, SymbolKind::Var);
                             }
                         }
                         PortDecl::Interface(intf, modport, list) => {
                             if let Some(v) = intf {
                                 match (modport.is_some(), self.resolve(v)) {
-                                    (false, SymbolKind::Type) => panic!("aww!! this should be a data port instead!"),
-                                    (_, SymbolKind::Design {
-                                        interface: true,
-                                        ..
-                                    }) => (),
+                                    (false, SymbolKind::Type) => {
+                                        panic!("aww!! this should be a data port instead!")
+                                    }
+                                    (
+                                        _,
+                                        SymbolKind::Design {
+                                            interface: true, ..
+                                        },
+                                    ) => (),
                                     (_, SymbolKind::Error) => (),
                                     _ => {
-                                        self.diag.report_error(format!("name {} is not an interface", v.value), v.span);
+                                        self.diag.report_error(
+                                            format!("name {} is not an interface", v.value),
+                                            v.span,
+                                        );
                                     }
                                 }
                             }
                             for assign in list {
-                                for dim in &mut assign.dim { self.visit_dim(dim); }
-                                if let Some(v) = &mut assign.init { self.visit_expr(v); }
+                                for dim in &mut assign.dim {
+                                    self.visit_dim(dim);
+                                }
+                                if let Some(v) = &mut assign.init {
+                                    self.visit_expr(v);
+                                }
                                 self.add_to_scope(&mut assign.name, SymbolKind::IntfPort);
                             }
                         }
@@ -424,7 +457,10 @@ impl<'a> AstVisitor for Resolver<'a> {
             Item::PkgDecl(decl) => {
                 if self.scopes.len() != 2 {
                     // TODO: This should actually be checked in parser.
-                    self.diag.report_error("package can only appear in compilation-unit level", decl.name.span);
+                    self.diag.report_error(
+                        "package can only appear in compilation-unit level",
+                        decl.name.span,
+                    );
                 }
                 return;
             }
@@ -437,8 +473,12 @@ impl<'a> AstVisitor for Resolver<'a> {
                         PortDecl::Data(_, _, ty, list) => {
                             self.visit_ty(ty);
                             for assign in list {
-                                for dim in &mut assign.dim { self.visit_dim(dim); }
-                                if let Some(v) = &mut assign.init { self.visit_expr(v); }
+                                for dim in &mut assign.dim {
+                                    self.visit_dim(dim);
+                                }
+                                if let Some(v) = &mut assign.init {
+                                    self.visit_expr(v);
+                                }
                                 self.add_to_scope(&mut assign.name, SymbolKind::Var);
                             }
                         }
@@ -460,8 +500,12 @@ impl<'a> AstVisitor for Resolver<'a> {
                         PortDecl::Data(_, _, ty, list) => {
                             self.visit_ty(ty);
                             for assign in list {
-                                for dim in &mut assign.dim { self.visit_dim(dim); }
-                                if let Some(v) = &mut assign.init { self.visit_expr(v); }
+                                for dim in &mut assign.dim {
+                                    self.visit_dim(dim);
+                                }
+                                if let Some(v) = &mut assign.init {
+                                    self.visit_expr(v);
+                                }
                                 self.add_to_scope(&mut assign.name, SymbolKind::Var);
                             }
                         }
@@ -519,17 +563,15 @@ impl<'a> AstVisitor for Resolver<'a> {
                 self.add_to_scope(target, SymbolKind::Type);
                 return;
             }
-            Item::ContinuousAssign(_) |
-            Item::Initial(_) |
-            Item::Always(..) => (),
+            Item::ContinuousAssign(_) | Item::Initial(_) | Item::Always(..) => (),
             Item::HierInstantiation(inst) => {
                 let ports = match self.resolve(&mut inst.name) {
-                    SymbolKind::Design { ports, ..} => ports,
+                    SymbolKind::Design { ports, .. } => ports,
                     SymbolKind::Error => return,
                     _ => {
                         self.diag.report_error(
                             "only design units can appear in hierachical instantiation",
-                            inst.name.span
+                            inst.name.span,
                         );
                         return;
                     }
@@ -543,7 +585,7 @@ impl<'a> AstVisitor for Resolver<'a> {
                         self.visit_dim(dim);
                     }
                     let span = single_inst.name.span;
-                    ::util::replace_with(&mut single_inst.ports, |port_conn| {
+                    crate::util::replace_with(&mut single_inst.ports, |port_conn| {
                         // As resolver, we need to de-sugar implicit and wildcard port
                         // connections. To make later code easier, we will reorder these ports
                         // so that they correspond to the order of port declaration. Note that
@@ -573,22 +615,25 @@ impl<'a> AstVisitor for Resolver<'a> {
                                 for (attr, conn) in list {
                                     // Find the corresponding index in the port list.
                                     let id = match conn {
-                                        NamedPortConn::Explicit(ref name, _) |
-                                        NamedPortConn::Implicit(ref name) => {
-                                            let id = match ports.iter().position(|port_name| port_name == &name.value) {
+                                        NamedPortConn::Explicit(ref name, _)
+                                        | NamedPortConn::Implicit(ref name) => {
+                                            let id = match ports
+                                                .iter()
+                                                .position(|port_name| port_name == &name.value)
+                                            {
                                                 None => {
                                                     self.diag.report_error(
                                                         format!("no port declaration named {} is declared", name),
                                                         name.span
                                                     );
-                                                    continue
+                                                    continue;
                                                 }
                                                 Some(id) => id,
                                             };
                                             if new_list[id].1.is_some() {
                                                 self.diag.report_error(
                                                     "duplicate port connections",
-                                                    name.span
+                                                    name.span,
                                                 )
                                             }
                                             id
@@ -601,7 +646,9 @@ impl<'a> AstVisitor for Resolver<'a> {
                                     match conn {
                                         NamedPortConn::Explicit(_, mut expr) => {
                                             // Explicit port - just visit the expression and return as is.
-                                            if let Some(v) = &mut expr { self.visit_expr(v) };
+                                            if let Some(v) = &mut expr {
+                                                self.visit_expr(v)
+                                            };
                                             new_list[id] = (attr, Some(expr));
                                         }
                                         NamedPortConn::Implicit(mut name) => {
@@ -609,16 +656,25 @@ impl<'a> AstVisitor for Resolver<'a> {
                                             let mut scope = None;
                                             self.visit_scoped_id(&mut scope, &mut name);
                                             let span = name.span;
-                                            new_list[id] = (attr, Some(Some(Box::new(Spanned::new(
-                                                ExprKind::HierName(HierId::Name(scope, Box::new(name))), span
-                                            )))));
+                                            new_list[id] = (
+                                                attr,
+                                                Some(Some(Box::new(Spanned::new(
+                                                    ExprKind::HierName(HierId::Name(
+                                                        scope,
+                                                        Box::new(name),
+                                                    )),
+                                                    span,
+                                                )))),
+                                            );
                                         }
                                         _ => unreachable!(),
                                     }
                                 }
                                 if has_wildcard {
                                     new_list.iter_mut().zip(ports.iter()).for_each(|(v, name)| {
-                                        if v.1.is_some() { return }
+                                        if v.1.is_some() {
+                                            return;
+                                        }
                                         let mut name = Box::new(Ident::new_unspanned(name.clone()));
                                         // Failure to resolve isn't an error for wildcard port
                                         // connection - it shall fall back to default value.
@@ -628,9 +684,12 @@ impl<'a> AstVisitor for Resolver<'a> {
                                         }
                                         let mut scope = None;
                                         self.desugar_pkg(&mut scope, &name);
-                                        *v = (None, Some(Some(Box::new(Spanned::new_unspanned(
-                                            ExprKind::HierName(HierId::Name(scope, name))
-                                        )))));
+                                        *v = (
+                                            None,
+                                            Some(Some(Box::new(Spanned::new_unspanned(
+                                                ExprKind::HierName(HierId::Name(scope, name)),
+                                            )))),
+                                        );
                                     });
                                 }
                             }
@@ -737,54 +796,79 @@ impl<'a> AstVisitor for Resolver<'a> {
         if let Some(v) = &mut en.ty {
             self.visit_ty(v);
         }
-        ::util::replace_with(&mut en.members, |members| {
-            members.into_iter().flat_map(|mut assign| {
-                if assign.dim.is_empty() {
-                    // A standard enum definition
-                    vec![assign]
-                } else {
-                    // De-sugar generated name constants
-                    let (start, end) = match assign.dim.pop().unwrap().value {
-                        DimKind::Value(end) => (0, {
-                            let vec = if let ExprKind::Literal(Spanned {
-                                value: TokenKind::IntegerLiteral(val), ..
-                            }) = end.value { val.value } else { unreachable!(); };
-                            vec.get_two_state().unwrap().to_usize().unwrap() - 1
-                        }),
-                        DimKind::Range(start, end) => ({
-                            let vec = if let ExprKind::Literal(Spanned {
-                                value: TokenKind::IntegerLiteral(val), ..
-                            }) = start.value { val.value } else { unreachable!(); };
-                            vec.get_two_state().unwrap().to_usize().unwrap()
-                        }, {
-                            let vec = if let ExprKind::Literal(Spanned {
-                                value: TokenKind::IntegerLiteral(val), ..
-                            }) = end.value { val.value } else { unreachable!(); };
-                            vec.get_two_state().unwrap().to_usize().unwrap()
-                        }),
-                        _ => unreachable!(),
-                    };
-                    let ident = assign.name;
-                    let mut list = Vec::new();
-                    // Handle first element (we need to use the init)
-                    assign.name = Ident::new(format!("{}{}", ident.value, start), ident.span);
-                    list.push(assign);
-                    for val in (start + 1) ..= end {
-                        list.push(DeclAssign {
-                            name: Ident::new(format!("{}{}", ident.value, val), ident.span),
-                            dim: Vec::new(),
-                            init: None,
-                        });
+        crate::util::replace_with(&mut en.members, |members| {
+            members
+                .into_iter()
+                .flat_map(|mut assign| {
+                    if assign.dim.is_empty() {
+                        // A standard enum definition
+                        vec![assign]
+                    } else {
+                        // De-sugar generated name constants
+                        let (start, end) = match assign.dim.pop().unwrap().value {
+                            DimKind::Value(end) => (0, {
+                                let vec = if let ExprKind::Literal(Spanned {
+                                    value: TokenKind::IntegerLiteral(val),
+                                    ..
+                                }) = end.value
+                                {
+                                    val.value
+                                } else {
+                                    unreachable!();
+                                };
+                                vec.get_two_state().unwrap().to_usize().unwrap() - 1
+                            }),
+                            DimKind::Range(start, end) => (
+                                {
+                                    let vec = if let ExprKind::Literal(Spanned {
+                                        value: TokenKind::IntegerLiteral(val),
+                                        ..
+                                    }) = start.value
+                                    {
+                                        val.value
+                                    } else {
+                                        unreachable!();
+                                    };
+                                    vec.get_two_state().unwrap().to_usize().unwrap()
+                                },
+                                {
+                                    let vec = if let ExprKind::Literal(Spanned {
+                                        value: TokenKind::IntegerLiteral(val),
+                                        ..
+                                    }) = end.value
+                                    {
+                                        val.value
+                                    } else {
+                                        unreachable!();
+                                    };
+                                    vec.get_two_state().unwrap().to_usize().unwrap()
+                                },
+                            ),
+                            _ => unreachable!(),
+                        };
+                        let ident = assign.name;
+                        let mut list = Vec::new();
+                        // Handle first element (we need to use the init)
+                        assign.name = Ident::new(format!("{}{}", ident.value, start), ident.span);
+                        list.push(assign);
+                        for val in (start + 1)..=end {
+                            list.push(DeclAssign {
+                                name: Ident::new(format!("{}{}", ident.value, val), ident.span),
+                                dim: Vec::new(),
+                                init: None,
+                            });
+                        }
+                        list
                     }
-                    list
-                }
-            }).map(|mut assign| {
-                self.add_to_scope(&mut assign.name, SymbolKind::Param);
-                if let Some(v) = &mut assign.init {
-                    self.visit_expr(v);
-                }
-                assign
-            }).collect()
+                })
+                .map(|mut assign| {
+                    self.add_to_scope(&mut assign.name, SymbolKind::Param);
+                    if let Some(v) = &mut assign.init {
+                        self.visit_expr(v);
+                    }
+                    assign
+                })
+                .collect()
         });
     }
 
@@ -807,7 +891,7 @@ impl<'a> AstVisitor for Resolver<'a> {
             HierId::Select(sup, dim) => {
                 self.visit_hier_name(sup);
                 self.visit_dim(dim);
-            },
+            }
             _ => (),
         }
     }
@@ -818,7 +902,10 @@ impl<'a> AstVisitor for Resolver<'a> {
                 // We only care for loops with variable declaration. If ty is None, then all
                 // loop variables are pre-declared and thus we don't care.
                 ty: Some(ref mut ty),
-                ref mut init, ref mut cond, ref mut update, ref mut body
+                ref mut init,
+                ref mut cond,
+                ref mut update,
+                ref mut body,
             } => {
                 self.visit_ty(ty);
                 self.scopes.push(Scope::new());
@@ -826,18 +913,28 @@ impl<'a> AstVisitor for Resolver<'a> {
                     if let ExprKind::Assign(lhs, rhs) = &mut expr.value {
                         if let ExprKind::HierName(HierId::Name(None, name)) = &mut lhs.value {
                             self.add_to_scope(name, SymbolKind::Var);
-                        } else { unreachable!() }
+                        } else {
+                            unreachable!()
+                        }
                         self.visit_expr(rhs);
-                    } else { unreachable!(); }
+                    } else {
+                        unreachable!();
+                    }
                 }
-                if let Some(expr) = cond { self.visit_expr(expr); }
-                for expr in update { self.visit_expr(expr); }
+                if let Some(expr) = cond {
+                    self.visit_expr(expr);
+                }
+                for expr in update {
+                    self.visit_expr(expr);
+                }
                 self.visit_stmt(body);
                 self.scopes.pop();
             }
             StmtKind::SeqBlock(ref mut items) => {
                 self.scopes.push(Scope::new());
-                for item in items { self.visit_stmt(item); }
+                for item in items {
+                    self.visit_stmt(item);
+                }
                 self.scopes.pop();
             }
             StmtKind::DataDecl(ref mut decl) => {

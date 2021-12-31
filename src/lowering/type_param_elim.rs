@@ -3,9 +3,9 @@
 
 use std::rc::Rc;
 
-use elaborate::ty::Ty;
-use elaborate::expr::Val;
-use elaborate::hier::{self, HierItem, TypedefDecl};
+use crate::elaborate::expr::Val;
+use crate::elaborate::hier::{self, HierItem, TypedefDecl};
+use crate::elaborate::ty::Ty;
 
 pub fn type_param_elim(source: &mut hier::Source) {
     let mut elim = TypeParamEliminator {};
@@ -39,7 +39,7 @@ impl TypeParamEliminator {
     }
 
     pub fn visit_instantiation(&mut self, inst: &mut hier::DesignInstantiation) {
-        ::util::replace_with(&mut inst.scope.items, |items| {
+        crate::util::replace_with(&mut inst.scope.items, |items| {
             let mut ports = Vec::new();
             let mut others = Vec::new();
 
@@ -48,8 +48,12 @@ impl TypeParamEliminator {
                     HierItem::Param(decl) => {
                         if let Ty::Type = decl.ty {
                             others.push(HierItem::Type(Rc::new(TypedefDecl {
-                                ty: if let Val::Type(ref ty) = decl.init { ty.clone() } else { unreachable!() },
-                                name: decl.name.clone()
+                                ty: if let Val::Type(ref ty) = decl.init {
+                                    ty.clone()
+                                } else {
+                                    unreachable!()
+                                },
+                                name: decl.name.clone(),
                             })))
                         } else {
                             others.push(HierItem::Param(decl))

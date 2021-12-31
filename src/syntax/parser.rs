@@ -1,10 +1,10 @@
+use super::super::source::{DiagMgr, Diagnostic, Pos, Severity, Span};
 use super::ast::*;
 use super::tokens::*;
-use super::super::source::{Diagnostic, DiagMgr, Severity, Pos, Span};
 
-use std::mem;
-use std::collections::VecDeque;
 use std::borrow::Borrow;
+use std::collections::VecDeque;
+use std::mem;
 
 pub fn parse<'a>(diag: &'a DiagMgr, lexer: VecDeque<Token>) -> Vec<Item> {
     Parser::new(diag, lexer).parse_source()
@@ -113,7 +113,9 @@ impl<'a> Parser<'a> {
     /// Parse a delimited group of tokens. After calling the callback, the token stream must
     /// be empty.
     fn delim_group<T, F: FnMut(&mut Self) -> T>(
-        &mut self, mut stream: Box<DelimGroup>, mut f: F
+        &mut self,
+        mut stream: Box<DelimGroup>,
+        mut f: F,
     ) -> T {
         let mut delim_eof = Spanned::new(TokenKind::Eof, stream.close.span);
         mem::swap(&mut self.lexer, &mut stream.tokens);
@@ -184,7 +186,11 @@ impl<'a> Parser<'a> {
         match self.consume_if_delim(expected) {
             None => {
                 let span = self.peek().span.clone();
-                self.diag.report_span(Severity::Error, format!("expected open delimiter {:#?}", expected), span.clone());
+                self.diag.report_span(
+                    Severity::Error,
+                    format!("expected open delimiter {:#?}", expected),
+                    span.clone(),
+                );
                 // Error recovery
                 let fake_open = Spanned::new(TokenKind::Unknown, span);
                 let fake_close = Spanned::new(TokenKind::Unknown, span);
@@ -199,9 +205,11 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_eof(&mut self) {
-        if let TokenKind::Eof = self.peek().value {} else {
+        if let TokenKind::Eof = self.peek().value {
+        } else {
             let span = self.peek().span;
-            self.diag.report_span(Severity::Error, "unexpected extra token", span);
+            self.diag
+                .report_span(Severity::Error, "unexpected extra token", span);
         }
     }
 
@@ -209,7 +217,8 @@ impl<'a> Parser<'a> {
         match self.consume_if_id() {
             None => {
                 let span = self.peek().span.clone();
-                self.diag.report_span(Severity::Error, "expected identifier", span.clone());
+                self.diag
+                    .report_span(Severity::Error, "expected identifier", span.clone());
                 // Error recovery
                 Ident::new("".to_owned(), span)
             }
@@ -222,7 +231,11 @@ impl<'a> Parser<'a> {
         match self.consume_if(token) {
             None => {
                 let span = self.peek().span.clone();
-                self.diag.report_span(Severity::Error, format!("expected token {:?}", token), span.clone());
+                self.diag.report_span(
+                    Severity::Error,
+                    format!("expected token {:?}", token),
+                    span.clone(),
+                );
                 // Error recovery
                 Spanned::new(TokenKind::Unknown, span)
             }
@@ -248,14 +261,12 @@ impl<'a> Parser<'a> {
                     None => {
                         self.diag.report_fatal(
                             format!("{} support is not completed yet", T::name()),
-                            span
+                            span,
                         );
                     }
                     Some(v) => {
-                        self.diag.report_error(
-                            format!("expected {}", T::name()),
-                            span
-                        );
+                        self.diag
+                            .report_error(format!("expected {}", T::name()), span);
                         v
                     }
                 }
@@ -265,36 +276,31 @@ impl<'a> Parser<'a> {
     }
 
     /// Unwrap `Option` with sensible error message
-    fn parse_unwrap<T: AstNode, F: FnOnce(&mut Self) -> Option<T>> (
-        &mut self, f: F
-    ) -> T {
+    fn parse_unwrap<T: AstNode, F: FnOnce(&mut Self) -> Option<T>>(&mut self, f: F) -> T {
         let result = f(self);
         self.unwrap(result)
     }
 
     /// Expect the next token tree to be a delimited group, parse it with given function.
-    fn parse_delim<T, F: FnMut(&mut Self) -> T>(
-        &mut self, delim: Delim, f: F
-    ) -> T {
+    fn parse_delim<T, F: FnMut(&mut Self) -> T>(&mut self, delim: Delim, f: F) -> T {
         let delim = self.expect_delim(delim);
         self.delim_group(delim, f)
     }
 
     /// Expect the next token tree to be a delimited group, parse it with given function.
     fn parse_delim_spanned<T, F: FnMut(&mut Self) -> T>(
-        &mut self, delim: Delim, f: F
+        &mut self,
+        delim: Delim,
+        f: F,
     ) -> Spanned<T> {
         let span = self.peek().span;
         let delim = self.expect_delim(delim);
         Spanned::new(self.delim_group(delim, f), span)
     }
 
-
     /// If the next token tree to be a delimited group, parse it with given function, otherwise
     /// return `None`.
-    fn parse_if_delim<T, F: FnMut(&mut Self) -> T>(
-        &mut self, delim: Delim, f: F
-    ) -> Option<T> {
+    fn parse_if_delim<T, F: FnMut(&mut Self) -> T>(&mut self, delim: Delim, f: F) -> Option<T> {
         match self.consume_if_delim(delim) {
             None => None,
             Some(v) => Some(self.delim_group(v, f)),
@@ -304,7 +310,9 @@ impl<'a> Parser<'a> {
     /// If the next token tree to be a delimited group, parse it with given function, otherwise
     /// return `None`.
     fn parse_if_delim_spanned<T, F: FnMut(&mut Self) -> T>(
-        &mut self, delim: Delim, f: F
+        &mut self,
+        delim: Delim,
+        f: F,
     ) -> Option<Spanned<T>> {
         match **self.peek() {
             TokenKind::DelimGroup(d, _) if d == delim => (),
@@ -336,7 +344,10 @@ impl<'a> Parser<'a> {
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
     fn parse_comma_list<T, F: FnMut(&mut Self) -> Option<T>>(
-        &mut self, empty: bool, trail: bool, mut f: F
+        &mut self,
+        empty: bool,
+        trail: bool,
+        mut f: F,
     ) -> Vec<T> {
         let mut vec = Vec::new();
 
@@ -347,9 +358,10 @@ impl<'a> Parser<'a> {
                 // If we failed and this is the first element, then we get an empty list
                 if !empty {
                     let span = self.peek().span.clone();
-                    self.diag.report_span(Severity::Error, "empty list not allowed", span);
+                    self.diag
+                        .report_span(Severity::Error, "empty list not allowed", span);
                 }
-                return vec
+                return vec;
             }
             Some(v) => vec.push(v),
         }
@@ -368,7 +380,7 @@ impl<'a> Parser<'a> {
                         self.diag.report_span(
                             Severity::Error,
                             "trailing comma is not allowed; consider removing it",
-                            comma.span
+                            comma.span,
                         );
                     }
                     break;
@@ -385,16 +397,20 @@ impl<'a> Parser<'a> {
     /// * `empty`: If true, empty list is allowed
     /// * `trail`: If true, trailing comma is allowed
     fn parse_comma_list_unit<F: FnMut(&mut Self) -> bool>(
-        &mut self, empty: bool, trail: bool, mut f: F
+        &mut self,
+        empty: bool,
+        trail: bool,
+        mut f: F,
     ) {
         // Parse first element
         if !f(self) {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span.clone();
-                self.diag.report_span(Severity::Error, "empty list not allowed", span);
+                self.diag
+                    .report_span(Severity::Error, "empty list not allowed", span);
             }
-            return
+            return;
         }
 
         loop {
@@ -409,7 +425,7 @@ impl<'a> Parser<'a> {
                     self.diag.report_span(
                         Severity::Error,
                         "trailing comma is not allowed; consider removing it",
-                        comma.span
+                        comma.span,
                     );
                 }
                 break;
@@ -419,16 +435,21 @@ impl<'a> Parser<'a> {
 
     /// Parse a seperated list, but do not attempt to build a vector.
     fn parse_sep_list_unit<F: FnMut(&mut Self) -> bool>(
-        &mut self, sep: TokenKind, empty: bool, trail: bool, mut f: F
+        &mut self,
+        sep: TokenKind,
+        empty: bool,
+        trail: bool,
+        mut f: F,
     ) {
         // Parse first element
         if !f(self) {
             // If we failed and this is the first element, then we get an empty list
             if !empty {
                 let span = self.peek().span;
-                self.diag.report_span(Severity::Error, "empty list not allowed", span);
+                self.diag
+                    .report_span(Severity::Error, "empty list not allowed", span);
             }
-            return
+            return;
         }
 
         loop {
@@ -443,7 +464,7 @@ impl<'a> Parser<'a> {
                     self.diag.report_span(
                         Severity::Error,
                         format!("trailing {:#?} is not allowed; consider removing it", sep),
-                        comma.span
+                        comma.span,
                     );
                 }
                 break;
@@ -452,9 +473,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Check if the list contains invalid elements, and remove them.
-    fn check_list<T, F: FnMut(&mut Self, &T) -> bool>(
-        &mut self, list: &mut Vec<T>, mut f: F
-    ) {
+    fn check_list<T, F: FnMut(&mut Self, &T) -> bool>(&mut self, list: &mut Vec<T>, mut f: F) {
         list.retain(|x| f(self, x));
     }
 
@@ -536,14 +555,14 @@ impl<'a> Parser<'a> {
     fn parse_item_opt(&mut self) -> Option<Item> {
         let attr = self.parse_attr_inst_opt();
         match self.peek().value {
-            TokenKind::Eof |
-            TokenKind::Keyword(Keyword::Endmodule) |
-            TokenKind::Keyword(Keyword::Endprimitive) |
-            TokenKind::Keyword(Keyword::Endinterface) |
-            TokenKind::Keyword(Keyword::Endprogram) |
-            TokenKind::Keyword(Keyword::Endpackage) |
-            TokenKind::Keyword(Keyword::Endgenerate) |
-            TokenKind::Keyword(Keyword::End) => None,
+            TokenKind::Eof
+            | TokenKind::Keyword(Keyword::Endmodule)
+            | TokenKind::Keyword(Keyword::Endprimitive)
+            | TokenKind::Keyword(Keyword::Endinterface)
+            | TokenKind::Keyword(Keyword::Endprogram)
+            | TokenKind::Keyword(Keyword::Endpackage)
+            | TokenKind::Keyword(Keyword::Endgenerate)
+            | TokenKind::Keyword(Keyword::End) => None,
             // Externs are parsed together (even though they're not currently supported yet)
             TokenKind::Keyword(Keyword::Extern) => {
                 let span = self.peek().span;
@@ -553,26 +572,25 @@ impl<'a> Parser<'a> {
                 // IMP: This can also be DPI import
                 Some(Item::PkgImport(self.parse_pkg_import_decl()))
             }
-            TokenKind::Keyword(Keyword::Parameter) |
-            TokenKind::Keyword(Keyword::Localparam) => {
+            TokenKind::Keyword(Keyword::Parameter) | TokenKind::Keyword(Keyword::Localparam) => {
                 Some(Item::ParamDecl(Box::new(self.parse_param_decl())))
             }
             // module_declaration
-            TokenKind::Keyword(Keyword::Module) => {
-                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Module, Keyword::Endmodule))))
-            }
+            TokenKind::Keyword(Keyword::Module) => Some(Item::DesignDecl(Box::new(
+                self.parse_design_unit(attr, Keyword::Module, Keyword::Endmodule),
+            ))),
             // udp_declaration
-            TokenKind::Keyword(Keyword::Primitive) => {
-                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Primitive, Keyword::Endprimitive))))
-            }
+            TokenKind::Keyword(Keyword::Primitive) => Some(Item::DesignDecl(Box::new(
+                self.parse_design_unit(attr, Keyword::Primitive, Keyword::Endprimitive),
+            ))),
             // interface_declaration
-            TokenKind::Keyword(Keyword::Interface) => {
-                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Interface, Keyword::Endinterface))))
-            }
+            TokenKind::Keyword(Keyword::Interface) => Some(Item::DesignDecl(Box::new(
+                self.parse_design_unit(attr, Keyword::Interface, Keyword::Endinterface),
+            ))),
             // program_declaration
-            TokenKind::Keyword(Keyword::Program) => {
-                Some(Item::DesignDecl(Box::new(self.parse_design_unit(attr, Keyword::Program, Keyword::Endprogram))))
-            }
+            TokenKind::Keyword(Keyword::Program) => Some(Item::DesignDecl(Box::new(
+                self.parse_design_unit(attr, Keyword::Program, Keyword::Endprogram),
+            ))),
             // package_declaration
             TokenKind::Keyword(Keyword::Package) => {
                 self.consume();
@@ -599,7 +617,10 @@ impl<'a> Parser<'a> {
                 // still requires tools to support it. Defparam is a disaster to implement
                 // properly.
                 let span = self.peek().span;
-                self.diag.report_fatal("defparam is deprecated, and is not supported by this tool.", span);
+                self.diag.report_fatal(
+                    "defparam is deprecated, and is not supported by this tool.",
+                    span,
+                );
             }
             // continuous_assign
             TokenKind::Keyword(Keyword::Assign) => Some(self.parse_continuous_assign()),
@@ -614,7 +635,11 @@ impl<'a> Parser<'a> {
             // generate_region
             TokenKind::Keyword(Keyword::Generate) => {
                 let kw = self.consume();
-                self.diag.report_span(Severity::Warning, "there is no need for generate region", kw.span);
+                self.diag.report_span(
+                    Severity::Warning,
+                    "there is no need for generate region",
+                    kw.span,
+                );
                 let list = self.parse_list(Self::parse_item_opt);
                 self.expect(TokenKind::Keyword(Keyword::Endgenerate));
                 Some(Item::GenRegion(list))
@@ -626,7 +651,8 @@ impl<'a> Parser<'a> {
             // case_generate_construct
             TokenKind::CaseKw(CaseKw::Case) => {
                 let span = self.peek().span;
-                self.diag.report_fatal("case_generate_construct is not supported", span);
+                self.diag
+                    .report_fatal("case_generate_construct is not supported", span);
             }
             // elaboration_system_task
             TokenKind::SystemTask(_) => {
@@ -638,56 +664,53 @@ impl<'a> Parser<'a> {
                     // literal we relax a little bit here and delay it until elaboration.
                     "fatal" | "error" | "warning" | "info" => (),
                     _ => {
-                        self.diag.report_error("only elaboration system task can appear as an item", tf.task.span);
+                        self.diag.report_error(
+                            "only elaboration system task can appear as an item",
+                            tf.task.span,
+                        );
                     }
                 }
                 self.expect(TokenKind::Semicolon);
                 Some(Item::SysTfCall(Box::new(tf)))
             }
             // modport_declaration
-            TokenKind::Keyword(Keyword::Modport) => {
-                Some(self.parse_modport_decl(attr))
-            }
+            TokenKind::Keyword(Keyword::Modport) => Some(self.parse_modport_decl(attr)),
             // net_declaration
             TokenKind::Keyword(Keyword::Interconnect) => {
                 unimplemented!();
             }
             // also net_declaration
-            TokenKind::NetTy(_) => {
-                Some(Item::NetDecl(Box::new(self.parse_net_decl(attr))))
-            }
+            TokenKind::NetTy(_) => Some(Item::NetDecl(Box::new(self.parse_net_decl(attr)))),
             // typedef
             TokenKind::Keyword(Keyword::Typedef) => Some(self.parse_typedef(attr)),
             // data_declaration. Either begin with const/var or explicit data type.
-            TokenKind::Keyword(Keyword::Const) |
-            TokenKind::Keyword(Keyword::Var) |
-            TokenKind::Keyword(Keyword::Automatic) |
-            TokenKind::Keyword(Keyword::Static) |
-            TokenKind::IntAtomTy(_) |
-            TokenKind::IntVecTy(_) |
-            TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::RealTy(_) |
-            TokenKind::Keyword(Keyword::Struct) |
-            TokenKind::Keyword(Keyword::Union) |
-            TokenKind::Keyword(Keyword::Enum) |
-            TokenKind::Keyword(Keyword::String) |
-            TokenKind::Keyword(Keyword::Chandle) |
-            TokenKind::Keyword(Keyword::Virtual) |
-            TokenKind::Keyword(Keyword::Event) |
-            TokenKind::Keyword(Keyword::Type) |
-            TokenKind::Keyword(Keyword::Void) => {
+            TokenKind::Keyword(Keyword::Const)
+            | TokenKind::Keyword(Keyword::Var)
+            | TokenKind::Keyword(Keyword::Automatic)
+            | TokenKind::Keyword(Keyword::Static)
+            | TokenKind::IntAtomTy(_)
+            | TokenKind::IntVecTy(_)
+            | TokenKind::Keyword(Keyword::Reg)
+            | TokenKind::RealTy(_)
+            | TokenKind::Keyword(Keyword::Struct)
+            | TokenKind::Keyword(Keyword::Union)
+            | TokenKind::Keyword(Keyword::Enum)
+            | TokenKind::Keyword(Keyword::String)
+            | TokenKind::Keyword(Keyword::Chandle)
+            | TokenKind::Keyword(Keyword::Virtual)
+            | TokenKind::Keyword(Keyword::Event)
+            | TokenKind::Keyword(Keyword::Type)
+            | TokenKind::Keyword(Keyword::Void) => {
                 Some(Item::DataDecl(Box::new(self.parse_data_decl(attr))))
             }
-            TokenKind::Id(_) => {
-                match self.disambiguate_item() {
-                    ItemDAB::HierInst => Some(self.parse_instantiation(attr)),
-                    ItemDAB::DataDecl => Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)))),
-                    _ => {
-                        let clone = self.peek().span.clone();
-                        self.diag.report_fatal("not implemented", clone);
-                    }
+            TokenKind::Id(_) => match self.disambiguate_item() {
+                ItemDAB::HierInst => Some(self.parse_instantiation(attr)),
+                ItemDAB::DataDecl => Some(Item::DataDecl(Box::new(self.parse_data_decl(attr)))),
+                _ => {
+                    let clone = self.peek().span.clone();
+                    self.diag.report_fatal("not implemented", clone);
                 }
-            }
+            },
             _ => {
                 let clone = self.peek().span.clone();
                 self.diag.report_fatal("not implemented", clone);
@@ -733,14 +756,16 @@ impl<'a> Parser<'a> {
                 None => self.diag.report_span(
                     Severity::Error,
                     "identifer annotation at end does match declaration, should be empty",
-                    id.span
+                    id.span,
                 ),
-                Some(v) => if **v != *id {
-                    self.diag.report_span(
+                Some(v) => {
+                    if **v != *id {
+                        self.diag.report_span(
                         Severity::Error,
                         format!("identifer annotation at end does match declaration, should be '{}'", v),
                         id.span
                     )
+                    }
                 }
             }
         }
@@ -778,7 +803,12 @@ impl<'a> Parser<'a> {
     ///   module_header { item } endmodule [ : module_identifier ]
     /// ```
     /// TODO: We will need to check if items can legally appear in here.
-    fn parse_design_unit(&mut self, attr: Option<Box<AttrInst>>, kw: Keyword, end_kw: Keyword) -> DesignDecl {
+    fn parse_design_unit(
+        &mut self,
+        attr: Option<Box<AttrInst>>,
+        kw: Keyword,
+        end_kw: Keyword,
+    ) -> DesignDecl {
         self.consume();
         let lifetime = self.parse_lifetime();
         let name = self.expect_id();
@@ -829,7 +859,7 @@ impl<'a> Parser<'a> {
     ///   [ parameter | localparam ] [ data_type_or_implicit | type ] param_assignment
     fn parse_param_port_list(&mut self) -> Option<Vec<ParamDecl>> {
         if self.consume_if(TokenKind::Hash).is_none() {
-            return None
+            return None;
         }
 
         self.parse_delim(Delim::Paren, |this| {
@@ -839,21 +869,24 @@ impl<'a> Parser<'a> {
             let mut param_decl = ParamDecl {
                 kw: Keyword::Parameter,
                 ty: None,
-                list: Vec::new()
+                list: Vec::new(),
             };
 
             this.parse_comma_list_unit(true, false, |this| {
                 // If a new keyword is seen update it.
                 match **this.peek() {
                     TokenKind::Eof => return false,
-                    TokenKind::Keyword(e @ Keyword::Parameter) |
-                    TokenKind::Keyword(e @ Keyword::Localparam) => {
+                    TokenKind::Keyword(e @ Keyword::Parameter)
+                    | TokenKind::Keyword(e @ Keyword::Localparam) => {
                         this.consume();
-                        let old_decl = mem::replace(&mut param_decl, ParamDecl {
-                            kw: e,
-                            ty: None,
-                            list: Vec::new()
-                        });
+                        let old_decl = mem::replace(
+                            &mut param_decl,
+                            ParamDecl {
+                                kw: e,
+                                ty: None,
+                                list: Vec::new(),
+                            },
+                        );
                         if !old_decl.list.is_empty() {
                             vec.push(old_decl);
                         }
@@ -865,11 +898,14 @@ impl<'a> Parser<'a> {
                 let (ty, assign) = this.parse_data_type_decl_assign();
                 if let Some(v) = ty {
                     let kw = param_decl.kw;
-                    let old_decl = mem::replace(&mut param_decl, ParamDecl {
-                        kw,
-                        ty: Some(Box::new(v)),
-                        list: Vec::new()
-                    });
+                    let old_decl = mem::replace(
+                        &mut param_decl,
+                        ParamDecl {
+                            kw,
+                            ty: Some(Box::new(v)),
+                            list: Vec::new(),
+                        },
+                    );
                     if !old_decl.list.is_empty() {
                         vec.push(old_decl);
                     }
@@ -911,12 +947,13 @@ impl<'a> Parser<'a> {
     fn parse_port_list(&mut self) -> Option<Vec<PortDecl>> {
         self.parse_if_delim(Delim::Paren, |this| {
             if let Some(v) = this.consume_if(TokenKind::WildPattern) {
-                this.diag.report_fatal("(.*) port declaration is not supported", v.span);
+                this.diag
+                    .report_fatal("(.*) port declaration is not supported", v.span);
             }
 
             // If there are no ports, it doesn't matter about which style we're using.
             if this.consume_if_eof().is_some() {
-                return Vec::new()
+                return Vec::new();
             }
 
             let mut ansi = true;
@@ -925,7 +962,7 @@ impl<'a> Parser<'a> {
 
             this.parse_comma_list_unit(true, false, |this| {
                 if this.consume_if_eof().is_some() {
-                    return false
+                    return false;
                 }
 
                 let dirsp = this.peek().span.clone();
@@ -936,7 +973,7 @@ impl<'a> Parser<'a> {
                     match this.peek().value {
                         TokenKind::DelimGroup(Delim::Brace, _) => {
                             ansi = false;
-                            return false
+                            return false;
                         }
                         _ => (),
                     }
@@ -945,23 +982,22 @@ impl<'a> Parser<'a> {
                 // Explicit port declaration
                 if let Some(_) = this.consume_if(TokenKind::Dot) {
                     let name = Box::new(this.expect_id());
-                    let expr = Box::new(this.parse_unwrap(|this| {
-                        this.parse_delim(Delim::Paren, Self::parse_expr_opt)
-                    }));
+                    let expr =
+                        Box::new(this.parse_unwrap(|this| {
+                            this.parse_delim(Delim::Paren, Self::parse_expr_opt)
+                        }));
 
                     // If not specified, default to inout
-                    let dir = dir.unwrap_or_else(|| {
-                        match prev {
-                            None | Some(PortDecl::Interface(..)) => PortDir::Inout,
-                            Some(PortDecl::Data(dir, ..)) | Some(PortDecl::Explicit(dir, ..)) => dir,
-                        }
+                    let dir = dir.unwrap_or_else(|| match prev {
+                        None | Some(PortDecl::Interface(..)) => PortDir::Inout,
+                        Some(PortDecl::Data(dir, ..)) | Some(PortDecl::Explicit(dir, ..)) => dir,
                     });
 
                     let decl = PortDecl::Explicit(dir, name, expr);
                     if let Some(v) = mem::replace(&mut prev, Some(decl)) {
                         vec.push(v);
                     }
-                    return true
+                    return true;
                 }
 
                 // First try parse this as an interface port. Note that `interface_name id` is not
@@ -1008,7 +1044,7 @@ impl<'a> Parser<'a> {
                         this.diag.report_span(
                             Severity::Error,
                             "interface declaration should not be specified together with direction",
-                            dirsp
+                            dirsp,
                         );
                     }
                     let decl = PortDecl::Interface(a, b, vec![this.parse_decl_assign()]);
@@ -1043,8 +1079,8 @@ impl<'a> Parser<'a> {
                 // Nothing specified, inherit everything
                 if dir.is_none() && net.is_none() && dtype.is_none() {
                     match prev.as_mut().unwrap() {
-                        PortDecl::Data(_, _, _, ref mut l) |
-                        PortDecl::Interface(_, _, ref mut l) => {
+                        PortDecl::Data(_, _, _, ref mut l)
+                        | PortDecl::Interface(_, _, ref mut l) => {
                             l.push(assign);
                             return true;
                         }
@@ -1054,33 +1090,27 @@ impl<'a> Parser<'a> {
                 }
 
                 // If not specified, default to inout
-                let dir = dir.unwrap_or_else(|| {
-                    match prev {
-                        None | Some(PortDecl::Interface(..)) => PortDir::Inout,
-                        Some(PortDecl::Data(dir, ..)) | Some(PortDecl::Explicit(dir, ..)) => dir,
-                    }
+                let dir = dir.unwrap_or_else(|| match prev {
+                    None | Some(PortDecl::Interface(..)) => PortDir::Inout,
+                    Some(PortDecl::Data(dir, ..)) | Some(PortDecl::Explicit(dir, ..)) => dir,
                 });
 
                 // If not specified, default to default nettype or variable
-                let net = net.unwrap_or_else(|| {
-                    match dir {
-                        PortDir::Input | PortDir::Inout => NetPortType::Default,
-                        PortDir::Output => match dtype.as_ref() {
-                            None => NetPortType::Default,
-                            Some(v) => match **v {
-                                DataTypeKind::Implicit(..) => NetPortType::Default,
-                                _ => NetPortType::Variable,
-                            }
-                        }
-                        PortDir::Ref => NetPortType::Variable,
-                    }
+                let net = net.unwrap_or_else(|| match dir {
+                    PortDir::Input | PortDir::Inout => NetPortType::Default,
+                    PortDir::Output => match dtype.as_ref() {
+                        None => NetPortType::Default,
+                        Some(v) => match **v {
+                            DataTypeKind::Implicit(..) => NetPortType::Default,
+                            _ => NetPortType::Variable,
+                        },
+                    },
+                    PortDir::Ref => NetPortType::Variable,
                 });
 
                 // Default to implicit wire
                 let dtype = Box::new(dtype.unwrap_or_else(|| {
-                    Spanned::new(
-                        DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), dirsp
-                    )
+                    Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), dirsp)
                 }));
 
                 let decl = PortDecl::Data(dir, net, dtype, vec![assign]);
@@ -1088,12 +1118,13 @@ impl<'a> Parser<'a> {
                     vec.push(v);
                 }
 
-                return true
+                return true;
             });
 
             if !ansi {
                 let span = this.peek().span.clone();
-                this.diag.report_fatal("non-ANSI port declaration is not yet supported", span);
+                this.diag
+                    .report_fatal("non-ANSI port declaration is not yet supported", span);
             }
 
             if let Some(v) = prev {
@@ -1135,7 +1166,7 @@ impl<'a> Parser<'a> {
         ParamDecl {
             kw,
             ty: ty.map(Box::new),
-            list
+            list,
         }
     }
 
@@ -1153,8 +1184,10 @@ impl<'a> Parser<'a> {
             attr,
             has_const,
             lifetime,
-            ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
-            list
+            ty: ty.unwrap_or_else(|| {
+                Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))
+            }),
+            list,
         }
     }
 
@@ -1181,8 +1214,10 @@ impl<'a> Parser<'a> {
         NetDecl {
             attr,
             net,
-            ty: ty.unwrap_or_else(|| Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))),
-            list
+            ty: ty.unwrap_or_else(|| {
+                Spanned::new_unspanned(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()))
+            }),
+            list,
         }
     }
 
@@ -1202,10 +1237,10 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            TokenKind::Keyword(Keyword::Enum) |
-            TokenKind::Keyword(Keyword::Struct) |
-            TokenKind::Keyword(Keyword::Union) |
-            TokenKind::Keyword(Keyword::Class) => {
+            TokenKind::Keyword(Keyword::Enum)
+            | TokenKind::Keyword(Keyword::Struct)
+            | TokenKind::Keyword(Keyword::Union)
+            | TokenKind::Keyword(Keyword::Class) => {
                 if let TokenKind::Id(_) = **self.peek_n(1) {
                     if let TokenKind::Semicolon = **self.peek_n(2) {
                         // This is a forward typedef
@@ -1224,12 +1259,7 @@ impl<'a> Parser<'a> {
                 let intf = *intf;
                 let id = self.expect_id();
                 self.expect(TokenKind::Semicolon);
-                Item::TypedefIntf(
-                    attr,
-                    Box::new(intf),
-                    ty,
-                    Box::new(id)
-                )
+                Item::TypedefIntf(attr, Box::new(intf), ty, Box::new(id))
             }
             _ => {
                 let span = expr.span;
@@ -1237,7 +1267,7 @@ impl<'a> Parser<'a> {
                     None => {
                         self.diag.report_fatal("expected data type", span);
                         // TODO: Error recovery
-                    },
+                    }
                     Some(v) => v,
                 };
                 let id = self.expect_id();
@@ -1250,7 +1280,10 @@ impl<'a> Parser<'a> {
 
     /// Parse a package import declaration
     fn parse_pkg_import_decl_opt(&mut self) -> Option<Vec<PkgImportItem>> {
-        if self.consume_if(TokenKind::Keyword(Keyword::Import)).is_none() {
+        if self
+            .consume_if(TokenKind::Keyword(Keyword::Import))
+            .is_none()
+        {
             return None;
         }
         let list = self.parse_comma_list(false, false, Self::parse_pkg_import_item_opt);
@@ -1306,7 +1339,8 @@ impl<'a> Parser<'a> {
         match self.conv_expr_to_type(expr) {
             Some(v) => v,
             None => {
-                self.diag.report_span(Severity::Error, "expected data type", span);
+                self.diag
+                    .report_span(Severity::Error, "expected data type", span);
                 // Error recovery
                 Spanned::new(DataTypeKind::Implicit(Signing::Unsigned, Vec::new()), span)
             }
@@ -1319,7 +1353,8 @@ impl<'a> Parser<'a> {
         let span = expr.span;
         let dtype = match self.conv_expr_to_type(expr) {
             None => {
-                self.diag.report_fatal("expected data type or identifier", span);
+                self.diag
+                    .report_fatal("expected data type or identifier", span);
                 // TODO: Do error recovery here.
             }
             Some(v) => v,
@@ -1332,11 +1367,7 @@ impl<'a> Parser<'a> {
                     None => None,
                     Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                 };
-                (Some(dtype), DeclAssign {
-                    name,
-                    dim,
-                    init
-                })
+                (Some(dtype), DeclAssign { name, dim, init })
             }
             None => {
                 match self.conv_type_to_id(dtype) {
@@ -1345,14 +1376,11 @@ impl<'a> Parser<'a> {
                             None => None,
                             Some(_) => Some(Box::new(self.parse_unwrap(Self::parse_expr_opt))),
                         };
-                        (None, DeclAssign {
-                            name,
-                            dim,
-                            init
-                        })
+                        (None, DeclAssign { name, dim, init })
                     }
                     None => {
-                        self.diag.report_fatal("data type should be followed by an identifier", span);
+                        self.diag
+                            .report_fatal("data type should be followed by an identifier", span);
                         // TODO: Error recovery
                     }
                 }
@@ -1365,13 +1393,11 @@ impl<'a> Parser<'a> {
         let (ty, assign) = self.parse_data_type_decl_assign();
         let mut list = vec![assign];
         if self.check(TokenKind::Comma) {
-            self.parse_comma_list_unit(false, false, |this| {
-                match this.parse_decl_assign_opt() {
-                    None => false,
-                    Some(v) => {
-                        list.push(v);
-                        true
-                    }
+            self.parse_comma_list_unit(false, false, |this| match this.parse_decl_assign_opt() {
+                None => false,
+                Some(v) => {
+                    list.push(v);
+                    true
                 }
             });
         }
@@ -1432,8 +1458,7 @@ impl<'a> Parser<'a> {
     /// ```
     fn parse_kw_data_type(&mut self) -> DataType {
         match **self.peek() {
-            TokenKind::IntVecTy(_) |
-            TokenKind::Keyword(Keyword::Reg) => {
+            TokenKind::IntVecTy(_) | TokenKind::Keyword(Keyword::Reg) => {
                 // This makes Keyword::Reg turn into IntVecTy::Logic
                 let kw = self.consume();
                 let mut span = kw.span;
@@ -1474,8 +1499,9 @@ impl<'a> Parser<'a> {
                 let span = self.consume().span;
                 Spanned::new(DataTypeKind::Real(ty), span)
             }
-            TokenKind::Keyword(Keyword::Struct) |
-            TokenKind::Keyword(Keyword::Union) => self.parse_aggr_decl(),
+            TokenKind::Keyword(Keyword::Struct) | TokenKind::Keyword(Keyword::Union) => {
+                self.parse_aggr_decl()
+            }
             TokenKind::Keyword(Keyword::Enum) => self.parse_enum_decl(),
             TokenKind::Keyword(Keyword::String) => {
                 let span = self.consume().span;
@@ -1497,7 +1523,10 @@ impl<'a> Parser<'a> {
                 let token = self.consume();
                 match self.parse_if_delim_spanned(Delim::Paren, Self::parse_expr) {
                     None => Spanned::new(DataTypeKind::Type, token.span),
-                    Some(v) => Spanned::new(DataTypeKind::TypeRef(Box::new(v.value)), token.span.merge(v.span)),
+                    Some(v) => Spanned::new(
+                        DataTypeKind::TypeRef(Box::new(v.value)),
+                        token.span.merge(v.span),
+                    ),
                 }
             }
             TokenKind::Keyword(Keyword::Void) => {
@@ -1527,14 +1556,15 @@ impl<'a> Parser<'a> {
     fn parse_aggr_decl(&mut self) -> DataType {
         let (token, kind) = match **self.peek() {
             TokenKind::Keyword(Keyword::Struct) => (self.consume(), AggrType::Struct),
-            TokenKind::Keyword(Keyword::Union) => {
-                (self.consume(), if self.check(TokenKind::Keyword(Keyword::Tagged)) {
+            TokenKind::Keyword(Keyword::Union) => (
+                self.consume(),
+                if self.check(TokenKind::Keyword(Keyword::Tagged)) {
                     AggrType::TaggedUnion
                 } else {
                     AggrType::Union
-                })
-            }
-            _ => unimplemented!()
+                },
+            ),
+            _ => unimplemented!(),
         };
         let packed = self.check(TokenKind::Keyword(Keyword::Packed));
         let sign = self.parse_signing();
@@ -1547,8 +1577,7 @@ impl<'a> Parser<'a> {
                 }
                 let attr = this.parse_attr_inst_opt();
                 match **this.peek() {
-                    TokenKind::Keyword(Keyword::Rand) |
-                    TokenKind::Keyword(Keyword::Randc) => {
+                    TokenKind::Keyword(Keyword::Rand) | TokenKind::Keyword(Keyword::Randc) => {
                         this.unimplemented();
                     }
                     _ => (),
@@ -1558,16 +1587,13 @@ impl<'a> Parser<'a> {
                 this.expect(TokenKind::Semicolon);
                 let ty = match ty {
                     None => {
-                        this.diag.report_fatal("data type of aggregate member cannot be implicit", span);
+                        this.diag
+                            .report_fatal("data type of aggregate member cannot be implicit", span);
                         // TODO: Error recovery
                     }
                     Some(v) => v,
                 };
-                Some(AggrMember {
-                    attr,
-                    ty,
-                    list,
-                })
+                Some(AggrMember { attr, ty, list })
             })
         });
         let mut span = token.span.merge(members.span);
@@ -1576,18 +1602,26 @@ impl<'a> Parser<'a> {
             span = span.merge(v.span);
         }
         self.check_list(&mut dim, Self::check_packed_dim);
-        Spanned::new(DataTypeKind::Aggr(AggrDecl {
-            kind,
-            packed,
-            sign,
-            members: members.value
-        }, dim), span)
+        Spanned::new(
+            DataTypeKind::Aggr(
+                AggrDecl {
+                    kind,
+                    packed,
+                    sign,
+                    members: members.value,
+                },
+                dim,
+            ),
+            span,
+        )
     }
 
     /// Parse a enum declaration.
     fn parse_enum_decl(&mut self) -> DataType {
         let token = self.consume();
-        let base = if let TokenKind::DelimGroup(Delim::Brace, _) = **self.peek() { None } else {
+        let base = if let TokenKind::DelimGroup(Delim::Brace, _) = **self.peek() {
+            None
+        } else {
             Some(Box::new(self.parse_data_type()))
         };
         let members = self.parse_delim_spanned(Delim::Brace, |this| {
@@ -1600,102 +1634,110 @@ impl<'a> Parser<'a> {
         // if the dimensions are valid.
         for assign in &members.value {
             // The most common case where there are no dimensions. It is valid.
-            if assign.dim.is_empty() { continue; }
+            if assign.dim.is_empty() {
+                continue;
+            }
 
             // Multiple dimensions are illegal
             if assign.dim.len() > 1 {
                 self.diag.report_span(
                     Severity::Error,
                     "multiple dimensions are not allowed in enumeration",
-                    assign.dim[1].span
+                    assign.dim[1].span,
                 );
             }
 
             // Check that the dimension values are integral literals.
             match assign.dim[0].value {
-                DimKind::AssocWild |
-                DimKind::PlusRange(..) |
-                DimKind::MinusRange(..) |
-                DimKind::Unsized => {
+                DimKind::AssocWild
+                | DimKind::PlusRange(..)
+                | DimKind::MinusRange(..)
+                | DimKind::Unsized => {
                     self.diag.report_span(
                         Severity::Error,
                         "this type of dimension is not allowed in enumeration",
-                        assign.dim[0].span
+                        assign.dim[0].span,
                     );
                 }
                 DimKind::Value(ref v) => {
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(ref val), ..
-                    }) = v.value {
+                        value: TokenKind::IntegerLiteral(ref val),
+                        ..
+                    }) = v.value
+                    {
                         if !val.value.is_two_state() {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
-                                v.span
+                                v.span,
                             );
                         }
                         if val.value.cmp_with_zero() != std::cmp::Ordering::Greater {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be positive",
-                                v.span
+                                v.span,
                             );
                         }
                     } else {
                         self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in generated names",
-                            v.span
+                            v.span,
                         );
                     }
                 }
                 DimKind::Range(ref ub, ref lb) => {
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(ref val), ..
-                    }) = ub.value {
+                        value: TokenKind::IntegerLiteral(ref val),
+                        ..
+                    }) = ub.value
+                    {
                         if !val.value.is_two_state() {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
-                                ub.span
+                                ub.span,
                             );
                         }
                         if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be non-negative",
-                                ub.span
+                                ub.span,
                             );
                         }
                     } else {
                         self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in generated names",
-                            ub.span
+                            ub.span,
                         );
                     }
                     if let ExprKind::Literal(Spanned {
-                        value: TokenKind::IntegerLiteral(ref val), ..
-                    }) = lb.value {
+                        value: TokenKind::IntegerLiteral(ref val),
+                        ..
+                    }) = lb.value
+                    {
                         if !val.value.is_two_state() {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be two state",
-                                lb.span
+                                lb.span,
                             );
                         }
                         if val.value.cmp_with_zero() == std::cmp::Ordering::Less {
                             self.diag.report_span(
                                 Severity::Error,
                                 "integral literals in generated names must be non-negative",
-                                ub.span
+                                ub.span,
                             );
                         }
                     } else {
                         self.diag.report_span(
                             Severity::Error,
                             "only integral literals are allowed in enumeration",
-                            lb.span
+                            lb.span,
                         );
                     }
                 }
@@ -1707,10 +1749,16 @@ impl<'a> Parser<'a> {
             span = span.merge(v.span);
         }
         self.check_list(&mut dim, Self::check_packed_dim);
-        Spanned::new(DataTypeKind::Enum(EnumDecl {
-            ty: base,
-            members: members.value
-        }, dim), span)
+        Spanned::new(
+            DataTypeKind::Enum(
+                EnumDecl {
+                    ty: base,
+                    members: members.value,
+                },
+                dim,
+            ),
+            span,
+        )
     }
 
     /// Convert an expression to a type. Useful when we try to parse thing as expression first due
@@ -1731,11 +1779,17 @@ impl<'a> Parser<'a> {
                 let (scope, name) = match id {
                     HierId::Name(scope, name) => (scope, *name),
                     _ => {
-                        self.diag.report_error("hierachical identifier cannot appear in data type", expr.span);
+                        self.diag.report_error(
+                            "hierachical identifier cannot appear in data type",
+                            expr.span,
+                        );
                         (None, Ident::new_unspanned("".to_owned()))
                     }
                 };
-                Some(Spanned::new(DataTypeKind::HierName(scope, name, dimlist), expr.span))
+                Some(Spanned::new(
+                    DataTypeKind::HierName(scope, name, dimlist),
+                    expr.span,
+                ))
             }
             _ => None,
         }
@@ -1746,9 +1800,7 @@ impl<'a> Parser<'a> {
     fn conv_type_to_id(&mut self, ty: DataType) -> Option<(Ident, Vec<Dim>)> {
         match ty.value {
             // TODO: what about dimension
-            DataTypeKind::HierName(None, id, dim) => {
-                Some((id, dim))
-            }
+            DataTypeKind::HierName(None, id, dim) => Some((id, dim)),
             _ => None,
         }
     }
@@ -1767,7 +1819,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-
     //
     // A.2.4 Declaration assignments
     //
@@ -1785,7 +1836,7 @@ impl<'a> Parser<'a> {
             self.diag.report_span(
                 Severity::Error,
                 "this looks like a data type but it is not declared",
-                ident.span
+                ident.span,
             );
             ident = id;
             dim = self.parse_list(Self::parse_dim_opt);
@@ -1798,7 +1849,7 @@ impl<'a> Parser<'a> {
         Some(DeclAssign {
             name: ident,
             dim,
-            init
+            init,
         })
     }
 
@@ -1832,13 +1883,11 @@ impl<'a> Parser<'a> {
     fn parse_dim_opt(&mut self) -> Option<Dim> {
         self.parse_if_delim_spanned(Delim::Bracket, |this| {
             match **this.peek() {
-                TokenKind::Eof => {
-                    return DimKind::Unsized
-                }
+                TokenKind::Eof => return DimKind::Unsized,
                 TokenKind::BinaryOp(BinaryOp::Mul) => {
                     if let TokenKind::Eof = **this.peek_n(1) {
                         this.consume();
-                        return DimKind::AssocWild
+                        return DimKind::AssocWild;
                     }
                 }
                 _ => (),
@@ -1857,9 +1906,7 @@ impl<'a> Parser<'a> {
                     this.consume();
                     DimKind::MinusRange(Box::new(expr), Box::new(this.parse_expr()))
                 }
-                _ => {
-                    DimKind::Value(Box::new(expr))
-                }
+                _ => DimKind::Value(Box::new(expr)),
             }
         })
     }
@@ -1867,14 +1914,14 @@ impl<'a> Parser<'a> {
     /// Check if a dimension is a legal unpacked dimension
     fn check_unpacked_dim(&mut self, dim: &Dim) -> bool {
         match **dim {
-            DimKind::AssocWild |
-            DimKind::PlusRange(..) |
-            DimKind::MinusRange(..) |
-            DimKind::Unsized => {
+            DimKind::AssocWild
+            | DimKind::PlusRange(..)
+            | DimKind::MinusRange(..)
+            | DimKind::Unsized => {
                 self.diag.report_span(
                     Severity::Error,
                     "this type of range is not allowed in unpacked dimension context",
-                    dim.span
+                    dim.span,
                 );
                 false
             }
@@ -1885,14 +1932,14 @@ impl<'a> Parser<'a> {
     /// Check if a dimension is a legal packed dimension
     fn check_packed_dim(&mut self, dim: &Dim) -> bool {
         match **dim {
-            DimKind::AssocWild |
-            DimKind::PlusRange(..) |
-            DimKind::MinusRange(..) |
-            DimKind::Value(_) => {
+            DimKind::AssocWild
+            | DimKind::PlusRange(..)
+            | DimKind::MinusRange(..)
+            | DimKind::Value(_) => {
                 self.diag.report_span(
                     Severity::Error,
                     "this type of range is not allowed in packed dimension context",
-                    dim.span
+                    dim.span,
                 );
                 false
             }
@@ -1969,8 +2016,8 @@ impl<'a> Parser<'a> {
                             let id = this.expect_id();
                             Some(ModportPortDecl::Clocking(attr, Box::new(id)))
                         }
-                        TokenKind::Keyword(Keyword::Import) |
-                        TokenKind::Keyword(Keyword::Export) => {
+                        TokenKind::Keyword(Keyword::Import)
+                        | TokenKind::Keyword(Keyword::Export) => {
                             // modport_tf_ports_declaration
                             this.unimplemented()
                         }
@@ -2020,7 +2067,7 @@ impl<'a> Parser<'a> {
         let mut has_hash = false;
         // This is an interface port
         if let TokenKind::Dot = **self.peek_n(1) {
-            return ItemDAB::IntfPort
+            return ItemDAB::IntfPort;
         }
         // Skip over parameter assignment if any
         if let TokenKind::Hash = **self.peek_n(1) {
@@ -2030,14 +2077,14 @@ impl<'a> Parser<'a> {
             } else {
                 // Hash but no parenthesis, then the hash should be delay control.
                 // This is therefore a net_declaration
-                return ItemDAB::NetDecl
+                return ItemDAB::NetDecl;
             }
         }
         // For net declaration and instantiation, the next one must be an identifier
         if let TokenKind::Id(_) = **self.peek_n(peek) {
             peek += 1
         } else {
-            return ItemDAB::DataDecl
+            return ItemDAB::DataDecl;
         }
         // We must skip over dimension list if any
         while let TokenKind::DelimGroup(Delim::Bracket, _) = **self.peek_n(peek) {
@@ -2052,7 +2099,11 @@ impl<'a> Parser<'a> {
             // This is a data declaration or net declaration, but as the former one is most common
             // we will treat it as data declaration, as it is not hard to convert if semantic
             // analysis found out otherwise
-            if has_hash { ItemDAB::NetDecl } else { ItemDAB::DataDecl }
+            if has_hash {
+                ItemDAB::NetDecl
+            } else {
+                ItemDAB::DataDecl
+            }
         }
     }
 
@@ -2082,23 +2133,17 @@ impl<'a> Parser<'a> {
             let mut dim = this.parse_list(Self::parse_dim_opt);
             this.check_list(&mut dim, Self::check_unpacked_dim);
             let ports = this.parse_port_conn();
-            Some(HierInst {
-                name,
-                dim,
-                ports,
-            })
+            Some(HierInst { name, dim, ports })
         });
 
         self.expect(TokenKind::Semicolon);
 
-        Item::HierInstantiation(Box::new(
-            HierInstantiation {
-                attr,
-                param,
-                name: mod_name,
-                inst: list,
-            }
-        ))
+        Item::HierInstantiation(Box::new(HierInstantiation {
+            attr,
+            param,
+            name: mod_name,
+            inst: list,
+        }))
     }
 
     /// Combined parser of parameter value assignment, port connections, and method argument list.
@@ -2133,7 +2178,7 @@ impl<'a> Parser<'a> {
                         this.diag.report_span(
                             Severity::Error,
                             ".* can only appear once in an argument list",
-                            v.span
+                            v.span,
                         );
                     }
                     named.push((attr, NamedPortConn::Wildcard));
@@ -2148,14 +2193,17 @@ impl<'a> Parser<'a> {
                             "mixture of ordered and named argument is not allowed",
                             v.span.merge(match expr {
                                 None => name.span,
-                                Some(ref expr) => expr.span
-                            })
+                                Some(ref expr) => expr.span,
+                            }),
                         );
                     }
-                    named.push((attr, match expr {
-                        None => NamedPortConn::Implicit(name),
-                        Some(expr) => NamedPortConn::Explicit(name, expr.value.map(Box::new)),
-                    }));
+                    named.push((
+                        attr,
+                        match expr {
+                            None => NamedPortConn::Implicit(name),
+                            Some(expr) => NamedPortConn::Explicit(name, expr.value.map(Box::new)),
+                        },
+                    ));
                     true
                 } else {
                     let expr = this.parse_expr_opt().map(Box::new);
@@ -2164,11 +2212,11 @@ impl<'a> Parser<'a> {
                             this.diag.report_span(
                                 Severity::Error,
                                 "ordered argument cannot appear after named argument",
-                                expr.span
+                                expr.span,
                             );
                         } else {
                             // Return None so error message will be about trailing comma.
-                            return false
+                            return false;
                         }
                     }
                     ordered.push((attr, expr));
@@ -2212,7 +2260,7 @@ impl<'a> Parser<'a> {
                         this.diag.report_span(
                             Severity::Error,
                             "mixture of ordered and named argument is not allowed",
-                            v.span.merge(expr.span)
+                            v.span.merge(expr.span),
                         );
                     }
                     named.push((Box::new(name), expr.value.map(Box::new)));
@@ -2224,11 +2272,11 @@ impl<'a> Parser<'a> {
                             this.diag.report_span(
                                 Severity::Error,
                                 "ordered argument cannot appear after named argument",
-                                expr.span
+                                expr.span,
                             );
                         } else {
                             // Return None so error message will be about trailing comma.
-                            return false
+                            return false;
                         }
                     }
                     ordered.push(expr);
@@ -2236,10 +2284,7 @@ impl<'a> Parser<'a> {
                 }
             });
 
-            Args {
-                ordered,
-                named,
-            }
+            Args { ordered, named }
         })
     }
 
@@ -2255,18 +2300,17 @@ impl<'a> Parser<'a> {
     fn parse_loop_gen(&mut self, attr: Option<Box<AttrInst>>) -> Item {
         // Eat the for keyword
         self.consume();
-        let (genvar, id, init, cond, update) =
-            self.parse_delim(Delim::Paren, |this| {
-                let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
-                let id = this.expect_id();
-                this.expect(TokenKind::Assign);
-                let init = this.parse_expr();
-                this.expect(TokenKind::Semicolon);
-                let cond = this.parse_expr();
-                this.expect(TokenKind::Semicolon);
-                let update = this.parse_assign_expr();
-                (genvar, id, init, cond, update)
-            });
+        let (genvar, id, init, cond, update) = self.parse_delim(Delim::Paren, |this| {
+            let genvar = this.check(TokenKind::Keyword(Keyword::Genvar));
+            let id = this.expect_id();
+            this.expect(TokenKind::Assign);
+            let init = this.parse_expr();
+            this.expect(TokenKind::Semicolon);
+            let cond = this.parse_expr();
+            this.expect(TokenKind::Semicolon);
+            let update = this.parse_assign_expr();
+            (genvar, id, init, cond, update)
+        });
         let block = self.parse_gen_block();
         Item::LoopGen(Box::new(LoopGen {
             attr,
@@ -2311,7 +2355,7 @@ impl<'a> Parser<'a> {
                 attr,
                 if_block,
                 else_block,
-            }))
+            }));
         }
     }
 
@@ -2324,15 +2368,23 @@ impl<'a> Parser<'a> {
                     let label = self.expect_id();
                     self.consume();
                     Some(label)
-                } else { None }
-            } else { None }
-        } else { None };
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let begin = match self.consume_if(TokenKind::Keyword(Keyword::Begin)) {
-            None => return GenBlock {
-                name: None,
-                items: vec![self.parse_item()]
-            },
+            None => {
+                return GenBlock {
+                    name: None,
+                    items: vec![self.parse_item()],
+                }
+            }
             Some(v) => v,
         };
 
@@ -2348,13 +2400,13 @@ impl<'a> Parser<'a> {
                 self.diag.report_span(
                     Severity::Error,
                     "block identifiers before and after 'begin' are not identical",
-                    n.span
+                    n.span,
                 );
             } else {
                 self.diag.report_span(
                     Severity::Warning,
                     "duplicate block identifiers before and after 'begin'",
-                    n.span
+                    n.span,
                 );
             }
         } else if let (Some(l), None) = (&label, &name) {
@@ -2362,8 +2414,9 @@ impl<'a> Parser<'a> {
                 Diagnostic::new(
                     Severity::Warning,
                     "it is suggested to place block identifier after 'begin'",
-                    l.span.merge(begin.span)
-                ).fix_primary(format!("begin: {}", l))
+                    l.span.merge(begin.span),
+                )
+                .fix_primary(format!("begin: {}", l)),
             );
         }
 
@@ -2418,13 +2471,13 @@ impl<'a> Parser<'a> {
                     self.diag.report_span(
                         Severity::Error,
                         "block identifiers before and after 'begin' are not identical",
-                        id.span
+                        id.span,
                     );
                 } else {
                     self.diag.report_span(
                         Severity::Warning,
                         "duplicate block identifiers before and after 'begin'",
-                        id.span
+                        id.span,
                     );
                 }
             }
@@ -2434,8 +2487,9 @@ impl<'a> Parser<'a> {
                 Diagnostic::new(
                     Severity::Warning,
                     "it is suggested to place block identifier after 'begin'",
-                    v.span.merge(begin.span)
-                ).fix_primary(format!("begin: {}", v))
+                    v.span.merge(begin.span),
+                )
+                .fix_primary(format!("begin: {}", v)),
             );
         }
 
@@ -2492,15 +2546,19 @@ impl<'a> Parser<'a> {
                 let id = self.expect_id();
                 self.consume();
                 Some(id)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let attr = self.parse_attr_inst_opt();
 
         let kind = match **self.peek() {
-            TokenKind::Keyword(Keyword::End) |
-            TokenKind::Keyword(Keyword::Endfunction) |
-            TokenKind::Keyword(Keyword::Endtask) |
-            TokenKind::Keyword(Keyword::Else) => return None,
+            TokenKind::Keyword(Keyword::End)
+            | TokenKind::Keyword(Keyword::Endfunction)
+            | TokenKind::Keyword(Keyword::Endtask)
+            | TokenKind::Keyword(Keyword::Else) => return None,
             // null_statement
             TokenKind::Semicolon => {
                 self.consume();
@@ -2516,7 +2574,7 @@ impl<'a> Parser<'a> {
                         self.diag.report_span(
                             Severity::Error,
                             "expected if or case statement after unique, unique0 or priority",
-                            prio.span
+                            prio.span,
                         );
                         // Error recovery
                         StmtKind::Empty
@@ -2529,31 +2587,33 @@ impl<'a> Parser<'a> {
             // disable_statement
             TokenKind::Keyword(Keyword::Disable) => self.unimplemented(),
             // event_trigger
-            TokenKind::NonblockTrigger |
-            TokenKind::BinaryOp(BinaryOp::Imply) => self.unimplemented(),
+            TokenKind::NonblockTrigger | TokenKind::BinaryOp(BinaryOp::Imply) => {
+                self.unimplemented()
+            }
             // loop_statement
-            TokenKind::Keyword(Keyword::Forever) |
-            TokenKind::Keyword(Keyword::Repeat) |
-            TokenKind::Keyword(Keyword::While) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::Forever)
+            | TokenKind::Keyword(Keyword::Repeat)
+            | TokenKind::Keyword(Keyword::While) => self.unimplemented(),
             TokenKind::Keyword(Keyword::For) => self.parse_for(),
-            TokenKind::Keyword(Keyword::Do) |
-            TokenKind::Keyword(Keyword::Foreach) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::Do) | TokenKind::Keyword(Keyword::Foreach) => {
+                self.unimplemented()
+            }
             // jump_statement
-            TokenKind::Keyword(Keyword::Return) |
-            TokenKind::Keyword(Keyword::Break) |
-            TokenKind::Keyword(Keyword::Continue) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::Return)
+            | TokenKind::Keyword(Keyword::Break)
+            | TokenKind::Keyword(Keyword::Continue) => self.unimplemented(),
             // par_block
             TokenKind::Keyword(Keyword::Fork) => self.unimplemented(),
             // procedural_timing_control_statement
-            TokenKind::Hash |
-            TokenKind::CycleDelay |
-            TokenKind::AtStar |
-            TokenKind::At => self.parse_timing_ctrl_stmt(),
+            TokenKind::Hash | TokenKind::CycleDelay | TokenKind::AtStar | TokenKind::At => {
+                self.parse_timing_ctrl_stmt()
+            }
             // seq_block
             TokenKind::Keyword(Keyword::Begin) => self.parse_seq_block(&mut label),
             // wait_statement
-            TokenKind::Keyword(Keyword::Wait) |
-            TokenKind::Keyword(Keyword::WaitOrder) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::Wait) | TokenKind::Keyword(Keyword::WaitOrder) => {
+                self.unimplemented()
+            }
             // simple_immediate_assertion_statement, deferred_immediate_assertion_statement
             // or assert_property_statement
             TokenKind::Keyword(Keyword::Assert) => {
@@ -2587,9 +2647,9 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            TokenKind::Keyword(Keyword::Assume) |
-            TokenKind::Keyword(Keyword::Cover) |
-            TokenKind::Keyword(Keyword::Restrict) => self.unimplemented(),
+            TokenKind::Keyword(Keyword::Assume)
+            | TokenKind::Keyword(Keyword::Cover)
+            | TokenKind::Keyword(Keyword::Restrict) => self.unimplemented(),
             // randsequence_statement
             TokenKind::Keyword(Keyword::Randsequence) => self.unimplemented(),
             // randcase_statement
@@ -2598,23 +2658,23 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Expect) => self.unimplemented(),
             // block_item_declaration -> data_declaration
             // data_declaration. Either begin with const/var or explicit data type.
-            TokenKind::Keyword(Keyword::Const) |
-            TokenKind::Keyword(Keyword::Var) |
-            TokenKind::Keyword(Keyword::Automatic) |
-            TokenKind::Keyword(Keyword::Static) |
-            TokenKind::IntAtomTy(_) |
-            TokenKind::IntVecTy(_) |
-            TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::RealTy(_) |
-            TokenKind::Keyword(Keyword::Struct) |
-            TokenKind::Keyword(Keyword::Union) |
-            TokenKind::Keyword(Keyword::Enum) |
-            TokenKind::Keyword(Keyword::String) |
-            TokenKind::Keyword(Keyword::Chandle) |
-            TokenKind::Keyword(Keyword::Virtual) |
-            TokenKind::Keyword(Keyword::Event) |
-            TokenKind::Keyword(Keyword::Type) |
-            TokenKind::Keyword(Keyword::Void) => {
+            TokenKind::Keyword(Keyword::Const)
+            | TokenKind::Keyword(Keyword::Var)
+            | TokenKind::Keyword(Keyword::Automatic)
+            | TokenKind::Keyword(Keyword::Static)
+            | TokenKind::IntAtomTy(_)
+            | TokenKind::IntVecTy(_)
+            | TokenKind::Keyword(Keyword::Reg)
+            | TokenKind::RealTy(_)
+            | TokenKind::Keyword(Keyword::Struct)
+            | TokenKind::Keyword(Keyword::Union)
+            | TokenKind::Keyword(Keyword::Enum)
+            | TokenKind::Keyword(Keyword::String)
+            | TokenKind::Keyword(Keyword::Chandle)
+            | TokenKind::Keyword(Keyword::Virtual)
+            | TokenKind::Keyword(Keyword::Event)
+            | TokenKind::Keyword(Keyword::Type)
+            | TokenKind::Keyword(Keyword::Void) => {
                 StmtKind::DataDecl(Box::new(self.parse_data_decl(None)))
             }
             _ => {
@@ -2660,11 +2720,9 @@ impl<'a> Parser<'a> {
                         self.consume();
                         TimingCtrl::ImplicitEventCtrl
                     }
-                    TokenKind::DelimGroup(Delim::Paren, _) => {
-                        TimingCtrl::ExprEventCtrl(
-                            Box::new(self.parse_delim(Delim::Paren, Self::parse_event_expr))
-                        )
-                    }
+                    TokenKind::DelimGroup(Delim::Paren, _) => TimingCtrl::ExprEventCtrl(Box::new(
+                        self.parse_delim(Delim::Paren, Self::parse_event_expr),
+                    )),
                     _ => {
                         let scope = self.parse_scope();
                         let id = self.parse_unwrap(|this| this.parse_hier_id(scope));
@@ -2678,7 +2736,7 @@ impl<'a> Parser<'a> {
 
     fn parse_event_expr_item(&mut self) -> EventExpr {
         if let Some(v) = self.parse_if_delim(Delim::Paren, Self::parse_event_expr) {
-            return EventExpr::Paren(Box::new(v))
+            return EventExpr::Paren(Box::new(v));
         }
         let edge = if let TokenKind::Edge(edge) = **self.peek() {
             self.consume();
@@ -2692,11 +2750,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        EventExpr::Item(Box::new(EventExprItem {
-            edge,
-            expr,
-            iff,
-        }))
+        EventExpr::Item(Box::new(EventExprItem { edge, expr, iff }))
     }
 
     fn parse_event_expr(&mut self) -> EventExpr {
@@ -2728,11 +2782,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_case_stmt(&mut self, uniq: Option<UniqPrio>) -> StmtKind {
-        let kw = if let TokenKind::CaseKw(kw) = *self.consume() { kw } else { unreachable!() };
+        let kw = if let TokenKind::CaseKw(kw) = *self.consume() {
+            kw
+        } else {
+            unreachable!()
+        };
         let expr = Box::new(self.parse_delim(Delim::Paren, Self::parse_expr));
         match **self.peek() {
-            TokenKind::Keyword(Keyword::Matches) |
-            TokenKind::Keyword(Keyword::Inside) => {
+            TokenKind::Keyword(Keyword::Matches) | TokenKind::Keyword(Keyword::Inside) => {
                 self.unimplemented()
             }
             _ => (),
@@ -2880,10 +2937,10 @@ impl<'a> Parser<'a> {
                     this.diag.report_span(
                         Severity::Error,
                         "assignment pattern cannot be empty",
-                        span
+                        span,
                     );
                     // Error recovery: return a empty list
-                    return AssignPattern::Simple(Vec::new())
+                    return AssignPattern::Simple(Vec::new());
                 }
                 Some(v) => v,
             };
@@ -2917,7 +2974,7 @@ impl<'a> Parser<'a> {
                             this.diag.report_span(
                                 Severity::Error,
                                 "expected a simple list of expressions",
-                                repeated.span
+                                repeated.span,
                             );
                             vec![repeated]
                         }
@@ -2944,10 +3001,7 @@ impl<'a> Parser<'a> {
             }
         };
         let args = self.parse_args_opt(false);
-        SysTfCall {
-            task,
-            args,
-        }
+        SysTfCall { task, args }
     }
 
     //
@@ -2976,21 +3030,30 @@ impl<'a> Parser<'a> {
                 self.consume();
                 let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
-                Some(Spanned::new(ExprKind::Assign(Box::new(expr), Box::new(rhs)), span))
+                Some(Spanned::new(
+                    ExprKind::Assign(Box::new(expr), Box::new(rhs)),
+                    span,
+                ))
             }
             TokenKind::BinaryOp(BinaryOp::Leq) => {
                 self.consume();
                 let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
-                Some(Spanned::new(ExprKind::NonblockAssign(Box::new(expr), Box::new(rhs)), span))
+                Some(Spanned::new(
+                    ExprKind::NonblockAssign(Box::new(expr), Box::new(rhs)),
+                    span,
+                ))
             }
             TokenKind::BinaryOpAssign(op) => {
                 self.consume();
                 let rhs = self.parse_expr();
                 let span = expr.span.merge(rhs.span);
-                Some(Spanned::new(ExprKind::BinaryAssign(Box::new(expr), op, Box::new(rhs)), span))
+                Some(Spanned::new(
+                    ExprKind::BinaryAssign(Box::new(expr), op, Box::new(rhs)),
+                    span,
+                ))
             }
-            _ => Some(expr)
+            _ => Some(expr),
         }
     }
 
@@ -3044,8 +3107,7 @@ impl<'a> Parser<'a> {
     fn parse_expr_opt(&mut self) -> Option<Expr> {
         let lhs = self.parse_cond_expr_opt()?;
         match **self.peek() {
-            TokenKind::BinaryOp(BinaryOp::Imply) |
-            TokenKind::BinaryOp(BinaryOp::Equiv) => {
+            TokenKind::BinaryOp(BinaryOp::Imply) | TokenKind::BinaryOp(BinaryOp::Equiv) => {
                 let span = self.peek().span;
                 self.diag.report_fatal("-> and <-> not yet supported", span);
             }
@@ -3066,7 +3128,8 @@ impl<'a> Parser<'a> {
             let false_expr = Box::new(self.parse_expr());
             let span = expr.span.merge(false_expr.span);
             Some(Spanned::new(
-                ExprKind::Cond(Box::new(expr), attr, true_expr, false_expr), span
+                ExprKind::Cond(Box::new(expr), attr, true_expr, false_expr),
+                span,
             ))
         } else {
             Some(expr)
@@ -3077,7 +3140,8 @@ impl<'a> Parser<'a> {
         let expr = self.parse_cond_pattern_opt()?;
         if self.check(TokenKind::TripleAnd) {
             let span = self.peek().span;
-            self.diag.report_fatal("expression_or_cond_pattern not yet supported", span);
+            self.diag
+                .report_fatal("expression_or_cond_pattern not yet supported", span);
         } else {
             Some(expr)
         }
@@ -3088,13 +3152,15 @@ impl<'a> Parser<'a> {
             // tagged_union_expression
             TokenKind::Keyword(Keyword::Tagged) => {
                 let span = self.peek().span;
-                self.diag.report_fatal("tagged_union_expression not yet supported", span);
+                self.diag
+                    .report_fatal("tagged_union_expression not yet supported", span);
             }
             _ => self.parse_bin_expr(0)?,
         };
         if self.check(TokenKind::Keyword(Keyword::Matches)) {
             let span = self.peek().span;
-            self.diag.report_fatal("cond_pattern not yet supported", span);
+            self.diag
+                .report_fatal("cond_pattern not yet supported", span);
         } else {
             Some(expr)
         }
@@ -3114,20 +3180,26 @@ impl<'a> Parser<'a> {
                 TokenKind::BinaryOp(op) => {
                     let new_prec = Self::get_bin_op_prec(op);
                     // Can only proceed if precedence is higher
-                    if new_prec <= prec { break }
+                    if new_prec <= prec {
+                        break;
+                    }
                     (op, new_prec)
                 }
                 TokenKind::LShl => {
                     let new_prec = Self::get_bin_op_prec(BinaryOp::Shl);
                     // Can only proceed if precedence is higher
-                    if new_prec <= prec { break }
+                    if new_prec <= prec {
+                        break;
+                    }
                     (BinaryOp::Shl, new_prec)
                 }
-                TokenKind::Keyword(Keyword::Inside) |
-                TokenKind::Keyword(Keyword::Dist) if 7 > prec => {
+                TokenKind::Keyword(Keyword::Inside) | TokenKind::Keyword(Keyword::Dist)
+                    if 7 > prec =>
+                {
                     // 7 is the precedence of comparison operator.
                     let span = self.peek().span;
-                    self.diag.report_fatal("inside & dist not yet supported", span);
+                    self.diag
+                        .report_fatal("inside & dist not yet supported", span);
                 }
                 _ => break,
             };
@@ -3136,7 +3208,10 @@ impl<'a> Parser<'a> {
             let attr = self.parse_attr_inst_opt();
             let rhs = self.parse_unwrap(|this| this.parse_bin_expr(new_prec));
             let span = expr.span.merge(rhs.span);
-            expr = Spanned::new(ExprKind::Binary(Box::new(expr), op, attr, Box::new(rhs)), span);
+            expr = Spanned::new(
+                ExprKind::Binary(Box::new(expr), op, attr, Box::new(rhs)),
+                span,
+            );
         }
 
         Some(expr)
@@ -3151,7 +3226,10 @@ impl<'a> Parser<'a> {
                 let attr = self.parse_attr_inst_opt();
                 let expr = self.parse_unwrap(Self::parse_primary);
                 let span = span.merge(expr.span);
-                return Some(Spanned::new(ExprKind::PrefixIncDec(incdec, attr, Box::new(expr)), span))
+                return Some(Spanned::new(
+                    ExprKind::PrefixIncDec(incdec, attr, Box::new(expr)),
+                    span,
+                ));
             }
             TokenKind::UnaryOp(op) => op,
             TokenKind::BinaryOp(BinaryOp::Add) => UnaryOp::Add,
@@ -3164,30 +3242,37 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_primary()?;
                 return match **self.peek() {
                     // Inc/dec with attributes
-                    TokenKind::DelimGroup(Delim::Attr, _) => {
-                        match **self.peek_n(1) {
-                            TokenKind::IncDec(incdec) => {
-                                let attr = self.parse_attr_inst_opt();
-                                let span = expr.span.merge(self.consume().span);
-                                Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), attr, incdec), span))
-                            }
-                            _ => Some(expr),
+                    TokenKind::DelimGroup(Delim::Attr, _) => match **self.peek_n(1) {
+                        TokenKind::IncDec(incdec) => {
+                            let attr = self.parse_attr_inst_opt();
+                            let span = expr.span.merge(self.consume().span);
+                            Some(Spanned::new(
+                                ExprKind::PostfixIncDec(Box::new(expr), attr, incdec),
+                                span,
+                            ))
                         }
-                    }
+                        _ => Some(expr),
+                    },
                     // Inc/dec without attributes
                     TokenKind::IncDec(incdec) => {
                         let span = expr.span.merge(self.consume().span);
-                        Some(Spanned::new(ExprKind::PostfixIncDec(Box::new(expr), None, incdec), span))
+                        Some(Spanned::new(
+                            ExprKind::PostfixIncDec(Box::new(expr), None, incdec),
+                            span,
+                        ))
                     }
                     _ => Some(expr),
-                }
+                };
             }
         };
         let span = self.consume().span;
         let attr = self.parse_attr_inst_opt();
         let expr = self.parse_unwrap(Self::parse_primary);
         let span = span.merge(expr.span);
-        Some(Spanned::new(ExprKind::Unary(op, attr, Box::new(expr)), span))
+        Some(Spanned::new(
+            ExprKind::Unary(op, attr, Box::new(expr)),
+            span,
+        ))
     }
 
     /// Parse mintypmax expression
@@ -3199,13 +3284,16 @@ impl<'a> Parser<'a> {
     fn parse_mintypmax_expr(&mut self) -> Option<Expr> {
         let expr = self.parse_expr_opt()?;
         if !self.check(TokenKind::Colon) {
-            return Some(expr)
+            return Some(expr);
         }
         let typ = Box::new(self.parse_expr());
         self.expect(TokenKind::Colon);
         let max = Box::new(self.parse_expr());
         let span = expr.span.merge(max.span);
-        Some(Spanned::new(ExprKind::MinTypMax(Box::new(expr), typ, max), span))
+        Some(Spanned::new(
+            ExprKind::MinTypMax(Box::new(expr), typ, max),
+            span,
+        ))
     }
 
     //
@@ -3218,15 +3306,25 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Const) => {
                 let span = self.consume().span;
                 self.expect(TokenKind::Tick);
-                let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
-                Spanned::new(ExprKind::ConstCast(Box::new(expr.value)), span.merge(expr.span))
+                let expr = self.parse_delim_spanned(Delim::Paren, |this| {
+                    this.parse_unwrap(Self::parse_expr_opt)
+                });
+                Spanned::new(
+                    ExprKind::ConstCast(Box::new(expr.value)),
+                    span.merge(expr.span),
+                )
             }
             TokenKind::Signing(sign) => {
                 if let TokenKind::Tick = **self.peek_n(1) {
                     let span = self.consume().span;
                     self.expect(TokenKind::Tick);
-                    let expr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
-                    Spanned::new(ExprKind::SignCast(sign, Box::new(expr.value)), span.merge(expr.span))
+                    let expr = self.parse_delim_spanned(Delim::Paren, |this| {
+                        this.parse_unwrap(Self::parse_expr_opt)
+                    });
+                    Spanned::new(
+                        ExprKind::SignCast(sign, Box::new(expr.value)),
+                        span.merge(expr.span),
+                    )
                 } else {
                     match self.parse_primary_nocast() {
                         None => return None,
@@ -3237,16 +3335,20 @@ impl<'a> Parser<'a> {
             _ => match self.parse_primary_nocast() {
                 None => return None,
                 Some(v) => v,
-            }
+            },
         };
         loop {
             if self.consume_if(TokenKind::Tick).is_none() {
-                break
+                break;
             }
 
-            let nexpr = self.parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
+            let nexpr = self
+                .parse_delim_spanned(Delim::Paren, |this| this.parse_unwrap(Self::parse_expr_opt));
             let span = expr.span.merge(nexpr.span);
-            expr = Spanned::new(ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.value)), span)
+            expr = Spanned::new(
+                ExprKind::TypeCast(Box::new(expr), Box::new(nexpr.value)),
+                span,
+            )
         }
         Some(expr)
     }
@@ -3281,13 +3383,13 @@ impl<'a> Parser<'a> {
             // primary_literal
             // $
             // null
-            TokenKind::RealLiteral(_) |
-            TokenKind::IntegerLiteral(_) |
-            TokenKind::TimeLiteral(_) |
-            TokenKind::UnbasedLiteral(_) |
-            TokenKind::StringLiteral(_) |
-            TokenKind::Dollar |
-            TokenKind::Keyword(Keyword::Null) => {
+            TokenKind::RealLiteral(_)
+            | TokenKind::IntegerLiteral(_)
+            | TokenKind::TimeLiteral(_)
+            | TokenKind::UnbasedLiteral(_)
+            | TokenKind::StringLiteral(_)
+            | TokenKind::Dollar
+            | TokenKind::Keyword(Keyword::Null) => {
                 let tok = self.consume();
                 let sp = tok.span;
                 Some(Spanned::new(ExprKind::Literal(tok), sp))
@@ -3300,10 +3402,10 @@ impl<'a> Parser<'a> {
                 Some(self.parse_delim_spanned(Delim::Brace, |this| {
                     match **this.peek() {
                         TokenKind::Eof => ExprKind::EmptyQueue,
-                        TokenKind::BinaryOp(BinaryOp::LShr) |
-                        TokenKind::LShl => {
+                        TokenKind::BinaryOp(BinaryOp::LShr) | TokenKind::LShl => {
                             let span = this.peek().span;
-                            this.diag.report_fatal("streaming concat is not yet supported", span);
+                            this.diag
+                                .report_fatal("streaming concat is not yet supported", span);
                         }
                         _ => {
                             let expr = this.parse_expr();
@@ -3363,20 +3465,20 @@ impl<'a> Parser<'a> {
             // with a hierachical name (or keyword typename). So we parse it first, and then try
             // to parse the rest as postfix operation.
             // Keyword type names, parse as data type
-            TokenKind::DelimGroup(Delim::Bracket, _) |
-            TokenKind::IntAtomTy(_) |
-            TokenKind::IntVecTy(_) |
-            TokenKind::Keyword(Keyword::Reg) |
-            TokenKind::RealTy(_) |
-            TokenKind::Keyword(Keyword::Struct) |
-            TokenKind::Keyword(Keyword::Union) |
-            TokenKind::Keyword(Keyword::Enum) |
-            TokenKind::Keyword(Keyword::String) |
-            TokenKind::Keyword(Keyword::Chandle) |
-            TokenKind::Keyword(Keyword::Virtual) |
-            TokenKind::Keyword(Keyword::Event) |
-            TokenKind::Keyword(Keyword::Type) |
-            TokenKind::Keyword(Keyword::Void) => {
+            TokenKind::DelimGroup(Delim::Bracket, _)
+            | TokenKind::IntAtomTy(_)
+            | TokenKind::IntVecTy(_)
+            | TokenKind::Keyword(Keyword::Reg)
+            | TokenKind::RealTy(_)
+            | TokenKind::Keyword(Keyword::Struct)
+            | TokenKind::Keyword(Keyword::Union)
+            | TokenKind::Keyword(Keyword::Enum)
+            | TokenKind::Keyword(Keyword::String)
+            | TokenKind::Keyword(Keyword::Chandle)
+            | TokenKind::Keyword(Keyword::Virtual)
+            | TokenKind::Keyword(Keyword::Event)
+            | TokenKind::Keyword(Keyword::Type)
+            | TokenKind::Keyword(Keyword::Void) => {
                 let ty = Box::new(self.parse_kw_data_type());
                 let span = ty.span;
                 Some(Spanned::new(ExprKind::Type(ty), span))
@@ -3402,12 +3504,15 @@ impl<'a> Parser<'a> {
                                 None => {
                                     self.diag.report_fatal("expected data type", span);
                                     // TODO: Error recovery
-                                },
+                                }
                                 Some(v) => v,
                             };
                             let span = span.merge(self.peek().span);
                             let pat = self.parse_assign_pattern();
-                            Some(Spanned::new(ExprKind::AssignPattern(Some(Box::new(ty)), pat), span))
+                            Some(Spanned::new(
+                                ExprKind::AssignPattern(Some(Box::new(ty)), pat),
+                                span,
+                            ))
                         }
                         // This can be either function call or inc/dec expression, peek ahead
                         TokenKind::DelimGroup(Delim::Attr, _) => {
@@ -3415,11 +3520,14 @@ impl<'a> Parser<'a> {
                                 let span = expr.span.merge(self.peek().span);
                                 let attr = self.parse_attr_inst_opt();
                                 let args = self.parse_args_opt(false).map(Box::new);
-                                Some(Spanned::new(ExprKind::FuncCall {
-                                    expr: Box::new(expr),
-                                    attr,
-                                    args,
-                                }, span))
+                                Some(Spanned::new(
+                                    ExprKind::FuncCall {
+                                        expr: Box::new(expr),
+                                        attr,
+                                        args,
+                                    },
+                                    span,
+                                ))
                             } else {
                                 Some(expr)
                             }
@@ -3428,13 +3536,16 @@ impl<'a> Parser<'a> {
                         TokenKind::DelimGroup(Delim::Paren, _) => {
                             let span = expr.span.merge(self.peek().span);
                             let args = self.parse_args_opt(false).map(Box::new);
-                            Some(Spanned::new(ExprKind::FuncCall {
-                                expr: Box::new(expr),
-                                attr: None,
-                                args,
-                            }, span))
+                            Some(Spanned::new(
+                                ExprKind::FuncCall {
+                                    expr: Box::new(expr),
+                                    attr: None,
+                                    args,
+                                },
+                                span,
+                            ))
                         }
-                        _ => Some(expr)
+                        _ => Some(expr),
                     }
                 }
             }
@@ -3449,27 +3560,18 @@ impl<'a> Parser<'a> {
     fn get_bin_op_prec(op: BinaryOp) -> i32 {
         match op {
             BinaryOp::Power => 11,
-            BinaryOp::Mul |
-            BinaryOp::Div |
-            BinaryOp::Mod => 10,
-            BinaryOp::Add |
-            BinaryOp::Sub => 9,
-            BinaryOp::Shl |
-            BinaryOp::LShr |
-            BinaryOp::AShr => 8,
-            BinaryOp::Lt |
-            BinaryOp::Leq |
-            BinaryOp::Gt |
-            BinaryOp::Geq => 7,
-            BinaryOp::Eq |
-            BinaryOp::Neq |
-            BinaryOp::CaseEq |
-            BinaryOp::CaseNeq |
-            BinaryOp::WildEq |
-            BinaryOp::WildNeq => 6,
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => 10,
+            BinaryOp::Add | BinaryOp::Sub => 9,
+            BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr => 8,
+            BinaryOp::Lt | BinaryOp::Leq | BinaryOp::Gt | BinaryOp::Geq => 7,
+            BinaryOp::Eq
+            | BinaryOp::Neq
+            | BinaryOp::CaseEq
+            | BinaryOp::CaseNeq
+            | BinaryOp::WildEq
+            | BinaryOp::WildNeq => 6,
             BinaryOp::And => 5,
-            BinaryOp::Xor |
-            BinaryOp::Xnor => 4,
+            BinaryOp::Xor | BinaryOp::Xnor => 4,
             BinaryOp::Or => 3,
             BinaryOp::LAnd => 2,
             BinaryOp::LOr => 1,
@@ -3483,22 +3585,17 @@ impl<'a> Parser<'a> {
     fn parse_attr_inst_opt(&mut self) -> Option<Box<AttrInst>> {
         let attr = self.parse_if_delim_spanned(Delim::Attr, |this| {
             AttrInstStruct(
-                this.parse_comma_list(false, false, |this| {
-                    match this.consume_if_id() {
-                        None => None,
-                        Some(name) => {
-                            let expr = if this.check(TokenKind::Assign) {
-                                Some(Box::new(this.parse_expr()))
-                            } else {
-                                None
-                            };
-                            Some(AttrSpec {
-                                name,
-                                expr
-                            })
-                        }
+                this.parse_comma_list(false, false, |this| match this.consume_if_id() {
+                    None => None,
+                    Some(name) => {
+                        let expr = if this.check(TokenKind::Assign) {
+                            Some(Box::new(this.parse_expr()))
+                        } else {
+                            None
+                        };
+                        Some(AttrSpec { name, expr })
                     }
-                })
+                }),
             )
         });
         attr.map(Box::new)
@@ -3519,7 +3616,11 @@ impl<'a> Parser<'a> {
                 TokenKind::Keyword(Keyword::Local) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.diag.report_span(Severity::Error, "local scope can only be the outermost scope", tok.span);
+                        self.diag.report_span(
+                            Severity::Error,
+                            "local scope can only be the outermost scope",
+                            tok.span,
+                        );
                     } else {
                         scope = Some(Scope::Local)
                     }
@@ -3528,7 +3629,11 @@ impl<'a> Parser<'a> {
                 TokenKind::Keyword(Keyword::Unit) => {
                     let tok = self.consume();
                     if let Some(_) = scope {
-                        self.diag.report_span(Severity::Error, "$unit scope can only be the outermost scope", tok.span);
+                        self.diag.report_span(
+                            Severity::Error,
+                            "$unit scope can only be the outermost scope",
+                            tok.span,
+                        );
                     } else {
                         scope = Some(Scope::Local)
                     }
@@ -3539,13 +3644,13 @@ impl<'a> Parser<'a> {
                     match **self.peek_n(1) {
                         TokenKind::ScopeSep => (),
                         TokenKind::Hash => {
-                            if let TokenKind::DelimGroup(Delim::Paren,_) = **self.peek_n(2) {
+                            if let TokenKind::DelimGroup(Delim::Paren, _) = **self.peek_n(2) {
                                 if let TokenKind::ScopeSep = **self.peek_n(3) {
                                 } else {
-                                    break
+                                    break;
                                 }
                             } else {
-                                break
+                                break;
                             }
                         }
                         _ => break,
@@ -3553,7 +3658,8 @@ impl<'a> Parser<'a> {
                     let ident = self.expect_id();
                     if self.consume_if(TokenKind::Hash).is_some() {
                         // TODO: Add parameter support
-                        self.diag.report_fatal("class parameter scope is not yet supported", ident.span);
+                        self.diag
+                            .report_fatal("class parameter scope is not yet supported", ident.span);
                     }
                     self.expect(TokenKind::ScopeSep);
                     scope = Some(Scope::Name(scope.map(Box::new), Box::new(ident)))
@@ -3589,7 +3695,8 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::Root) => {
                 let token = self.consume();
                 if scope.is_some() {
-                    self.diag.report_error("$root cannot follow a scope", token.span);
+                    self.diag
+                        .report_error("$root cannot follow a scope", token.span);
                 }
                 Spanned::new(HierId::Root, token.span)
             }
@@ -3601,11 +3708,18 @@ impl<'a> Parser<'a> {
                 // If we've seen the scopes then we must need to see the id
                 if scope.is_some() {
                     let span = self.peek().span;
-                    self.diag.report_span(Severity::Error, "expected identifiers after scope", span);
+                    self.diag.report_span(
+                        Severity::Error,
+                        "expected identifiers after scope",
+                        span,
+                    );
                     // Error recovery
-                    return Some(Spanned::new(HierId::Name(scope, Box::new(Ident::new_unspanned("".to_owned()))), Span::none()))
+                    return Some(Spanned::new(
+                        HierId::Name(scope, Box::new(Ident::new_unspanned("".to_owned()))),
+                        Span::none(),
+                    ));
                 } else {
-                    return None
+                    return None;
                 }
             }
         };
@@ -3623,7 +3737,7 @@ impl<'a> Parser<'a> {
                     let span = id.span.merge(subid.span);
                     id = Spanned::new(HierId::Member(Box::new(id), Box::new(subid)), span);
                 }
-                _ => return Some(id)
+                _ => return Some(id),
             }
         }
     }

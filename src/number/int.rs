@@ -1,7 +1,7 @@
-use num::{BigUint, BigInt, bigint::Sign, One, Zero, ToPrimitive};
+use num::{bigint::Sign, BigInt, BigUint, One, ToPrimitive, Zero};
+use std::cmp;
 use std::fmt;
 use std::ops::*;
-use std::cmp;
 
 /// Represntation of number with fixed width.
 #[derive(Clone, PartialEq, Eq)]
@@ -11,13 +11,9 @@ pub struct Int {
 }
 
 impl Int {
-
     /// Create a Int from BigUint
     pub fn new(width: usize, value: BigUint) -> Int {
-        let mut ret = Int {
-            width,
-            value,
-        };
+        let mut ret = Int { width, value };
         ret.trunc_to_fit();
         ret
     }
@@ -34,7 +30,7 @@ impl Int {
         } else {
             value.to_biguint().unwrap()
         };
-        Int {width, value}
+        Int { width, value }
     }
 
     /// Get a zero of a certain length
@@ -50,10 +46,7 @@ impl Int {
         let mut value = BigUint::one();
         value <<= width;
         value -= 1 as u8;
-        Int {
-            width,
-            value,
-        }
+        Int { width, value }
     }
 
     /// Get a value with all one or all zero
@@ -125,15 +118,23 @@ impl Int {
 
     /// Perform zero-extension or truncation
     pub fn zero_extend_or_trunc(&mut self, width: usize) {
-        if width == self.width { return }
-        if width < self.width { return self.truncate(width) }
+        if width == self.width {
+            return;
+        }
+        if width < self.width {
+            return self.truncate(width);
+        }
         self.width = width;
     }
 
     /// Perform one-extension or truncation
     pub fn one_extend_or_trunc(&mut self, width: usize) {
-        if width == self.width { return }
-        if width < self.width { return self.truncate(width) }
+        if width == self.width {
+            return;
+        }
+        if width < self.width {
+            return self.truncate(width);
+        }
 
         // Calculate the mask for extension
         let mut extend_mask = BigUint::one();
@@ -182,7 +183,7 @@ impl Int {
 
 macro_rules! impl_bin_traits {
     ($op: ident, $fn: ident, $ass: ident, $assfn: ident) => {
-        impl <'a> $op<&'a Int> for Int {
+        impl<'a> $op<&'a Int> for Int {
             type Output = Int;
 
             fn $fn(mut self, rhs: &Int) -> Self {
@@ -190,7 +191,7 @@ macro_rules! impl_bin_traits {
                 self
             }
         }
-    }
+    };
 }
 
 impl<'a> AddAssign<&'a Int> for Int {
@@ -315,7 +316,10 @@ impl Not for Int {
         let mut mask = BigUint::one();
         mask <<= self.width;
         mask -= 1 as u8;
-        let mask = Int { width: self.width, value: mask };
+        let mask = Int {
+            width: self.width,
+            value: mask,
+        };
         // Xor with the mask will yield not
         self ^ &mask
     }

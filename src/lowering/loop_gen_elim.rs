@@ -4,16 +4,16 @@
 //!
 //! This pass must be run after gen_name_assign.
 
-use std::rc::Rc;
-use std::collections::HashMap;
 use num::ToPrimitive;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use syntax::tokens;
-use syntax::ast::{self, Ident};
-use elaborate::ty;
-use elaborate::expr;
-use elaborate::hier::{self, HierScope, HierItem};
-use elaborate::eht_visit::EhtVisitor;
+use crate::elaborate::eht_visit::EhtVisitor;
+use crate::elaborate::expr;
+use crate::elaborate::hier::{self, HierItem, HierScope};
+use crate::elaborate::ty;
+use crate::syntax::ast::{self, Ident};
+use crate::syntax::tokens;
 
 pub fn loop_gen_elim(source: hier::Source) -> hier::Source {
     let mut elim = LoopGenEliminator {
@@ -39,7 +39,7 @@ struct LoopGenEliminator {
     pkgs: HashMap<String, hier::PkgDecl>,
     structs: Vec<Rc<ty::Struct>>,
     enums: Vec<Rc<ty::Enum>>,
-    
+
     /// Mapping from the loop gens to individual unrolled instances
     map: HashMap<usize, HashMap<i32, HierItem>>,
 }
@@ -65,8 +65,14 @@ impl LoopGenEliminator {
         for unit in &mut units {
             self.prepare_genblks(unit);
         }
-        let units: Vec<_> = units.into_iter().map(|scope| self.xfrm_scope(scope)).collect();
-        self.units = units.into_iter().map(|scope| self.expand_loopgen(scope)).collect();
+        let units: Vec<_> = units
+            .into_iter()
+            .map(|scope| self.xfrm_scope(scope))
+            .collect();
+        self.units = units
+            .into_iter()
+            .map(|scope| self.expand_loopgen(scope))
+            .collect();
     }
 
     /// First stage of loop gen elimination: assign names to each generate block
@@ -87,9 +93,11 @@ impl LoopGenEliminator {
                         // Prepare nested scopes
                         self.prepare_genblks(&mut genblk_mut.scope);
                         // Then assign names
-                        let mut new_name = Ident::new_unspanned(
-                            format!("{}_{}", loopgenblk.name.as_ref().unwrap(), val)
-                        );
+                        let mut new_name = Ident::new_unspanned(format!(
+                            "{}_{}",
+                            loopgenblk.name.as_ref().unwrap(),
+                            val
+                        ));
                         new_name.symbol = ast::SymbolId::allocate();
                         genblk_mut.name = Some(new_name);
                     }
@@ -109,18 +117,16 @@ impl LoopGenEliminator {
                         // Packaged name, retrieve from package
                         self.pkgs[&pkg.value].scope.find(&name).unwrap().clone()
                     }
-                    None => {
-                        'resolve_loop: loop {
-                            for scope in self.scopes.iter().rev() {
-                                if let Some(v) = scope.find(&name) {
-                                    break 'resolve_loop v.clone()
-                                }
+                    None => 'resolve_loop: loop {
+                        for scope in self.scopes.iter().rev() {
+                            if let Some(v) = scope.find(&name) {
+                                break 'resolve_loop v.clone();
                             }
-                            unreachable!()
                         }
-                    }
+                        unreachable!()
+                    },
                     _ => unimplemented!(),
-                }
+                };
             }
             ast::HierId::Member(parent, name) => {
                 let parent_hier = self.xfrm_hier_id(parent);
@@ -134,11 +140,9 @@ impl LoopGenEliminator {
                     HierItem::InstancePart { inst, .. } => {
                         inst.get_instance().scope.find(&name).unwrap().clone()
                     }
-                    HierItem::GenBlock(decl) => {
-                        decl.scope.find(&name).unwrap().clone()
-                    }
-                    _ => unreachable!()
-                }
+                    HierItem::GenBlock(decl) => decl.scope.find(&name).unwrap().clone(),
+                    _ => unreachable!(),
+                };
             }
             ast::HierId::Select(parent, sel) => {
                 let parent_hier = self.xfrm_hier_id(parent);
@@ -159,11 +163,18 @@ impl LoopGenEliminator {
                         }
                     }
                     HierItem::LoopGenBlock(ref decl) => {
-                        let genblk = decl.instances.borrow().iter().find(|(num, _)| num == &sel).unwrap().1.clone();
+                        let genblk = decl
+                            .instances
+                            .borrow()
+                            .iter()
+                            .find(|(num, _)| num == &sel)
+                            .unwrap()
+                            .1
+                            .clone();
                         // Mutate the parent's name to include the dimension
                         match parent.value {
-                            ast::HierId::Name(_, ref mut name) |
-                            ast::HierId::Member(_, ref mut name) => {
+                            ast::HierId::Name(_, ref mut name)
+                            | ast::HierId::Member(_, ref mut name) => {
                                 *name = Box::new(genblk.name.as_ref().unwrap().clone());
                             }
                             _ => unreachable!(),
@@ -173,7 +184,13 @@ impl LoopGenEliminator {
                     _ => unreachable!(),
                 };
                 // Replace parent
-                (std::mem::replace(&mut **parent, ast::Spanned::new_unspanned(ast::HierId::Root)), hier)
+                (
+                    std::mem::replace(
+                        &mut **parent,
+                        ast::Spanned::new_unspanned(ast::HierId::Root),
+                    ),
+                    hier,
+                )
             }
             _ => unimplemented!(),
         };
@@ -194,23 +211,32 @@ impl LoopGenEliminator {
             match &mut item {
                 HierItem::Instance(decl) => {
                     for port in &mut Rc::get_mut(decl).unwrap().port {
-                        if let hier::PortConn::Expr(port) = port { self.visit_expr(port) }
+                        if let hier::PortConn::Expr(port) = port {
+                            self.visit_expr(port)
+                        }
                     }
                 }
                 HierItem::Design(decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
-                        ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.xfrm_scope(scope));
+                        crate::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| {
+                            self.xfrm_scope(scope)
+                        });
                     }
                 }
                 HierItem::ContinuousAssign(expr) => {
                     self.visit_expr(Rc::get_mut(expr).unwrap());
                 }
                 HierItem::GenBlock(genblk) => {
-                    ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
+                    crate::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| {
+                        self.xfrm_scope(scope)
+                    });
                 }
                 HierItem::LoopGenBlock(ref loopgenblk) => {
                     for (_, genblk) in loopgenblk.instances.borrow_mut().iter_mut() {
-                        ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.xfrm_scope(scope));
+                        crate::util::replace_with(
+                            &mut Rc::get_mut(genblk).unwrap().scope,
+                            |scope| self.xfrm_scope(scope),
+                        );
                     }
                 }
                 // TODO: There're more cases where we need to visit expressions
@@ -228,20 +254,30 @@ impl LoopGenEliminator {
             let ident = match item {
                 HierItem::Design(ref mut decl) => {
                     for (_, inst) in decl.instances.borrow_mut().iter_mut() {
-                        ::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| self.expand_loopgen(scope));
+                        crate::util::replace_with(&mut Rc::get_mut(inst).unwrap().scope, |scope| {
+                            self.expand_loopgen(scope)
+                        });
                     }
                     None
                 }
                 HierItem::GenBlock(ref mut genblk) => {
-                    ::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| self.expand_loopgen(scope));
+                    crate::util::replace_with(&mut Rc::get_mut(genblk).unwrap().scope, |scope| {
+                        self.expand_loopgen(scope)
+                    });
                     Some(genblk.name.as_ref().unwrap().clone())
                 }
                 HierItem::LoopGenBlock(loopgenblk) => {
                     let loopgenblk = Rc::try_unwrap(loopgenblk).unwrap_or_else(|_| unreachable!());
                     for (_, mut genblk) in loopgenblk.instances.into_inner() {
-                        ::util::replace_with(&mut Rc::get_mut(&mut genblk).unwrap().scope, |scope| self.expand_loopgen(scope));
+                        crate::util::replace_with(
+                            &mut Rc::get_mut(&mut genblk).unwrap().scope,
+                            |scope| self.expand_loopgen(scope),
+                        );
                         let name = genblk.name.clone();
-                        self.scopes.last_mut().unwrap().insert(name, HierItem::GenBlock(genblk));
+                        self.scopes
+                            .last_mut()
+                            .unwrap()
+                            .insert(name, HierItem::GenBlock(genblk));
                     }
                     continue;
                 }

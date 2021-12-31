@@ -1,16 +1,16 @@
 //! This module represent elaborated and type-checked expressions.
 
-use std::ops;
 use std::fmt;
+use std::ops;
 use std::rc::Rc;
 
-use source::Span;
-use number::LogicVec;
-use super::ty::Ty;
 use super::hier;
-use syntax::ast::{self, IncDec, UnaryOp, BinaryOp, Spanned};
+use super::ty::Ty;
+use crate::number::LogicVec;
+use crate::source::Span;
+use crate::syntax::ast::{self, BinaryOp, IncDec, Spanned, UnaryOp};
 
-use syntax::ast::{HierId, Ident};
+use crate::syntax::ast::{HierId, Ident};
 
 /// A typed value with concrete data type.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,9 +19,9 @@ pub enum Val {
     Int(LogicVec),
     FixStr(String),
     Real(f64),
-    String, // TODO
+    String,  // TODO
     Chandle, // TODO
-    Event, // TODO
+    Event,   // TODO
     Void,
 }
 
@@ -45,7 +45,7 @@ pub type Dim = Spanned<DimKind>;
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Const(Val),
-    
+
     /// A hierachical name
     HierName(HierId),
 

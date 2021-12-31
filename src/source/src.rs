@@ -1,13 +1,13 @@
 //! Overall source file management
 
-use super::{Pos, Span, FatPos, FatSpan};
+use super::{FatPos, FatSpan, Pos, Span};
 
-use std::rc::Rc;
-use std::cmp;
+use lazycell::LazyCell;
 use std::cell::RefCell;
+use std::cmp;
 use std::io::{self, Read};
 use std::path::PathBuf;
-use lazycell::LazyCell;
+use std::rc::Rc;
 
 /// Represent a single source file
 pub struct Source {
@@ -21,7 +21,7 @@ impl Source {
         Source {
             filename: filename,
             content: Rc::new(content),
-            linemap: LazyCell::new()
+            linemap: LazyCell::new(),
         }
     }
 
@@ -44,7 +44,7 @@ impl Source {
         Source {
             filename: file,
             content: self.content.clone(),
-            linemap: lazy
+            linemap: lazy,
         }
     }
 
@@ -58,7 +58,9 @@ impl Source {
 
     pub fn linemap(&self) -> &LineMap {
         if !self.linemap.filled() {
-            self.linemap.fill(LineMap::new(&self.content, 0)).unwrap_or_else(|_| unreachable!());
+            self.linemap
+                .fill(LineMap::new(&self.content, 0))
+                .unwrap_or_else(|_| unreachable!());
         }
         self.linemap.borrow().unwrap()
     }
@@ -92,7 +94,7 @@ impl LineMap {
     pub fn clone_with_bias(&self, bias: i32) -> LineMap {
         LineMap {
             lines: self.lines.clone(),
-            bias: self.bias + bias
+            bias: self.bias + bias,
         }
     }
 
@@ -100,7 +102,7 @@ impl LineMap {
     pub fn line_number(&self, pos: usize) -> i32 {
         match self.lines.binary_search(&pos) {
             Ok(v) => v as i32 + self.bias,
-            Err(v) => (v - 1) as i32 + self.bias
+            Err(v) => (v - 1) as i32 + self.bias,
         }
     }
 
@@ -146,7 +148,7 @@ impl SrcMgrMut {
                     Err(e) => err = Some(e),
                 }
             }
-            break 'find_file Err(err.unwrap())
+            break 'find_file Err(err.unwrap());
         }?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
@@ -190,7 +192,11 @@ impl SrcMgrMut {
         if file_id == self.end.len() {
             panic!("position out of bound");
         }
-        let file_begin = if file_id == 0 { 0 } else { self.end[file_id - 1] };
+        let file_begin = if file_id == 0 {
+            0
+        } else {
+            self.end[file_id - 1]
+        };
         FatPos::new(self.files[file_id].clone(), ipos - file_begin)
     }
 

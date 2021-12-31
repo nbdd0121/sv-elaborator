@@ -1,27 +1,23 @@
 #![allow(dead_code)]
 
-extern crate num;
-extern crate lazycell;
-extern crate colored;
 #[macro_use]
 extern crate lazy_static;
-extern crate getopts;
 
-mod opts;
-mod util;
-mod syntax;
-mod source;
-mod number;
-mod printer;
 mod elaborate;
 mod lowering;
+mod number;
+mod opts;
+mod printer;
+mod source;
+mod syntax;
+mod util;
 
 use std::fs::File;
 use std::io::prelude::*;
 
-use source::{SrcMgr, Source, DiagMgr, Severity};
-use printer::PrettyPrint;
-use syntax::ast;
+use crate::printer::PrettyPrint;
+use crate::source::{DiagMgr, Severity, Source, SrcMgr};
+use crate::syntax::ast;
 
 // use lexer::TokenKind;
 use std::rc::Rc;
@@ -47,25 +43,33 @@ fn main() {
     opts.optflag("h", "help", "print this help message");
 
     let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
+        Ok(m) => m,
         Err(f) => {
             eprintln!("{}", f.to_string());
-            return print_help(&opts, &args[0])
+            return print_help(&opts, &args[0]);
         }
     };
 
     if matches.opt_present("h") {
-        return print_help(&opts, &args[0])
+        return print_help(&opts, &args[0]);
     }
 
     // Initailise source manager and diagnostic manager first
-    let mut include_search_list: Vec<::std::path::PathBuf> = matches.opt_strs("I").into_iter().map(|x| x.into()).collect();
+    let mut include_search_list: Vec<::std::path::PathBuf> = matches
+        .opt_strs("I")
+        .into_iter()
+        .map(|x| x.into())
+        .collect();
     include_search_list.insert(0, ::std::path::PathBuf::new());
     let src_mgr = Rc::new(SrcMgr::new(include_search_list));
     let diag_mgr = DiagMgr::new(src_mgr.clone());
 
     if matches.free.is_empty() {
-        diag_mgr.report_span(Severity::Fatal, "no input files specified", source::Span::none());
+        diag_mgr.report_span(
+            Severity::Fatal,
+            "no input files specified",
+            source::Span::none(),
+        );
         return;
     }
 
@@ -99,7 +103,7 @@ fn main() {
             Ok(v) => v,
             Err(info) => {
                 if info.downcast_ref::<Severity>().is_some() {
-                    continue
+                    continue;
                 } else {
                     ::std::process::exit(1);
                 }
@@ -110,12 +114,16 @@ fn main() {
     }
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { ::std::process::exit(1); }
+    if diag_mgr.has_error() {
+        ::std::process::exit(1);
+    }
 
     elaborate::resolve(&diag_mgr, &mut files);
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { ::std::process::exit(1); }
+    if diag_mgr.has_error() {
+        ::std::process::exit(1);
+    }
 
     if matches.opt_present("parse") {
         let mut out: Box<dyn Write> = match matches.opt_str("o") {
@@ -137,13 +145,17 @@ fn main() {
     let opts = opts::Opts {
         blackbox: matches.opt_strs("b"),
         prefix: matches.opt_str("p"),
-        toplevel: matches.opt_str("t").unwrap_or_else(|| "chip_top".to_owned()),
+        toplevel: matches
+            .opt_str("t")
+            .unwrap_or_else(|| "chip_top".to_owned()),
     };
 
     let mut elaborated = elaborate::elaborate(&diag_mgr, &files, &opts);
 
     // Abort elaboration when there are syntax errors.
-    if diag_mgr.has_error() { ::std::process::exit(1); }
+    if diag_mgr.has_error() {
+        ::std::process::exit(1);
+    }
 
     lowering::gen_name_assign(&mut elaborated);
     let elaborated = lowering::loop_gen_elim(elaborated);
@@ -177,14 +189,13 @@ fn main() {
     for (list, name) in files.iter().skip(1).zip(matches.free.iter()) {
         writeln!(out, "/* file: {} */", name).unwrap();
         if list.is_empty() {
-
         } else {
             let mut printer = PrettyPrint::new();
             for i in list {
                 // If it is a design unit specified in blackbox list, do not print it out.
                 if let ast::Item::DesignDecl(ref decl) = i {
                     if opts.blackbox.iter().any(|item| &decl.name.value == item) {
-                        continue
+                        continue;
                     }
                 }
                 printer.print_item(&i);

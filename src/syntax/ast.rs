@@ -1,5 +1,5 @@
 use super::super::source::Span;
-use super::super::syntax::tokens::{Token, Keyword};
+use super::super::syntax::tokens::{Keyword, Token};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
@@ -7,7 +7,10 @@ use std::ops::{Deref, DerefMut};
 // General purpose helpers
 //
 
-pub trait AstNode where Self: Sized {
+pub trait AstNode
+where
+    Self: Sized,
+{
     /// An user-friendly name for error message
     fn name() -> &'static str;
 
@@ -73,7 +76,6 @@ impl<T: AstNode> AstNode for Spanned<T> {
     }
 }
 
-
 //
 // Keyword enums
 //
@@ -107,12 +109,16 @@ pub enum AlwaysKw {
 
 impl fmt::Display for AlwaysKw {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            AlwaysKw::Always => "always",
-            AlwaysKw::AlwaysComb => "always_comb",
-            AlwaysKw::AlwaysLatch => "always_latch",
-            AlwaysKw::AlwaysFf => "always_ff",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                AlwaysKw::Always => "always",
+                AlwaysKw::AlwaysComb => "always_comb",
+                AlwaysKw::AlwaysLatch => "always_latch",
+                AlwaysKw::AlwaysFf => "always_ff",
+            }
+        )
     }
 }
 
@@ -129,14 +135,18 @@ pub enum IntAtomTy {
 
 impl fmt::Display for IntAtomTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            IntAtomTy::Byte => "byte",
-            IntAtomTy::Shortint => "shortint",
-            IntAtomTy::Int => "int",
-            IntAtomTy::Longint => "longint",
-            IntAtomTy::Integer => "integer",
-            IntAtomTy::Time => "time",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                IntAtomTy::Byte => "byte",
+                IntAtomTy::Shortint => "shortint",
+                IntAtomTy::Int => "int",
+                IntAtomTy::Longint => "longint",
+                IntAtomTy::Integer => "integer",
+                IntAtomTy::Time => "time",
+            }
+        )
     }
 }
 
@@ -149,7 +159,15 @@ pub enum IntVecTy {
 
 impl fmt::Display for IntVecTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", if self == &IntVecTy::Bit { "bit" } else { "logic" })
+        write!(
+            f,
+            "{}",
+            if self == &IntVecTy::Bit {
+                "bit"
+            } else {
+                "logic"
+            }
+        )
     }
 }
 
@@ -179,20 +197,24 @@ pub enum NetTy {
 
 impl fmt::Display for NetTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            NetTy::Supply0 => "supply0",
-            NetTy::Supply1 => "supply1",
-            NetTy::Tri => "tri",
-            NetTy::Triand => "triand",
-            NetTy::Trior => "trior",
-            NetTy::Trireg => "trireg",
-            NetTy::Tri0 => "tri0",
-            NetTy::Tri1 => "tri1",
-            NetTy::Uwire => "uwire",
-            NetTy::Wire => "wire",
-            NetTy::Wand => "wand",
-            NetTy::Wor => "wor",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                NetTy::Supply0 => "supply0",
+                NetTy::Supply1 => "supply1",
+                NetTy::Tri => "tri",
+                NetTy::Triand => "triand",
+                NetTy::Trior => "trior",
+                NetTy::Trireg => "trireg",
+                NetTy::Tri0 => "tri0",
+                NetTy::Tri1 => "tri1",
+                NetTy::Uwire => "uwire",
+                NetTy::Wire => "wire",
+                NetTy::Wand => "wand",
+                NetTy::Wor => "wor",
+            }
+        )
     }
 }
 
@@ -222,10 +244,14 @@ pub enum Signing {
 
 impl fmt::Display for Signing {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            Signing::Signed => "signed",
-            Signing::Unsigned => "unsigned",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Signing::Signed => "signed",
+                Signing::Unsigned => "unsigned",
+            }
+        )
     }
 }
 
@@ -238,11 +264,15 @@ pub enum Edge {
 
 impl fmt::Display for Edge {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            Edge::Posedge => "posedge",
-            Edge::Negedge => "negedge",
-            Edge::Edge => "edge",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Edge::Posedge => "posedge",
+                Edge::Negedge => "negedge",
+                Edge::Edge => "edge",
+            }
+        )
     }
 }
 
@@ -255,11 +285,15 @@ pub enum UniqPrio {
 
 impl fmt::Display for UniqPrio {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            UniqPrio::Unique => "unique",
-            UniqPrio::Unique0 => "unique0",
-            UniqPrio::Priority => "priority",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                UniqPrio::Unique => "unique",
+                UniqPrio::Unique0 => "unique0",
+                UniqPrio::Priority => "priority",
+            }
+        )
     }
 }
 
@@ -272,11 +306,15 @@ pub enum CaseKw {
 
 impl fmt::Display for CaseKw {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            CaseKw::Case => "case",
-            CaseKw::Casez => "casez",
-            CaseKw::Casex => "casex",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                CaseKw::Case => "case",
+                CaseKw::Casez => "casez",
+                CaseKw::Casex => "casex",
+            }
+        )
     }
 }
 
@@ -318,10 +356,14 @@ pub enum IncDec {
 
 impl fmt::Display for IncDec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            IncDec::Inc => "++",
-            IncDec::Dec => "--",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                IncDec::Inc => "++",
+                IncDec::Dec => "--",
+            }
+        )
     }
 }
 
@@ -341,18 +383,22 @@ pub enum UnaryOp {
 
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            UnaryOp::Add => "+",
-            UnaryOp::Sub => "-",
-            UnaryOp::LNot => "!",
-            UnaryOp::Not => "~",
-            UnaryOp::And => "&",
-            UnaryOp::Nand => "~&",
-            UnaryOp::Or => "|",
-            UnaryOp::Nor => "~|",
-            UnaryOp::Xor => "^",
-            UnaryOp::Xnor => "~^",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                UnaryOp::Add => "+",
+                UnaryOp::Sub => "-",
+                UnaryOp::LNot => "!",
+                UnaryOp::Not => "~",
+                UnaryOp::And => "&",
+                UnaryOp::Nand => "~&",
+                UnaryOp::Or => "|",
+                UnaryOp::Nor => "~|",
+                UnaryOp::Xor => "^",
+                UnaryOp::Xnor => "~^",
+            }
+        )
     }
 }
 
@@ -389,35 +435,39 @@ pub enum BinaryOp {
 
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            BinaryOp::Add => "+",
-            BinaryOp::Sub => "-",
-            BinaryOp::Mul => "*",
-            BinaryOp::Div => "/",
-            BinaryOp::Mod => "%",
-            BinaryOp::Eq => "==",
-            BinaryOp::Neq => "!=",
-            BinaryOp::CaseEq => "===",
-            BinaryOp::CaseNeq => "!==",
-            BinaryOp::WildEq => "==?",
-            BinaryOp::WildNeq => "!=?",
-            BinaryOp::LAnd => "&&",
-            BinaryOp::LOr => "||",
-            BinaryOp::Power => "**",
-            BinaryOp::Lt => "<",
-            BinaryOp::Leq => "<=",
-            BinaryOp::Gt => ">",
-            BinaryOp::Geq => ">=",
-            BinaryOp::And => "&",
-            BinaryOp::Or => "|",
-            BinaryOp::Xor => "^",
-            BinaryOp::Xnor => "~^",
-            BinaryOp::Shl => "<<",
-            BinaryOp::LShr => ">>",
-            BinaryOp::AShr => ">>>",
-            BinaryOp::Imply => "->",
-            BinaryOp::Equiv => "<->",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+                BinaryOp::Mod => "%",
+                BinaryOp::Eq => "==",
+                BinaryOp::Neq => "!=",
+                BinaryOp::CaseEq => "===",
+                BinaryOp::CaseNeq => "!==",
+                BinaryOp::WildEq => "==?",
+                BinaryOp::WildNeq => "!=?",
+                BinaryOp::LAnd => "&&",
+                BinaryOp::LOr => "||",
+                BinaryOp::Power => "**",
+                BinaryOp::Lt => "<",
+                BinaryOp::Leq => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::Geq => ">=",
+                BinaryOp::And => "&",
+                BinaryOp::Or => "|",
+                BinaryOp::Xor => "^",
+                BinaryOp::Xnor => "~^",
+                BinaryOp::Shl => "<<",
+                BinaryOp::LShr => ">>",
+                BinaryOp::AShr => ">>>",
+                BinaryOp::Imply => "->",
+                BinaryOp::Equiv => "<->",
+            }
+        )
     }
 }
 
@@ -440,7 +490,12 @@ pub enum Item {
     Typedef(Option<Box<AttrInst>>, Box<DataType>, Box<Ident>, Vec<Dim>),
 
     /// Typedef that imports data types from interface
-    TypedefIntf(Option<Box<AttrInst>>, Box<Spanned<HierId>>, Box<Ident>, Box<Ident>),
+    TypedefIntf(
+        Option<Box<AttrInst>>,
+        Box<Spanned<HierId>>,
+        Box<Ident>,
+        Box<Ident>,
+    ),
 
     ContinuousAssign(Vec<Expr>),
     Initial(Box<Stmt>),
@@ -460,7 +515,9 @@ pub enum Item {
 }
 
 impl AstNode for Item {
-    fn name() -> &'static str { "item" }
+    fn name() -> &'static str {
+        "item"
+    }
 }
 
 /// Declaration of module, interface or program
@@ -596,11 +653,15 @@ pub enum AggrType {
 
 impl fmt::Display for AggrType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            AggrType::Struct => "struct",
-            AggrType::Union => "union",
-            AggrType::TaggedUnion => "union tagged",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                AggrType::Struct => "struct",
+                AggrType::Union => "union",
+                AggrType::TaggedUnion => "union tagged",
+            }
+        )
     }
 }
 
@@ -642,7 +703,9 @@ pub struct DeclAssign {
 }
 
 impl AstNode for DeclAssign {
-    fn name() -> &'static str { "declaration assignment" }
+    fn name() -> &'static str {
+        "declaration assignment"
+    }
 }
 
 //
@@ -758,7 +821,9 @@ pub struct Args {
 }
 
 impl AstNode for Args {
-    fn name() -> &'static str { "arguments" }
+    fn name() -> &'static str {
+        "arguments"
+    }
 }
 
 //
@@ -832,7 +897,9 @@ pub struct Stmt {
 }
 
 impl AstNode for Stmt {
-    fn name() -> &'static str { "statement" }
+    fn name() -> &'static str {
+        "statement"
+    }
 }
 
 //
@@ -895,7 +962,7 @@ pub enum ExprKind {
     /// type". In some cases other expression can also be viewed as type, e.g. `id[x]`
     Type(Box<DataType>),
     Literal(Token),
-    
+
     /// A hierachical name
     HierName(HierId),
 
@@ -960,7 +1027,7 @@ impl AstNode for ExprKind {
 #[derive(Debug, Clone)]
 pub struct AttrSpec {
     pub name: Ident,
-    pub expr: Option<Box<Expr>>
+    pub expr: Option<Box<Expr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -999,7 +1066,9 @@ pub enum HierId {
 }
 
 impl AstNode for HierId {
-    fn name() -> &'static str { "hierachical identifier" }
+    fn name() -> &'static str {
+        "hierachical identifier"
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

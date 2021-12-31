@@ -2,13 +2,13 @@
 
 use std::collections::HashMap;
 
-use syntax::ast::{self, *};
-use syntax::tokens::*;
-use source::Span;
-use number::{LogicVec, LogicNumber, LogicValue};
-use super::ty::{Ty, IntTy, Struct, Enum};
 use super::expr::{self, Val};
 use super::hier::{self, HierItem};
+use super::ty::{Enum, IntTy, Struct, Ty};
+use crate::number::{LogicNumber, LogicValue, LogicVec};
+use crate::source::Span;
+use crate::syntax::ast::{self, *};
+use crate::syntax::tokens::*;
 
 pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
     let mut reconstructor = Reconstructor {
@@ -22,14 +22,13 @@ pub fn reconstruct(source: &hier::Source) -> Vec<Vec<Item>> {
 
 /// Given a i32, reconstruct the corresponding corresponding constant value.
 pub fn reconstruct_usize(val: usize) -> Expr {
-    Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(TokenKind::IntegerLiteral(
-        LogicNumber {
+    Spanned::new_unspanned(ExprKind::Literal(Spanned::new_unspanned(
+        TokenKind::IntegerLiteral(LogicNumber {
             value: LogicVec::from(32, true, ::num::FromPrimitive::from_usize(val).unwrap()),
             sized: false,
-        }
-    ))))
+        }),
+    )))
 }
-
 
 /// Given a i32, reconstruct the corresponding corresponding constant value.
 pub fn reconstruct_i32(val: i32) -> Expr {
@@ -37,7 +36,10 @@ pub fn reconstruct_i32(val: i32) -> Expr {
     if val >= 0 {
         expr
     } else {
-        Spanned::new(ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)), Span::none())
+        Spanned::new(
+            ExprKind::Unary(UnaryOp::Sub, None, Box::new(expr)),
+            Span::none(),
+        )
     }
 }
 
@@ -54,12 +56,16 @@ struct Reconstructor<'a> {
 impl<'a> Reconstructor<'a> {
     // Given a LogicVec, reconstruct the corresponding corresponding constant value.
     pub fn reconstruct_const(&self, val: &LogicVec, span: Span) -> Expr {
-        Spanned::new(ExprKind::Literal(Spanned::new(TokenKind::IntegerLiteral(
-            LogicNumber {
-                value: val.clone(),
-                sized: self.force_sized || val.width() != 32 || !val.signed,
-            }
-        ), span)), span)
+        Spanned::new(
+            ExprKind::Literal(Spanned::new(
+                TokenKind::IntegerLiteral(LogicNumber {
+                    value: val.clone(),
+                    sized: self.force_sized || val.width() != 32 || !val.signed,
+                }),
+                span,
+            )),
+            span,
+        )
     }
 
     /// Given an ty::Enum, reconstruct ast::EnumDecl
@@ -69,40 +75,48 @@ impl<'a> Reconstructor<'a> {
             IntTy::SimpleVec(32, true, true) => None,
             v => Some(Box::new(self.reconstruct_ty_int(v, Span::none()))),
         };
-        let members = enu.elements.borrow().iter().map(|(name, val)| {
-            DeclAssign {
+        let members = enu
+            .elements
+            .borrow()
+            .iter()
+            .map(|(name, val)| DeclAssign {
                 name: Ident::new(format!("{}_{}", prefix, name.value), name.span),
                 dim: Vec::new(),
                 init: Some(Box::new(self.reconstruct_const(val, Span::none()))),
-            }
-        }).collect();
-        EnumDecl {
-            ty: base,
-            members,
-        }
+            })
+            .collect();
+        EnumDecl { ty: base, members }
     }
 
     /// Given an ty::Struct, reconstruct ast::AggrDecl
     pub fn reconstruct_struct(&mut self, struc: &Struct) -> AggrDecl {
-        let members = struc.members.iter().map(|(ty, name, init)| {
-            let astty = self.reconstruct_ty_int(&ty, Span::none());
-            AggrMember {
-                attr: None,
-                ty: astty,
-                list: vec![DeclAssign {
-                    name: name.clone(),
-                    dim: Vec::new(),
-                    init: init.as_ref().map(|init| {
-                        Box::new(self.reconstruct_val_int(&ty, &init, Span::none()))
-                    }),
-                }],
-            }
-        }).collect();
+        let members = struc
+            .members
+            .iter()
+            .map(|(ty, name, init)| {
+                let astty = self.reconstruct_ty_int(&ty, Span::none());
+                AggrMember {
+                    attr: None,
+                    ty: astty,
+                    list: vec![DeclAssign {
+                        name: name.clone(),
+                        dim: Vec::new(),
+                        init: init.as_ref().map(|init| {
+                            Box::new(self.reconstruct_val_int(&ty, &init, Span::none()))
+                        }),
+                    }],
+                }
+            })
+            .collect();
 
         AggrDecl {
             kind: AggrType::Struct,
             packed: true,
-            sign: if struc.sign { Signing::Signed } else { Signing::Unsigned },
+            sign: if struc.sign {
+                Signing::Signed
+            } else {
+                Signing::Unsigned
+            },
             members,
         }
     }
@@ -133,51 +147,79 @@ impl<'a> Reconstructor<'a> {
             // Synthesis fake expression nodes from constants
             let a_expr = reconstruct_i32(*ub);
             let b_expr = reconstruct_i32(*lb);
-            dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span))
+            dim.push(Spanned::new(
+                DimKind::Range(Box::new(a_expr), Box::new(b_expr)),
+                span,
+            ))
         }
 
         let kind = match inner {
             IntTy::Array(..) => unreachable!(),
-            IntTy::Logic(two_state, sign) => {
-                DataTypeKind::IntVec(
-                    if *two_state { IntVecTy::Bit } else { IntVecTy::Logic },
-                    if *sign { Signing::Signed} else { Signing::Unsigned },
-                    dim
-                )
-            }
+            IntTy::Logic(two_state, sign) => DataTypeKind::IntVec(
+                if *two_state {
+                    IntVecTy::Bit
+                } else {
+                    IntVecTy::Logic
+                },
+                if *sign {
+                    Signing::Signed
+                } else {
+                    Signing::Unsigned
+                },
+                dim,
+            ),
             IntTy::SimpleVec(width, two_state, sign) => {
                 // Synthesis fake expression nodes from constants
                 let a_expr = reconstruct_usize(*width - 1);
                 let b_expr = reconstruct_usize(0);
-                dim.push(Spanned::new(DimKind::Range(Box::new(a_expr), Box::new(b_expr)), span));
+                dim.push(Spanned::new(
+                    DimKind::Range(Box::new(a_expr), Box::new(b_expr)),
+                    span,
+                ));
                 DataTypeKind::IntVec(
-                    if *two_state { IntVecTy::Bit } else { IntVecTy::Logic },
-                    if *sign { Signing::Signed} else { Signing::Unsigned},
-                    dim
-                )
-            }
-            IntTy::Struct(struc) => {
-                DataTypeKind::HierName(
-                    if self.global_qualify {
-                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned()))))
+                    if *two_state {
+                        IntVecTy::Bit
                     } else {
-                        None
+                        IntVecTy::Logic
                     },
-                    Ident::new_unspanned(format!("struct_{}", self.source.structs.iter().position(|x| x == struc).unwrap())),
-                    dim
-                )
-            }
-            IntTy::Enum(enu) => {
-                DataTypeKind::HierName(
-                    if self.global_qualify {
-                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned()))))
+                    if *sign {
+                        Signing::Signed
                     } else {
-                        None
+                        Signing::Unsigned
                     },
-                    Ident::new_unspanned(format!("enum_{}", self.source.enums.iter().position(|x| x == enu).unwrap())),
-                    dim
+                    dim,
                 )
             }
+            IntTy::Struct(struc) => DataTypeKind::HierName(
+                if self.global_qualify {
+                    Some(Scope::Name(
+                        None,
+                        Box::new(Ident::new_unspanned("global_types".to_owned())),
+                    ))
+                } else {
+                    None
+                },
+                Ident::new_unspanned(format!(
+                    "struct_{}",
+                    self.source.structs.iter().position(|x| x == struc).unwrap()
+                )),
+                dim,
+            ),
+            IntTy::Enum(enu) => DataTypeKind::HierName(
+                if self.global_qualify {
+                    Some(Scope::Name(
+                        None,
+                        Box::new(Ident::new_unspanned("global_types".to_owned())),
+                    ))
+                } else {
+                    None
+                },
+                Ident::new_unspanned(format!(
+                    "enum_{}",
+                    self.source.enums.iter().position(|x| x == enu).unwrap()
+                )),
+                dim,
+            ),
         };
         Spanned::new(kind, span)
     }
@@ -192,10 +234,10 @@ impl<'a> Reconstructor<'a> {
                 let (ty, mut dim) = self.reconstruct_ty(base, Span::none());
                 let ast_dim = Spanned::new_unspanned(DimKind::Range(
                     Box::new(reconstruct_i32(*ub)),
-                    Box::new(reconstruct_i32(*lb))
+                    Box::new(reconstruct_i32(*lb)),
                 ));
                 dim.insert(0, ast_dim);
-                return (ty, dim)
+                return (ty, dim);
             }
             v => unimplemented!("{:?}", v),
         };
@@ -207,9 +249,9 @@ impl<'a> Reconstructor<'a> {
         assert!(dim.len() == 0);
         match ast_ty.value {
             // These are already simple types
-            DataTypeKind::IntAtom(_, None) |
-            DataTypeKind::Real(_) |
-            DataTypeKind::HierName(..) => (),
+            DataTypeKind::IntAtom(_, None) | DataTypeKind::Real(_) | DataTypeKind::HierName(..) => {
+                ()
+            }
             _ => {
                 if !self.simple_ty_map.contains_key(&ty) {
                     let ident = Ident::new_unspanned(format!("type_{}", self.simple_ty_map.len()));
@@ -217,7 +259,10 @@ impl<'a> Reconstructor<'a> {
                 }
                 let ident = self.simple_ty_map[&ty].clone();
                 ast_ty.value = DataTypeKind::HierName(
-                    Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
+                    Some(Scope::Name(
+                        None,
+                        Box::new(Ident::new_unspanned("global_types".to_owned())),
+                    )),
                     ident,
                     Vec::new(),
                 );
@@ -228,16 +273,17 @@ impl<'a> Reconstructor<'a> {
 
     pub fn reconstruct_val_int(&mut self, ty: &IntTy, val: &LogicVec, span: Span) -> Expr {
         match ty {
-            IntTy::SimpleVec(_, false, _) => {
-                self.reconstruct_const(val, span)
-            }
+            IntTy::SimpleVec(_, false, _) => self.reconstruct_const(val, span),
             _ => {
                 let ty = self.reconstruct_ty_simple(&Ty::Int(ty.clone()));
                 let val = self.reconstruct_const(val, span);
-                Spanned::new(ExprKind::TypeCast(
-                    Box::new(Spanned::new(ExprKind::Type(Box::new(ty)), span)),
-                    Box::new(val)
-                ), span)
+                Spanned::new(
+                    ExprKind::TypeCast(
+                        Box::new(Spanned::new(ExprKind::Type(Box::new(ty)), span)),
+                        Box::new(val),
+                    ),
+                    span,
+                )
             }
         }
     }
@@ -245,18 +291,30 @@ impl<'a> Reconstructor<'a> {
     pub fn reconstruct_val(&mut self, ty: &Ty, val: &Val, span: Span) -> Expr {
         let kind = match ty {
             Ty::Type => {
-                let ty = if let Val::Type(ty) = val { ty } else { unreachable!()};
+                let ty = if let Val::Type(ty) = val {
+                    ty
+                } else {
+                    unreachable!()
+                };
                 let (ty, dim) = self.reconstruct_ty(ty, span);
                 // TODO: How to deal with dim
                 assert!(dim.len() == 0);
                 ExprKind::Type(Box::new(ty))
             }
             Ty::Int(subty) => {
-                let val = if let Val::Int(v) = val { v } else { unreachable!() };
+                let val = if let Val::Int(v) = val {
+                    v
+                } else {
+                    unreachable!()
+                };
                 return self.reconstruct_val_int(subty, val, span);
             }
             Ty::FixStr(_) => {
-                let val = if let Val::FixStr(v) = val { v } else { unreachable!() };
+                let val = if let Val::FixStr(v) = val {
+                    v
+                } else {
+                    unreachable!()
+                };
                 ExprKind::Literal(Spanned::new(TokenKind::StringLiteral(val.clone()), span))
             }
             _ => unimplemented!(),
@@ -290,18 +348,17 @@ impl<'a> Reconstructor<'a> {
 
     pub fn reconstruct_expr(&mut self, expr: &expr::Expr) -> ast::Expr {
         let kind = match expr.value {
-            expr::ExprKind::Const(ref val) => {
-                self.reconstruct_val(&expr.ty, val, expr.span).value
-            }
-            expr::ExprKind::HierName(ref name) => {
-                ast::ExprKind::HierName(name.clone())
-            }
+            expr::ExprKind::Const(ref val) => self.reconstruct_val(&expr.ty, val, expr.span).value,
+            expr::ExprKind::HierName(ref name) => ast::ExprKind::HierName(name.clone()),
             expr::ExprKind::EmptyQueue => unimplemented!(),
             expr::ExprKind::Concat(ref list) => {
                 // Within concatenation, unsized literals should not exist
                 let backup = self.force_sized;
                 self.force_sized = true;
-                let ast_list = list.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                let ast_list = list
+                    .iter()
+                    .map(|expr| self.reconstruct_expr(expr))
+                    .collect();
                 self.force_sized = backup;
                 ast::ExprKind::Concat(ast_list, None)
             }
@@ -313,11 +370,11 @@ impl<'a> Reconstructor<'a> {
             expr::ExprKind::AssignPattern(ref ty, ref pattern) => {
                 let ast_ty = Some(Box::new(self.reconstruct_ty_simple(ty)));
                 let ast_pattern = match pattern {
-                    expr::AssignPattern::Simple(list) => {
-                        ast::AssignPattern::Simple(
-                            list.iter().map(|item| self.reconstruct_expr(item)).collect()
-                        )
-                    }
+                    expr::AssignPattern::Simple(list) => ast::AssignPattern::Simple(
+                        list.iter()
+                            .map(|item| self.reconstruct_expr(item))
+                            .collect(),
+                    ),
                     _ => unimplemented!(),
                 };
                 ast::ExprKind::AssignPattern(ast_ty, ast_pattern)
@@ -328,7 +385,10 @@ impl<'a> Reconstructor<'a> {
                 match ast_parent.value {
                     ast::ExprKind::HierName(name) => {
                         let spanned = Spanned::new(name, ast_parent.span);
-                        ast::ExprKind::HierName(HierId::Select(Box::new(spanned), Box::new(ast_dim)))
+                        ast::ExprKind::HierName(HierId::Select(
+                            Box::new(spanned),
+                            Box::new(ast_dim),
+                        ))
                     }
                     _ => unimplemented!(),
                 }
@@ -338,7 +398,10 @@ impl<'a> Reconstructor<'a> {
                 match ast_parent.value {
                     ast::ExprKind::HierName(id) => {
                         let spanned = Spanned::new(id, ast_parent.span);
-                        ast::ExprKind::HierName(HierId::Member(Box::new(spanned), Box::new(name.clone())))
+                        ast::ExprKind::HierName(HierId::Member(
+                            Box::new(spanned),
+                            Box::new(name.clone()),
+                        ))
                     }
                     _ => unimplemented!(),
                 }
@@ -354,7 +417,7 @@ impl<'a> Reconstructor<'a> {
                     args: Some(Args {
                         ordered: args,
                         named: Vec::new(),
-                    })
+                    }),
                 }))
             }
             expr::ExprKind::FuncCall { ref expr, ref args } => {
@@ -382,7 +445,14 @@ impl<'a> Reconstructor<'a> {
             }
             expr::ExprKind::SignCast(sign, ref rhs) => {
                 let ast_rhs = self.reconstruct_expr(rhs);
-                ast::ExprKind::SignCast(if sign { Signing::Signed } else { Signing::Unsigned }, Box::new(ast_rhs))
+                ast::ExprKind::SignCast(
+                    if sign {
+                        Signing::Signed
+                    } else {
+                        Signing::Unsigned
+                    },
+                    Box::new(ast_rhs),
+                )
             }
             expr::ExprKind::WidthCast(width, ref rhs) => {
                 let ast_ty = reconstruct_usize(width);
@@ -430,54 +500,98 @@ impl<'a> Reconstructor<'a> {
     pub fn reconstruct_stmt(&mut self, stmt: &expr::Stmt) -> ast::Stmt {
         let kind = match &stmt.value {
             expr::StmtKind::Empty => ast::StmtKind::Empty,
-            expr::StmtKind::TimingCtrl(ctrl, stmt) => ast::StmtKind::TimingCtrl(
-                ctrl.clone(),
-                Box::new(self.reconstruct_stmt(stmt))
-            ),
-            expr::StmtKind::If { uniq, cond, success, failure } => {
+            expr::StmtKind::TimingCtrl(ctrl, stmt) => {
+                ast::StmtKind::TimingCtrl(ctrl.clone(), Box::new(self.reconstruct_stmt(stmt)))
+            }
+            expr::StmtKind::If {
+                uniq,
+                cond,
+                success,
+                failure,
+            } => {
                 let cond = self.reconstruct_expr(cond);
                 let t = self.reconstruct_stmt(success);
                 let f = failure.as_ref().map(|f| self.reconstruct_stmt(f));
                 ast::StmtKind::If(*uniq, Box::new(cond), Box::new(t), f.map(Box::new))
-            },
-            expr::StmtKind::Case { uniq, kw, expr, items } => {
+            }
+            expr::StmtKind::Case {
+                uniq,
+                kw,
+                expr,
+                items,
+            } => {
                 let expr = self.reconstruct_expr(expr);
-                let items = items.iter().map(|(conds, stmt)| {
-                    let conds = conds.iter().map(|cond| self.reconstruct_expr(cond)).collect();
-                    let stmt = self.reconstruct_stmt(stmt);
-                    (conds, stmt)
-                }).collect();
+                let items = items
+                    .iter()
+                    .map(|(conds, stmt)| {
+                        let conds = conds
+                            .iter()
+                            .map(|cond| self.reconstruct_expr(cond))
+                            .collect();
+                        let stmt = self.reconstruct_stmt(stmt);
+                        (conds, stmt)
+                    })
+                    .collect();
                 ast::StmtKind::Case {
                     uniq: *uniq,
                     kw: *kw,
                     expr: Box::new(expr),
                     items,
                 }
-            },
-            expr::StmtKind::For { ty, init, cond, update, body } => {
+            }
+            expr::StmtKind::For {
+                ty,
+                init,
+                cond,
+                update,
+                body,
+            } => {
                 let ty = ty.as_ref().map(|ty| self.reconstruct_ty_simple(ty));
-                let init = init.iter().map(|expr| self.reconstruct_expr(expr)).collect();
-                let cond = cond.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
-                let update = update.iter().map(|expr| self.reconstruct_expr(expr)).collect();
+                let init = init
+                    .iter()
+                    .map(|expr| self.reconstruct_expr(expr))
+                    .collect();
+                let cond = cond
+                    .as_ref()
+                    .map(|expr| Box::new(self.reconstruct_expr(expr)));
+                let update = update
+                    .iter()
+                    .map(|expr| self.reconstruct_expr(expr))
+                    .collect();
                 let body = Box::new(self.reconstruct_stmt(body));
                 ast::StmtKind::For {
                     ty: ty.map(Box::new),
-                    init, cond, update, body
+                    init,
+                    cond,
+                    update,
+                    body,
                 }
-            },
-            expr::StmtKind::Assert { kind, expr, success, failure } => {
+            }
+            expr::StmtKind::Assert {
+                kind,
+                expr,
+                success,
+                failure,
+            } => {
                 let expr = Box::new(self.reconstruct_expr(expr));
-                let success = success.as_ref().map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
-                let failure = failure.as_ref().map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
+                let success = success
+                    .as_ref()
+                    .map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
+                let failure = failure
+                    .as_ref()
+                    .map(|stmt| Box::new(self.reconstruct_stmt(stmt)));
                 ast::StmtKind::Assert {
                     kind: *kind,
                     expr,
                     success,
                     failure,
                 }
-            },
+            }
             expr::StmtKind::SeqBlock(list) => {
-                let list = list.iter().map(|stmt| self.reconstruct_stmt(stmt)).collect();
+                let list = list
+                    .iter()
+                    .map(|stmt| self.reconstruct_stmt(stmt))
+                    .collect();
                 ast::StmtKind::SeqBlock(list)
             }
             expr::StmtKind::Expr(expr) => {
@@ -486,7 +600,10 @@ impl<'a> Reconstructor<'a> {
             }
             expr::StmtKind::DataDecl(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
-                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                let init = decl
+                    .init
+                    .as_ref()
+                    .map(|expr| Box::new(self.reconstruct_expr(expr)));
                 ast::StmtKind::DataDecl(Box::new(DataDecl {
                     attr: None,
                     has_const: false,
@@ -496,7 +613,7 @@ impl<'a> Reconstructor<'a> {
                         name: decl.name.clone(),
                         dim,
                         init: init,
-                    }]
+                    }],
                 }))
             }
         };
@@ -526,16 +643,24 @@ impl<'a> Reconstructor<'a> {
                         name: decl.name.clone(),
                         dim,
                         init: Some(Box::new(expr)),
-                    }]
+                    }],
                 })));
             }
             HierItem::Type(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
-                list.push(Item::Typedef(None, Box::new(ty), Box::new(decl.name.clone()), dim));
+                list.push(Item::Typedef(
+                    None,
+                    Box::new(ty),
+                    Box::new(decl.name.clone()),
+                    dim,
+                ));
             }
             HierItem::DataDecl(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
-                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                let init = decl
+                    .init
+                    .as_ref()
+                    .map(|expr| Box::new(self.reconstruct_expr(expr)));
                 list.push(Item::DataDecl(Box::new(DataDecl {
                     attr: None,
                     has_const: false,
@@ -545,12 +670,15 @@ impl<'a> Reconstructor<'a> {
                         name: decl.name.clone(),
                         dim,
                         init: init,
-                    }]
+                    }],
                 })));
             }
             HierItem::NetDecl(decl) => {
                 let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
-                let init = decl.init.as_ref().map(|expr| Box::new(self.reconstruct_expr(expr)));
+                let init = decl
+                    .init
+                    .as_ref()
+                    .map(|expr| Box::new(self.reconstruct_expr(expr)));
                 list.push(Item::NetDecl(Box::new(NetDecl {
                     attr: None,
                     net: decl.net,
@@ -559,7 +687,7 @@ impl<'a> Reconstructor<'a> {
                         name: decl.name.clone(),
                         dim,
                         init: init,
-                    }]
+                    }],
                 })));
             }
             HierItem::FuncDecl(decl) => {
@@ -597,32 +725,53 @@ impl<'a> Reconstructor<'a> {
             }
             HierItem::Instance(decl) => {
                 let instance = decl.inst.get_instance();
-                let ports = instance.scope.items.iter().zip(decl.port.iter()).flat_map(|(port_decl, port_conn)| {
-                    // Retrive the port name
-                    let name = match port_decl {
-                        HierItem::DataPort(port) => port.name.clone(),
-                        HierItem::InterfacePort(port) => port.name.clone(),
-                        _ => unreachable!(),
-                    };
-                    match port_conn {
-                        hier::PortConn::Omitted => None,
-                        hier::PortConn::Unconnected => Some((None, NamedPortConn::Explicit(name, None))),
-                        hier::PortConn::Expr(port) => Some((None, NamedPortConn::Explicit(name, Some(Box::new(self.reconstruct_expr(port)))))),
-                    }
-                }).collect();
+                let ports = instance
+                    .scope
+                    .items
+                    .iter()
+                    .zip(decl.port.iter())
+                    .flat_map(|(port_decl, port_conn)| {
+                        // Retrive the port name
+                        let name = match port_decl {
+                            HierItem::DataPort(port) => port.name.clone(),
+                            HierItem::InterfacePort(port) => port.name.clone(),
+                            _ => unreachable!(),
+                        };
+                        match port_conn {
+                            hier::PortConn::Omitted => None,
+                            hier::PortConn::Unconnected => {
+                                Some((None, NamedPortConn::Explicit(name, None)))
+                            }
+                            hier::PortConn::Expr(port) => Some((
+                                None,
+                                NamedPortConn::Explicit(
+                                    name,
+                                    Some(Box::new(self.reconstruct_expr(port))),
+                                ),
+                            )),
+                        }
+                    })
+                    .collect();
                 list.push(Item::HierInstantiation(Box::new(HierInstantiation {
                     attr: None,
                     name: instance.name.clone(),
                     param: None,
                     inst: vec![HierInst {
                         name: decl.name.clone(),
-                        dim: decl.dim.iter().map(|(ub, lb)| {
-                            let ub_expr = reconstruct_i32(*ub);
-                            let lb_expr = reconstruct_i32(*lb);
-                            Spanned::new(DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)), Span::none())
-                        }).collect(),
+                        dim: decl
+                            .dim
+                            .iter()
+                            .map(|(ub, lb)| {
+                                let ub_expr = reconstruct_i32(*ub);
+                                let lb_expr = reconstruct_i32(*lb);
+                                Spanned::new(
+                                    DimKind::Range(Box::new(ub_expr), Box::new(lb_expr)),
+                                    Span::none(),
+                                )
+                            })
+                            .collect(),
                         ports: PortConn::Named(ports),
-                    }]
+                    }],
                 })))
             }
             HierItem::Other(item) => list.push(Item::clone(item)),
@@ -635,38 +784,53 @@ impl<'a> Reconstructor<'a> {
                 list.push(Item::IfGen(Box::new(IfGen {
                     attr: None,
                     if_block: vec![{
-                        (self.reconstruct_const(&LogicValue::One.into(), Span::none()), GenBlock {
-                            name: genblk.name.clone().map(Box::new),
-                            items: sublist,
-                        })
+                        (
+                            self.reconstruct_const(&LogicValue::One.into(), Span::none()),
+                            GenBlock {
+                                name: genblk.name.clone().map(Box::new),
+                                items: sublist,
+                            },
+                        )
                     }],
                     else_block: None,
                 })));
             }
             HierItem::LoopGenBlock(_) => unreachable!(),
             HierItem::Modport(modport) => {
-                let decl_list = modport.scope.items.iter().map(|item| {
-                    let item = match item {
-                        HierItem::DataPort(decl) => decl,
-                        _ => unreachable!(),
-                    };
-                    ModportPortDecl::Simple(
-                        None,
-                        item.dir,
-                        vec![ModportSimplePort::Named(item.name.clone())]
-                    )
-                }).collect();
-                list.push(Item::ModportDecl(None, vec![(modport.name.clone(), decl_list)]));
-            },
+                let decl_list = modport
+                    .scope
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let item = match item {
+                            HierItem::DataPort(decl) => decl,
+                            _ => unreachable!(),
+                        };
+                        ModportPortDecl::Simple(
+                            None,
+                            item.dir,
+                            vec![ModportSimplePort::Named(item.name.clone())],
+                        )
+                    })
+                    .collect();
+                list.push(Item::ModportDecl(
+                    None,
+                    vec![(modport.name.clone(), decl_list)],
+                ));
+            }
             HierItem::Enum(enu, index) => {
                 let enum_index = self.source.enums.iter().position(|x| x == enu).unwrap();
                 let element_name = enu.elements.borrow()[*index].0.clone();
-                let expr = Box::new(Spanned::new_unspanned(ExprKind::HierName(
-                    HierId::Name(
-                        Some(Scope::Name(None, Box::new(Ident::new_unspanned("global_types".to_owned())))),
-                        Box::new(Ident::new_unspanned(format!("enum_{}_{}", enum_index, element_name)))
-                    )
-                )));
+                let expr = Box::new(Spanned::new_unspanned(ExprKind::HierName(HierId::Name(
+                    Some(Scope::Name(
+                        None,
+                        Box::new(Ident::new_unspanned("global_types".to_owned())),
+                    )),
+                    Box::new(Ident::new_unspanned(format!(
+                        "enum_{}_{}",
+                        enum_index, element_name
+                    ))),
+                ))));
 
                 list.push(Item::ParamDecl(Box::new(ParamDecl {
                     kw: Keyword::Parameter,
@@ -675,14 +839,18 @@ impl<'a> Reconstructor<'a> {
                         name: element_name,
                         dim: Vec::new(),
                         init: Some(expr),
-                    }]
+                    }],
                 })));
             }
             v => unimplemented!("{:?}", std::mem::discriminant(v)),
         }
     }
 
-    pub fn reconstruct_instantiation(&mut self, decl: &hier::DesignDecl, inst: &hier::DesignInstantiation) -> Item {
+    pub fn reconstruct_instantiation(
+        &mut self,
+        decl: &hier::DesignDecl,
+        inst: &hier::DesignInstantiation,
+    ) -> Item {
         // Reconstruct all parameters
         let mut params = Vec::new();
         for item in &inst.scope.items {
@@ -692,9 +860,16 @@ impl<'a> Reconstructor<'a> {
                 break;
             }
         }
-        let params: Vec<_> = params.into_iter().map(|x| {
-            if let Item::ParamDecl(decl) = x { *decl } else { unreachable!() }
-        }).collect();
+        let params: Vec<_> = params
+            .into_iter()
+            .map(|x| {
+                if let Item::ParamDecl(decl) = x {
+                    *decl
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect();
 
         // Reconstruct all ports
         let mut ports = Vec::new();
@@ -702,25 +877,41 @@ impl<'a> Reconstructor<'a> {
             match item {
                 HierItem::DataPort(decl) => {
                     let (ty, dim) = self.reconstruct_ty(&decl.ty, Span::none());
-                    ports.push(PortDecl::Data(decl.dir, decl.net.clone(), Box::new(ty), vec![DeclAssign {
-                        name: decl.name.clone(),
-                        dim,
-                        init: decl.init.clone(),
-                    }]));
+                    ports.push(PortDecl::Data(
+                        decl.dir,
+                        decl.net.clone(),
+                        Box::new(ty),
+                        vec![DeclAssign {
+                            name: decl.name.clone(),
+                            dim,
+                            init: decl.init.clone(),
+                        }],
+                    ));
                 }
                 HierItem::InterfacePort(decl) => {
                     let intf = Some(Box::new(decl.inst.get_instance().name.clone()));
-                    let modport = decl.modport.as_ref().map(|modport| Box::new(modport.name.clone()));
-                    let dim = decl.dim.iter().map(|(ub, lb)| {
-                        let ub = reconstruct_i32(*ub);
-                        let lb = reconstruct_i32(*lb);
-                        Spanned::new_unspanned(DimKind::Range(Box::new(ub), Box::new(lb)))
-                    }).collect();
-                    ports.push(PortDecl::Interface(intf, modport, vec![DeclAssign {
-                        name: decl.name.clone(),
-                        dim,
-                        init: None,
-                    }]));
+                    let modport = decl
+                        .modport
+                        .as_ref()
+                        .map(|modport| Box::new(modport.name.clone()));
+                    let dim = decl
+                        .dim
+                        .iter()
+                        .map(|(ub, lb)| {
+                            let ub = reconstruct_i32(*ub);
+                            let lb = reconstruct_i32(*lb);
+                            Spanned::new_unspanned(DimKind::Range(Box::new(ub), Box::new(lb)))
+                        })
+                        .collect();
+                    ports.push(PortDecl::Interface(
+                        intf,
+                        modport,
+                        vec![DeclAssign {
+                            name: decl.name.clone(),
+                            dim,
+                            init: None,
+                        }],
+                    ));
                 }
                 _ => break,
             }
@@ -738,7 +929,11 @@ impl<'a> Reconstructor<'a> {
             lifetime: decl.ast.lifetime,
             name: inst.name.clone(),
             pkg_import: Vec::new(),
-            param: if !params.is_empty() { Some(params) } else { None },
+            param: if !params.is_empty() {
+                Some(params)
+            } else {
+                None
+            },
             port: ports,
             items: list,
         }))
@@ -746,18 +941,23 @@ impl<'a> Reconstructor<'a> {
 
     pub fn reconstruct(&mut self) -> Vec<Vec<Item>> {
         // Packages
-        let mut list: Vec<_> = self.source.pkgs.iter().map(|(_, decl)| {
-            let mut list = Vec::new();
-            for item in &decl.scope.items {
-                self.reconstruct_item(item, &mut list);
-            }
-            Item::PkgDecl(Box::new(PkgDecl {
-                attr: None,
-                lifetime: Lifetime::Static,
-                name: decl.name.clone(),
-                items: list
-            }))
-        }).collect();
+        let mut list: Vec<_> = self
+            .source
+            .pkgs
+            .iter()
+            .map(|(_, decl)| {
+                let mut list = Vec::new();
+                for item in &decl.scope.items {
+                    self.reconstruct_item(item, &mut list);
+                }
+                Item::PkgDecl(Box::new(PkgDecl {
+                    attr: None,
+                    lifetime: Lifetime::Static,
+                    name: decl.name.clone(),
+                    items: list,
+                }))
+            })
+            .collect();
 
         let mut units = Vec::new();
         for unit in &self.source.units {
@@ -779,12 +979,18 @@ impl<'a> Reconstructor<'a> {
                 let name = Ident::new(prefix, Span::none());
                 Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
             }));
-            types.extend(self.source.structs.iter().enumerate().map(|(index, struc)| {
-                let struc = self.reconstruct_struct(struc);
-                let ty = Spanned::new(DataTypeKind::Aggr(struc, Vec::new()), Span::none());
-                let name = Ident::new(format!("struct_{}", index), Span::none());
-                Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
-            }));
+            types.extend(
+                self.source
+                    .structs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, struc)| {
+                        let struc = self.reconstruct_struct(struc);
+                        let ty = Spanned::new(DataTypeKind::Aggr(struc, Vec::new()), Span::none());
+                        let name = Ident::new(format!("struct_{}", index), Span::none());
+                        Item::Typedef(None, Box::new(ty), Box::new(name), Vec::new())
+                    }),
+            );
             types.extend(self.simple_ty_map.iter().map(|(ty, name)| {
                 let (ty, dim) = self.reconstruct_ty(ty, Span::none());
                 Item::Typedef(None, Box::new(ty), Box::new(name.clone()), dim)
@@ -793,7 +999,7 @@ impl<'a> Reconstructor<'a> {
                 attr: None,
                 lifetime: Lifetime::Static,
                 name: Ident::new_unspanned("global_types".to_owned()),
-                items: types
+                items: types,
             }))
         });
         units.insert(0, list);

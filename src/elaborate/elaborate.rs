@@ -15,24 +15,24 @@
 //!   determined, their size depend on the largest operand in the entire enclosing expression.
 //! * The spec is really vague and messy.
 
-use syntax::ast::{self, *};
-use syntax::tokens::*;
-use source::*;
-use number::{LogicValue, LogicVec, Int};
+use crate::number::{Int, LogicValue, LogicVec};
+use crate::source::*;
+use crate::syntax::ast::{self, *};
+use crate::syntax::tokens::*;
 
-use num::{BigUint, Zero, ToPrimitive, FromPrimitive};
+use num::{BigUint, FromPrimitive, ToPrimitive, Zero};
 use std::cmp;
 use std::collections::HashMap;
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
-use super::ty::{IntTy, Struct};
-use super::hier::{self, Ty, Val, HierItem, HierScope};
-use super::ty;
 use super::expr;
+use super::hier::{self, HierItem, HierScope, Ty, Val};
+use super::ty;
+use super::ty::{IntTy, Struct};
 
-use opts::Opts;
+use crate::opts::Opts;
 
 pub fn elaborate(diag: &DiagMgr, items: &Vec<Vec<Item>>, opts: &Opts) -> hier::Source {
     let mut elaborator = Elaborator::new(diag, opts);
@@ -63,7 +63,6 @@ struct Elaborator<'a> {
 }
 
 impl<'a> Elaborator<'a> {
-
     pub fn new(diag: &'a DiagMgr, opts: &'a Opts) -> Elaborator<'a> {
         Elaborator {
             diag,
@@ -82,7 +81,7 @@ impl<'a> Elaborator<'a> {
     fn resolve_opt(&self, name: &Ident) -> Option<HierItem> {
         for scope in self.scopes.iter().rev() {
             if let Some(v) = scope.symbols.get(&name.symbol) {
-                return Some(scope.items[*v].clone())
+                return Some(scope.items[*v].clone());
             }
         }
         None
@@ -90,14 +89,20 @@ impl<'a> Elaborator<'a> {
 
     fn resolve(&self, name: &Ident) -> HierItem {
         match self.resolve_opt(name) {
-            None => self.diag.report_fatal(format!("cannot find identifier {} in current scope", name), name.span),
+            None => self.diag.report_fatal(
+                format!("cannot find identifier {} in current scope", name),
+                name.span,
+            ),
             Some(v) => v,
         }
     }
 
     /// Insert the identifier into scope.
     pub fn add_to_scope(&mut self, ident: &Ident, item: HierItem) {
-        self.scopes.last_mut().unwrap().insert(Some(ident.clone()), item);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert(Some(ident.clone()), item);
     }
 
     pub fn add_item(&mut self, item: HierItem) {
@@ -107,7 +112,9 @@ impl<'a> Elaborator<'a> {
 
     /// This will instantiate a parameterised module.
     pub fn instantiate_design(
-        &mut self, decl: &Rc<hier::DesignDecl>, param: Rc<hier::DesignParam>
+        &mut self,
+        decl: &Rc<hier::DesignDecl>,
+        param: Rc<hier::DesignParam>,
     ) {
         // Create new hiearchy scope.
         let genblk_saved = self.genblk;
@@ -151,17 +158,15 @@ impl<'a> Elaborator<'a> {
                         let instance = param.intf[&assign.name.value].clone();
                         let modport = match modport {
                             None => None,
-                            Some(modport) => {
-                                match instance.get_instance().scope.find(&modport) {
-                                    Some(HierItem::Modport(modport)) => Some(modport.clone()),
-                                    _ => {
-                                        self.diag.report_fatal(
-                                            format!("cannot find modport {}", modport.value),
-                                            modport.span
-                                        );
-                                    }
+                            Some(modport) => match instance.get_instance().scope.find(&modport) {
+                                Some(HierItem::Modport(modport)) => Some(modport.clone()),
+                                _ => {
+                                    self.diag.report_fatal(
+                                        format!("cannot find modport {}", modport.value),
+                                        modport.span,
+                                    );
                                 }
-                            }
+                            },
                         };
                         let dim = self.eval_const_unpacked_dim(&assign.dim);
                         let declitem = HierItem::InterfacePort(Rc::new(hier::InterfacePortDecl {
@@ -231,7 +236,7 @@ impl<'a> Elaborator<'a> {
                         if args.ordered.len() > param_names.len() {
                             self.diag.report_error(
                                 "instantiation contains more parameters than declared",
-                                inst.name.span
+                                inst.name.span,
                             );
                         }
                         let mut args: Vec<_> = args.ordered.iter().map(Option::as_ref).collect();
@@ -240,28 +245,26 @@ impl<'a> Elaborator<'a> {
                     } else {
                         let mut new_list = vec![None; param_names.len()];
                         for (name, expr) in &args.named {
-                            let id = match param_names.iter().position(|port_name| port_name == &name.value) {
+                            let id = match param_names
+                                .iter()
+                                .position(|port_name| port_name == &name.value)
+                            {
                                 None => {
                                     self.diag.report_error(
                                         format!("no parameter named {} is declared", name),
-                                        name.span
+                                        name.span,
                                     );
-                                    continue
+                                    continue;
                                 }
                                 Some(id) => id,
                             };
                             if !new_list[id].is_none() {
-                                self.diag.report_error(
-                                    "duplicate parameter overriders",
-                                    name.span
-                                )
+                                self.diag
+                                    .report_error("duplicate parameter overriders", name.span)
                             }
                             new_list[id] = Some(expr.as_ref());
                         }
-                        new_list
-                            .into_iter()
-                            .map(|v| v.unwrap_or(None))
-                            .collect()
+                        new_list.into_iter().map(|v| v.unwrap_or(None)).collect()
                     }
                 }
             };
@@ -276,12 +279,22 @@ impl<'a> Elaborator<'a> {
                         let expr = args[index];
                         index += 1;
                         expr
-                    } else { None };
+                    } else {
+                        None
+                    };
                     // If there's no override use default initialiser instead.
                     let expr = expr.or(assign.init.as_ref());
                     // It's an error if there're still no initialiser
-                    let expr = if let Some(v) = expr { v } else {
-                        self.diag.report_error(format!("parameter {} has no default assignment and is not overridden", assign.name), inst.name.span);
+                    let expr = if let Some(v) = expr {
+                        v
+                    } else {
+                        self.diag.report_error(
+                            format!(
+                                "parameter {} has no default assignment and is not overridden",
+                                assign.name
+                            ),
+                            inst.name.span,
+                        );
                         return;
                     };
 
@@ -308,11 +321,18 @@ impl<'a> Elaborator<'a> {
         // This avoids having to clone the values.
         let items = self.scopes.pop().unwrap().items;
         self.genblk = genblk_saved;
-        let map = Rc::new(items.into_iter().map(|x| {
-            if let HierItem::Param(v) = x {
-                Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
-            } else { unreachable!() }
-        }).collect());
+        let map = Rc::new(
+            items
+                .into_iter()
+                .map(|x| {
+                    if let HierItem::Param(v) = x {
+                        Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
+                    } else {
+                        unreachable!()
+                    }
+                })
+                .collect(),
+        );
 
         'next_instance: for inst in &inst.inst {
             // Retrieve the list of port connections.
@@ -335,7 +355,10 @@ impl<'a> Elaborator<'a> {
                         index += 1;
                         for assign in list {
                             if let Some(ref expr) = assign.init {
-                                self.diag.report_error("interface port initializer isn't yet supported", expr.span);
+                                self.diag.report_error(
+                                    "interface port initializer isn't yet supported",
+                                    expr.span,
+                                );
                                 continue 'next_instance;
                             }
                             // Make sure the interface port is connected
@@ -344,7 +367,7 @@ impl<'a> Elaborator<'a> {
                                 _ => {
                                     self.diag.report_error(
                                         format!("interface port {} must be connected", assign.name),
-                                        inst.name.span
+                                        inst.name.span,
                                     );
                                     continue 'next_instance;
                                 }
@@ -352,14 +375,16 @@ impl<'a> Elaborator<'a> {
                             let name = match &conn.value {
                                 ExprKind::HierName(name) => name,
                                 _ => {
-                                    self.diag.report_error("expected interface instance", conn.span);
+                                    self.diag
+                                        .report_error("expected interface instance", conn.span);
                                     continue 'next_instance;
                                 }
                             };
                             let hier = match self.type_check_hier_id(name, conn.span).0 {
                                 Some(hier) => hier,
                                 None => {
-                                    self.diag.report_error("expected interface instance", conn.span);
+                                    self.diag
+                                        .report_error("expected interface instance", conn.span);
                                     continue 'next_instance;
                                 }
                             };
@@ -367,15 +392,17 @@ impl<'a> Elaborator<'a> {
                             let decl = match hier {
                                 HierItem::Instance(decl) => decl.inst.clone(),
                                 HierItem::InterfacePort(decl) => decl.inst.clone(),
-                                HierItem::InstancePart { inst , .. } => inst,
+                                HierItem::InstancePart { inst, .. } => inst,
                                 _ => {
-                                    self.diag.report_error("expected interface instance", conn.span);
+                                    self.diag
+                                        .report_error("expected interface instance", conn.span);
                                     continue 'next_instance;
                                 }
                             };
                             // Check that it is actually interface
                             if decl.0.ast.kw != Keyword::Interface {
-                                self.diag.report_error("expected interface instance", conn.span);
+                                self.diag
+                                    .report_error("expected interface instance", conn.span);
                                 continue 'next_instance;
                             }
                             // If the interface port declaration is not using "interface id",
@@ -383,8 +410,11 @@ impl<'a> Elaborator<'a> {
                             if let Some(name) = intf {
                                 if name.symbol != decl.0.ast.name.symbol {
                                     self.diag.report_error(
-                                        format!("expected interface {}, found interface {}", name, decl.0.ast.name),
-                                        conn.span
+                                        format!(
+                                            "expected interface {}, found interface {}",
+                                            name, decl.0.ast.name
+                                        ),
+                                        conn.span,
                                     );
                                     continue 'next_instance;
                                 }
@@ -402,25 +432,31 @@ impl<'a> Elaborator<'a> {
             };
 
             // Search for existing instances.
-            let design_inst = hier::DesignInstHandle(Rc::clone(&item), 'outer2: loop {
-                for (inst_map, _) in item.instances.borrow().iter() {
-                    if &**inst_map == &map {
-                        break 'outer2 Rc::clone(inst_map);
+            let design_inst = hier::DesignInstHandle(
+                Rc::clone(&item),
+                'outer2: loop {
+                    for (inst_map, _) in item.instances.borrow().iter() {
+                        if &**inst_map == &map {
+                            break 'outer2 Rc::clone(inst_map);
+                        }
                     }
-                }
-                let param = Rc::new(map);
-                self.instantiate_design(&item, Rc::clone(&param));
-                break param;
-            });
+                    let param = Rc::new(map);
+                    self.instantiate_design(&item, Rc::clone(&param));
+                    break param;
+                },
+            );
 
-            let port_connections = port_list.iter().map(|(_, port)| {
-                // TODO: Should also get types of the ports out
-                match port {
-                    None => hier::PortConn::Omitted,
-                    Some(None) => hier::PortConn::Unconnected,
-                    Some(Some(expr)) => hier::PortConn::Expr(self.type_check_assign_todo(expr)),
-                }
-            }).collect();
+            let port_connections = port_list
+                .iter()
+                .map(|(_, port)| {
+                    // TODO: Should also get types of the ports out
+                    match port {
+                        None => hier::PortConn::Omitted,
+                        Some(None) => hier::PortConn::Unconnected,
+                        Some(Some(expr)) => hier::PortConn::Expr(self.type_check_assign_todo(expr)),
+                    }
+                })
+                .collect();
 
             let dim = self.eval_const_unpacked_dim(&inst.dim);
             let declitem = HierItem::Instance(Rc::new(hier::InstanceDecl {
@@ -446,10 +482,12 @@ impl<'a> Elaborator<'a> {
                 let ty = param.ty.as_ref().map(|ty| self.eval_ty(ty));
                 for assign in &param.list {
                     // It's an error if there's no initialiser
-                    let expr = if let Some(v) = assign.init.as_ref() { v } else {
+                    let expr = if let Some(v) = assign.init.as_ref() {
+                        v
+                    } else {
                         self.diag.report_error(
                             "parameter of top-level module has no default assignment",
-                            assign.name.span
+                            assign.name.span,
                         );
                         return;
                     };
@@ -476,18 +514,28 @@ impl<'a> Elaborator<'a> {
         // This avoids having to clone the values.
         let items = self.scopes.pop().unwrap().items;
         self.genblk = genblk_saved;
-        let map = Rc::new(items.into_iter().map(|x| {
-            if let HierItem::Param(v) = x {
-                Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
-            } else { unreachable!() }
-        }).collect());
+        let map = Rc::new(
+            items
+                .into_iter()
+                .map(|x| {
+                    if let HierItem::Param(v) = x {
+                        Rc::try_unwrap(v).unwrap_or_else(|_| unreachable!())
+                    } else {
+                        unreachable!()
+                    }
+                })
+                .collect(),
+        );
 
         // Check that there are no interface ports
         for port in &module.ast.port {
             match port {
                 PortDecl::Interface(.., list) => {
                     for assign in list {
-                        self.diag.report_fatal("top-level module cannot have interface ports", assign.name.span);
+                        self.diag.report_fatal(
+                            "top-level module cannot have interface ports",
+                            assign.name.span,
+                        );
                     }
                 }
                 _ => (),
@@ -508,7 +556,7 @@ impl<'a> Elaborator<'a> {
             }
             self.instantiate_design(&module, Rc::new(map));
             break;
-        };
+        }
     }
 
     pub fn elaborate_item(&mut self, item: &Item) {
@@ -541,21 +589,27 @@ impl<'a> Elaborator<'a> {
             }
             Item::FuncDecl(decl) => {
                 let ty = self.eval_ty(&decl.ty);
-                self.add_to_scope(&decl.name, HierItem::FuncDecl(Rc::new(hier::FuncDecl {
-                    lifetime: decl.lifetime,
-                    ty: ty,
-                    name: decl.name.clone(),
-                    ports: decl.ports.clone(),
-                    stmts: decl.stmts.clone(),
-                })));
+                self.add_to_scope(
+                    &decl.name,
+                    HierItem::FuncDecl(Rc::new(hier::FuncDecl {
+                        lifetime: decl.lifetime,
+                        ty: ty,
+                        name: decl.name.clone(),
+                        ports: decl.ports.clone(),
+                        stmts: decl.stmts.clone(),
+                    })),
+                );
             }
             Item::TaskDecl(decl) => {
-                self.add_to_scope(&decl.name, HierItem::TaskDecl(Rc::new(hier::TaskDecl {
-                    lifetime: decl.lifetime,
-                    name: decl.name.clone(),
-                    ports: decl.ports.clone(),
-                    stmts: decl.stmts.clone(),
-                })));
+                self.add_to_scope(
+                    &decl.name,
+                    HierItem::TaskDecl(Rc::new(hier::TaskDecl {
+                        lifetime: decl.lifetime,
+                        name: decl.name.clone(),
+                        ports: decl.ports.clone(),
+                        stmts: decl.stmts.clone(),
+                    })),
+                );
             }
             // Package import are already resolved by resolver - discard it.
             Item::PkgImport(_) => (),
@@ -581,7 +635,8 @@ impl<'a> Elaborator<'a> {
             Item::DataDecl(decl) => {
                 // When this is changed it's likely that you also need to fix Stmt's DataDecl
                 if decl.has_const {
-                    self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
+                    self.diag
+                        .report_error("const data declaration isn't yet supported", decl.ty.span);
                 }
                 let ty = self.eval_ty(&decl.ty);
                 for item in &decl.list {
@@ -600,7 +655,10 @@ impl<'a> Elaborator<'a> {
                             _ => unimplemented!(),
                         }
                     }
-                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                    let init = item
+                        .init
+                        .as_ref()
+                        .map(|expr| Box::new(self.type_check_assign(expr, &ty)));
                     let decl = Rc::new(hier::DataDecl {
                         lifetime: decl.lifetime,
                         ty: var_ty,
@@ -628,7 +686,10 @@ impl<'a> Elaborator<'a> {
                             _ => unimplemented!(),
                         }
                     }
-                    let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                    let init = item
+                        .init
+                        .as_ref()
+                        .map(|expr| Box::new(self.type_check_assign(expr, &ty)));
                     let decl = Rc::new(hier::NetDecl {
                         net: decl.net,
                         ty: var_ty,
@@ -653,32 +714,34 @@ impl<'a> Elaborator<'a> {
                 // First evaluate intf to get an hierachical item
                 let item = match self.type_check_hier_id(&intf.value, intf.span).0 {
                     None => {
-                        self.diag.report_fatal("this must be an interface port name", intf.span);
-                    },
+                        self.diag
+                            .report_fatal("this must be an interface port name", intf.span);
+                    }
                     Some(item) => item,
                 };
                 // Check if this is an interface port
                 let inst = match item {
                     HierItem::InterfacePort(ref decl) => &decl.inst,
                     _ => {
-                        self.diag.report_fatal("this must be an interface port name", intf.span);
+                        self.diag
+                            .report_fatal("this must be an interface port name", intf.span);
                     }
                 };
                 // Find ty inside the interface
                 let inst_inst = inst.get_instance();
                 let item = match inst_inst.scope.find(&ty) {
                     None => {
-                        self.diag.report_fatal("cannot find this in interface port", name.span);
+                        self.diag
+                            .report_fatal("cannot find this in interface port", name.span);
                     }
                     Some(v) => v,
                 };
                 // Check if the item found is a typedef.
                 let ty = match item {
-                    HierItem::Type(ref decl) => {
-                        decl.ty.clone()
-                    }
+                    HierItem::Type(ref decl) => decl.ty.clone(),
                     _ => {
-                        self.diag.report_fatal("this is not a typedef in interface port", name.span);
+                        self.diag
+                            .report_fatal("this is not a typedef in interface port", name.span);
                     }
                 };
                 // Convert this into a conventional typedef.
@@ -707,7 +770,9 @@ impl<'a> Elaborator<'a> {
                 self.elaborate_instantiation(inst);
             }
             Item::GenRegion(items) => {
-                for item in items { self.elaborate_item(item); }
+                for item in items {
+                    self.elaborate_item(item);
+                }
             }
             Item::LoopGen(gen) => {
                 // Each generate construct will be assigned an id for external names.
@@ -743,12 +808,10 @@ impl<'a> Elaborator<'a> {
                     // Evaluate the condition
                     let (_, result) = self.eval_expr(&gen.cond);
                     let boolean = match result {
-                        Val::Int(vec) => {
-                            match vec.get_two_state() {
-                                None => unimplemented!(),
-                                Some(v) => !v.is_zero(),
-                            }
-                        }
+                        Val::Int(vec) => match vec.get_two_state() {
+                            None => unimplemented!(),
+                            Some(v) => !v.is_zero(),
+                        },
                         Val::FixStr(str) => !str.is_empty(),
                         _ => unimplemented!(),
                     };
@@ -805,12 +868,10 @@ impl<'a> Elaborator<'a> {
                     for (cond, block) in &ifgen.if_block {
                         let (_, result) = self.eval_expr(cond);
                         let boolean = match result {
-                            Val::Int(vec) => {
-                                match vec.get_two_state() {
-                                    None => unimplemented!(),
-                                    Some(v) => !v.is_zero(),
-                                }
-                            }
+                            Val::Int(vec) => match vec.get_two_state() {
+                                None => unimplemented!(),
+                                Some(v) => !v.is_zero(),
+                            },
                             Val::FixStr(str) => !str.is_empty(),
                             _ => unimplemented!(),
                         };
@@ -852,12 +913,18 @@ impl<'a> Elaborator<'a> {
                 // Evaluate all arguments
                 let mut arguments = match &call.args {
                     None => Vec::new(),
-                    Some(list) => list.ordered.iter().map(|expr| self.eval_expr(expr.as_ref().unwrap())).collect(),
+                    Some(list) => list
+                        .ordered
+                        .iter()
+                        .map(|expr| self.eval_expr(expr.as_ref().unwrap()))
+                        .collect(),
                 };
                 let severity = match call.task.as_str() {
                     "fatal" => {
                         // For fatal task, we don't care about finish number in elaboration.
-                        if !arguments.is_empty() { arguments.remove(0); }
+                        if !arguments.is_empty() {
+                            arguments.remove(0);
+                        }
                         Severity::Error
                     }
                     "error" => Severity::Error,
@@ -866,7 +933,11 @@ impl<'a> Elaborator<'a> {
                     _ => unreachable!(),
                 };
                 // TODO: Arguments of display
-                let formatted = if let Some((_, Val::FixStr(str))) = arguments.get(0) { str } else { "" };
+                let formatted = if let Some((_, Val::FixStr(str))) = arguments.get(0) {
+                    str
+                } else {
+                    ""
+                };
                 self.diag.report_span(severity, formatted, call.task.span);
             }
             Item::ModportDecl(_, list) => {
@@ -930,7 +1001,11 @@ impl<'a> Elaborator<'a> {
                 if let Item::DesignDecl(_) = item {
                     // This is processed already in the first iteration, so do not elaborate them
                     // again. But do add them to compilation-unit local item list.
-                    self.scopes.last_mut().unwrap().items.push(modules_list.pop().unwrap());
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .items
+                        .push(modules_list.pop().unwrap());
                 } else {
                     self.elaborate_item(&item);
                 }
@@ -944,7 +1019,7 @@ impl<'a> Elaborator<'a> {
             _ => {
                 self.diag.report_error(
                     format!("cannot find toplevel module {}", self.opts.toplevel),
-                    Span::none()
+                    Span::none(),
                 );
                 return;
             }
@@ -959,10 +1034,14 @@ impl<'a> Elaborator<'a> {
             match &stmt.value {
                 ast::StmtKind::DataDecl(decl) => {
                     if let Some(ref label) = stmt.label {
-                        self.diag.report_error("data declaration shouldn't have label", label.span);
+                        self.diag
+                            .report_error("data declaration shouldn't have label", label.span);
                     }
                     if decl.has_const {
-                        self.diag.report_error("const data declaration isn't yet supported", decl.ty.span);
+                        self.diag.report_error(
+                            "const data declaration isn't yet supported",
+                            decl.ty.span,
+                        );
                     }
                     let ty = self.eval_ty(&decl.ty);
                     for item in &decl.list {
@@ -981,7 +1060,10 @@ impl<'a> Elaborator<'a> {
                                 _ => unimplemented!(),
                             }
                         }
-                        let init = item.init.as_ref().map(|expr| Box::new(self.type_check_assign(expr, &ty)));
+                        let init = item
+                            .init
+                            .as_ref()
+                            .map(|expr| Box::new(self.type_check_assign(expr, &ty)));
                         let decl = Rc::new(hier::DataDecl {
                             lifetime: decl.lifetime,
                             ty: var_ty,
@@ -990,7 +1072,7 @@ impl<'a> Elaborator<'a> {
                         });
                         vec.push(expr::Stmt {
                             label: None,
-                            value: expr::StmtKind::DataDecl(Rc::clone(&decl))
+                            value: expr::StmtKind::DataDecl(Rc::clone(&decl)),
                         });
                         self.add_to_scope(&item.name, HierItem::DataDecl(decl));
                     }
@@ -1004,10 +1086,9 @@ impl<'a> Elaborator<'a> {
     fn elaborate_stmt(&mut self, stmt: &ast::Stmt) -> expr::Stmt {
         let kind = match &stmt.value {
             ast::StmtKind::Empty => expr::StmtKind::Empty,
-            ast::StmtKind::TimingCtrl(ctrl, stmt) => expr::StmtKind::TimingCtrl(
-                ctrl.clone(),
-                Box::new(self.elaborate_stmt(stmt))
-            ),
+            ast::StmtKind::TimingCtrl(ctrl, stmt) => {
+                expr::StmtKind::TimingCtrl(ctrl.clone(), Box::new(self.elaborate_stmt(stmt)))
+            }
             ast::StmtKind::If(uniq, cond, t, f) => {
                 let cond = self.type_check_bool(cond);
                 let t = self.elaborate_stmt(t);
@@ -1018,22 +1099,36 @@ impl<'a> Elaborator<'a> {
                     success: Box::new(t),
                     failure: f.map(Box::new),
                 }
-            },
-            ast::StmtKind::Case { uniq, kw, expr, items } => {
+            }
+            ast::StmtKind::Case {
+                uniq,
+                kw,
+                expr,
+                items,
+            } => {
                 let expr = self.type_check(expr);
-                let items = items.iter().map(|(conds, stmt)| {
-                    let conds = conds.iter().map(|cond| self.type_check(cond)).collect();
-                    let stmt = self.elaborate_stmt(stmt);
-                    (conds, stmt)
-                }).collect();
+                let items = items
+                    .iter()
+                    .map(|(conds, stmt)| {
+                        let conds = conds.iter().map(|cond| self.type_check(cond)).collect();
+                        let stmt = self.elaborate_stmt(stmt);
+                        (conds, stmt)
+                    })
+                    .collect();
                 expr::StmtKind::Case {
                     uniq: *uniq,
                     kw: *kw,
                     expr: Box::new(expr),
                     items,
                 }
-            },
-            ast::StmtKind::For { ty, init, cond, update, body } => {
+            }
+            ast::StmtKind::For {
+                ty,
+                init,
+                cond,
+                update,
+                body,
+            } => {
                 let ty = ty.as_ref().map(|ty| self.eval_ty(ty));
                 if let Some(ref ty) = ty {
                     // The scope for initialisers
@@ -1041,21 +1136,30 @@ impl<'a> Elaborator<'a> {
                     for expr in init {
                         if let ExprKind::Assign(lhs, _) = &expr.value {
                             if let ExprKind::HierName(HierId::Name(None, name)) = &lhs.value {
-                                self.add_to_scope(name, HierItem::DataDecl(Rc::new(hier::DataDecl {
-                                    lifetime: ast::Lifetime::Automatic,
-                                    ty: ty.clone(),
-                                    name: Ident::clone(name),
-                                    // We will process initialisers later, set it to none here.
-                                    init: None,
-                                })));
-                            } else { unreachable!() }
-                        } else { unreachable!(); }
+                                self.add_to_scope(
+                                    name,
+                                    HierItem::DataDecl(Rc::new(hier::DataDecl {
+                                        lifetime: ast::Lifetime::Automatic,
+                                        ty: ty.clone(),
+                                        name: Ident::clone(name),
+                                        // We will process initialisers later, set it to none here.
+                                        init: None,
+                                    })),
+                                );
+                            } else {
+                                unreachable!()
+                            }
+                        } else {
+                            unreachable!();
+                        }
                     }
                 }
                 // It's not assignment-like context here as each init is a whole assignment expression.
                 // Its subexpression will be treated like assignment-like context.
                 let init = init.iter().map(|expr| self.type_check(expr)).collect();
-                let cond = cond.as_ref().map(|expr| Box::new(self.type_check_bool(expr)));
+                let cond = cond
+                    .as_ref()
+                    .map(|expr| Box::new(self.type_check_bool(expr)));
                 let update = update.iter().map(|expr| self.type_check(expr)).collect();
                 let body = Box::new(self.elaborate_stmt(body));
                 if ty.is_some() {
@@ -1063,20 +1167,32 @@ impl<'a> Elaborator<'a> {
                 }
                 expr::StmtKind::For {
                     ty: ty.map(Box::new),
-                    init, cond, update, body
+                    init,
+                    cond,
+                    update,
+                    body,
                 }
-            },
-            ast::StmtKind::Assert { kind, expr, success, failure } => {
+            }
+            ast::StmtKind::Assert {
+                kind,
+                expr,
+                success,
+                failure,
+            } => {
                 let expr = Box::new(self.type_check_bool(expr));
-                let success = success.as_ref().map(|stmt| Box::new(self.elaborate_stmt(stmt)));
-                let failure = failure.as_ref().map(|stmt| Box::new(self.elaborate_stmt(stmt)));
+                let success = success
+                    .as_ref()
+                    .map(|stmt| Box::new(self.elaborate_stmt(stmt)));
+                let failure = failure
+                    .as_ref()
+                    .map(|stmt| Box::new(self.elaborate_stmt(stmt)));
                 expr::StmtKind::Assert {
                     kind: *kind,
                     expr,
                     success,
                     failure,
                 }
-            },
+            }
             ast::StmtKind::SeqBlock(list) => {
                 self.scopes.push(HierScope::new());
                 let list = self.elaborate_block(&list);
@@ -1088,7 +1204,10 @@ impl<'a> Elaborator<'a> {
                 expr::StmtKind::Expr(Box::new(expr))
             }
             ast::StmtKind::DataDecl(decl) => {
-                self.diag.report_fatal("data declaration can only appear at the beginning of a block", decl.ty.span);
+                self.diag.report_fatal(
+                    "data declaration can only appear at the beginning of a block",
+                    decl.ty.span,
+                );
             }
         };
         expr::Stmt {
@@ -1109,7 +1228,9 @@ impl<'a> Elaborator<'a> {
                     let lb = self.eval_expr_i32(b);
                     ty = ty.vec(ub, lb);
                 }
-                _ => self.diag.report_fatal("unexpected dimension format", dim.span),
+                _ => self
+                    .diag
+                    .report_fatal("unexpected dimension format", dim.span),
             }
         }
         ty
@@ -1119,17 +1240,12 @@ impl<'a> Elaborator<'a> {
         match &ty.value {
             DataTypeKind::Type => Ty::Type,
             DataTypeKind::Implicit(signing, dim) => {
-                Ty::Int(self.eval_packed_dim(
-                    IntTy::Logic(false, signing == &Signing::Signed),
-                    dim
-                ))
+                Ty::Int(self.eval_packed_dim(IntTy::Logic(false, signing == &Signing::Signed), dim))
             }
-            DataTypeKind::IntVec(vecty, signing, dim) => {
-                Ty::Int(self.eval_packed_dim(
-                    IntTy::Logic(vecty == &IntVecTy::Bit, signing == &Signing::Signed),
-                    dim
-                ))
-            }
+            DataTypeKind::IntVec(vecty, signing, dim) => Ty::Int(self.eval_packed_dim(
+                IntTy::Logic(vecty == &IntVecTy::Bit, signing == &Signing::Signed),
+                dim,
+            )),
             DataTypeKind::IntAtom(ty, explicit_sign) => {
                 let (width, two_state, mut signed) = match ty {
                     IntAtomTy::Shortint => (16, true, true),
@@ -1149,7 +1265,7 @@ impl<'a> Elaborator<'a> {
                 if aggr.kind != AggrType::Struct || !aggr.packed {
                     self.diag.report_fatal(
                         "currently only supported aggregate is packed structure",
-                        ty.span
+                        ty.span,
                     );
                 }
                 let mut list = Vec::new();
@@ -1159,45 +1275,46 @@ impl<'a> Elaborator<'a> {
                     } else {
                         self.diag.report_error(
                             "only integral types can be used in packed structure",
-                            member.ty.span
+                            member.ty.span,
                         );
                         // Error recovery: ignore this field
                         continue;
                     };
                     let ty_ty = Ty::Int(ty.clone());
                     for assign in &member.list {
-                        let init = assign.init.as_ref().map(|expr| Box::new({
-                            let (_, val) = self.eval_expr_assign(expr, &ty_ty);
-                            match val {
-                                Val::Int(val) => val,
-                                _ => unreachable!(),
-                            }
-                        }));
+                        let init = assign.init.as_ref().map(|expr| {
+                            Box::new({
+                                let (_, val) = self.eval_expr_assign(expr, &ty_ty);
+                                match val {
+                                    Val::Int(val) => val,
+                                    _ => unreachable!(),
+                                }
+                            })
+                        });
                         list.push((ty.clone(), assign.name.clone(), init));
                     }
                 }
 
                 let struc = Rc::new(Struct::new(aggr.sign == Signing::Signed, list));
                 self.structs.push(Rc::clone(&struc));
-                Ty::Int(self.eval_packed_dim(
-                    IntTy::Struct(struc),
-                    dim
-                ))
+                Ty::Int(self.eval_packed_dim(IntTy::Struct(struc), dim))
             }
             DataTypeKind::Enum(decl, dim) => {
                 // Process base type. Default to int.
-                let base = decl.ty.as_ref().and_then(|v| {
-                    match self.eval_ty(v) {
+                let base = decl
+                    .ty
+                    .as_ref()
+                    .and_then(|v| match self.eval_ty(v) {
                         Ty::Int(ty) => Some(ty),
                         _ => {
                             self.diag.report_error(
                                 "the base type of enumeration must be integral type",
-                                v.span
+                                v.span,
                             );
                             None
                         }
-                    }
-                }).unwrap_or_else(|| IntTy::SimpleVec(32, true, true));
+                    })
+                    .unwrap_or_else(|| IntTy::SimpleVec(32, true, true));
                 let base_ty = Ty::Int(base.clone());
 
                 // Set next_value to all one so that the next generated element will be assigned with 0.
@@ -1227,12 +1344,15 @@ impl<'a> Elaborator<'a> {
                             next_value = LogicVec::fill(
                                 next_value.width(),
                                 next_value.signed,
-                                LogicValue::Zero
+                                LogicValue::Zero,
                             );
                         }
                     };
                     let mut elements = enu.elements.borrow_mut();
-                    self.add_to_scope(&assign.name, HierItem::Enum(Rc::clone(&enu), elements.len()));
+                    self.add_to_scope(
+                        &assign.name,
+                        HierItem::Enum(Rc::clone(&enu), elements.len()),
+                    );
                     elements.push((assign.name.clone(), next_value.clone()));
                 }
 
@@ -1253,21 +1373,23 @@ impl<'a> Elaborator<'a> {
                         self.resolve(name)
                     }
                     _ => {
-                        self.diag.report_fatal(
-                            "specified scope isn't yet supported",
-                            ty.span
-                        );
+                        self.diag
+                            .report_fatal("specified scope isn't yet supported", ty.span);
                     }
                 };
 
                 let ty = match item {
                     HierItem::Param(ref decl) if Ty::Type == decl.ty => {
-                        if let Val::Type(ty) = &decl.init { ty.clone() } else { unreachable!() }
+                        if let Val::Type(ty) = &decl.init {
+                            ty.clone()
+                        } else {
+                            unreachable!()
+                        }
                     }
                     HierItem::Type(ref decl) => decl.ty.clone(),
-                    _ => {
-                        self.diag.report_fatal(format!("{} is not a type", name), name.span)
-                    }
+                    _ => self
+                        .diag
+                        .report_fatal(format!("{} is not a type", name), name.span),
                 };
 
                 if let Ty::Int(intty) = ty {
@@ -1319,11 +1441,11 @@ impl<'a> Elaborator<'a> {
             HierItem::Always(..) => unreachable!(),
             HierItem::Other(_) => unreachable!(),
             HierItem::Instance(_) => Ty::Void, // Not typable
-            HierItem::InstancePart{ .. } => Ty::Void, // Not typable
+            HierItem::InstancePart { .. } => Ty::Void, // Not typable
             HierItem::GenBlock(_) => Ty::Void, // Not typable
             HierItem::GenVar(_) => Ty::Int(IntTy::SimpleVec(32, false, true)),
             HierItem::LoopGenBlock(_) => Ty::Void, // Not typable
-            HierItem::Modport(_) => Ty::Void, // Not typable
+            HierItem::Modport(_) => Ty::Void,      // Not typable
             HierItem::Enum(enu, _) => Ty::Int(IntTy::Enum(Rc::clone(enu))),
         }
     }
@@ -1331,7 +1453,9 @@ impl<'a> Elaborator<'a> {
     /// Try to parse the name as an hierachical item. If it happens to also contain member/index
     /// access, parse it as expression instead.
     pub fn type_check_hier_id(
-        &mut self, name: &HierId, span: Span
+        &mut self,
+        name: &HierId,
+        span: Span,
     ) -> (Option<HierItem>, expr::Expr) {
         match name {
             HierId::Name(scope, name) => {
@@ -1346,10 +1470,8 @@ impl<'a> Elaborator<'a> {
                         self.resolve(name)
                     }
                     _ => {
-                        self.diag.report_fatal(
-                            "specified scope isn't yet supported",
-                            span
-                        );
+                        self.diag
+                            .report_fatal("specified scope isn't yet supported", span);
                     }
                 };
                 let expr = expr::Expr {
@@ -1367,7 +1489,10 @@ impl<'a> Elaborator<'a> {
 
     /// Type-check a hierachical select or member select expression
     pub fn type_check_member(
-        &mut self, parent: &Spanned<HierId>, name: &Ident, span: Span
+        &mut self,
+        parent: &Spanned<HierId>,
+        name: &Ident,
+        span: Span,
     ) -> (Option<HierItem>, expr::Expr) {
         let (parent_hier, parent_expr) = self.type_check_hier_id(&parent.value, parent.span);
         // In `type_of_hier` we set type of non-expression to void. If the type is not
@@ -1375,9 +1500,9 @@ impl<'a> Elaborator<'a> {
         if let Ty::Void = parent_expr.ty {
             let item = match parent_hier {
                 // This is an expression that has void type
-                None => {
-                    self.diag.report_fatal("cannot index into void expression", parent_expr.span)
-                },
+                None => self
+                    .diag
+                    .report_fatal("cannot index into void expression", parent_expr.span),
                 Some(item) => item,
             };
             let hier = match item {
@@ -1385,14 +1510,13 @@ impl<'a> Elaborator<'a> {
                     if !decl.dim.is_empty() {
                         self.diag.report_fatal(
                             "this is an interface port array, not an interface",
-                            parent.span
+                            parent.span,
                         )
                     }
                     let item = match decl.inst.get_instance().scope.find(&name) {
-                        None => self.diag.report_fatal(
-                            format!("cannot find {} in interface", name),
-                            name.span
-                        ),
+                        None => self
+                            .diag
+                            .report_fatal(format!("cannot find {} in interface", name), name.span),
                         Some(v) => v.clone(),
                     };
                     item
@@ -1401,30 +1525,26 @@ impl<'a> Elaborator<'a> {
                     if !decl.dim.is_empty() {
                         self.diag.report_fatal(
                             "this is an interface port array, not an interface",
-                            parent.span
+                            parent.span,
                         )
                     }
                     let item = match decl.inst.get_instance().scope.find(&name) {
-                        None => self.diag.report_fatal(
-                            format!("cannot find {} in interface", name),
-                            name.span
-                        ),
+                        None => self
+                            .diag
+                            .report_fatal(format!("cannot find {} in interface", name), name.span),
                         Some(v) => v.clone(),
                     };
                     item
                 }
-                HierItem::InstancePart { inst, dim, ..} => {
+                HierItem::InstancePart { inst, dim, .. } => {
                     if !dim.is_empty() {
-                        self.diag.report_fatal(
-                            "this is an instance array, not an instance",
-                            parent.span
-                        )
+                        self.diag
+                            .report_fatal("this is an instance array, not an instance", parent.span)
                     }
                     let item = match inst.get_instance().scope.find(&name) {
-                        None => self.diag.report_fatal(
-                            format!("cannot find {} in interface", name),
-                            name.span
-                        ),
+                        None => self
+                            .diag
+                            .report_fatal(format!("cannot find {} in interface", name), name.span),
                         Some(v) => v.clone(),
                     };
                     item
@@ -1433,7 +1553,7 @@ impl<'a> Elaborator<'a> {
                     let item = match decl.scope.find(&name) {
                         None => self.diag.report_fatal(
                             format!("cannot find {} in generate block", name),
-                            name.span
+                            name.span,
                         ),
                         Some(v) => v.clone(),
                     };
@@ -1443,14 +1563,17 @@ impl<'a> Elaborator<'a> {
             };
             let expr = if let expr::ExprKind::HierName(id) = parent_expr.value {
                 expr::Expr {
-                    value: expr::ExprKind::HierName(
-                        HierId::Member(Box::new(Spanned::new(id, parent_expr.span)), Box::new(name.clone()))
-                    ),
+                    value: expr::ExprKind::HierName(HierId::Member(
+                        Box::new(Spanned::new(id, parent_expr.span)),
+                        Box::new(name.clone()),
+                    )),
                     ty: Self::type_of_hier(&hier),
                     span,
                 }
-            } else { unreachable!() };
-            return (Some(hier), expr)
+            } else {
+                unreachable!()
+            };
+            return (Some(hier), expr);
         }
 
         let myty = match parent_expr.ty {
@@ -1460,23 +1583,30 @@ impl<'a> Elaborator<'a> {
                         break 'struct_loop Ty::Int(ty.clone());
                     }
                 }
-                self.diag.report_fatal(format!("there are no members named {}", name), span);
-            }
+                self.diag
+                    .report_fatal(format!("there are no members named {}", name), span);
+            },
             _ => {
                 eprintln!("{:?}", parent_expr.ty);
                 self.diag.report_fatal("unexpected member select", span);
             }
         };
-        (None, expr::Expr {
-            value: expr::ExprKind::Member(Box::new(parent_expr), name.clone()),
-            ty: myty,
-            span,
-        })
+        (
+            None,
+            expr::Expr {
+                value: expr::ExprKind::Member(Box::new(parent_expr), name.clone()),
+                ty: myty,
+                span,
+            },
+        )
     }
 
     /// Type-check a hierachical select or bit/part-select expression.
     pub fn type_check_select(
-        &mut self, parent: &Spanned<HierId>, dim: &Dim, span: Span
+        &mut self,
+        parent: &Spanned<HierId>,
+        dim: &Dim,
+        span: Span,
     ) -> (Option<HierItem>, expr::Expr) {
         let (parent_hier, parent_expr) = self.type_check_hier_id(&parent.value, parent.span);
         // In `type_of_hier` we set type of non-expression to void. If the type is not
@@ -1484,9 +1614,9 @@ impl<'a> Elaborator<'a> {
         if let Ty::Void = parent_expr.ty {
             let item = match parent_hier {
                 // This is an expression that has void type
-                None => {
-                    self.diag.report_fatal("cannot index into void expression", parent_expr.span)
-                },
+                None => self
+                    .diag
+                    .report_fatal("cannot index into void expression", parent_expr.span),
                 Some(item) => item,
             };
             // Only constant bit select is valid for instance array
@@ -1495,7 +1625,7 @@ impl<'a> Elaborator<'a> {
                 _ => {
                     self.diag.report_fatal(
                         "only constant bit select is valid in this context",
-                        dim.span
+                        dim.span,
                     );
                 }
             };
@@ -1504,16 +1634,17 @@ impl<'a> Elaborator<'a> {
                 HierItem::Instance(ref inst) => {
                     match inst.dim.first() {
                         None => {
-                            self.diag.report_error("this is not an instance array", parent.span);
+                            self.diag
+                                .report_error("this is not an instance array", parent.span);
                             // Error-recovery: return current instance
                             item.clone()
                         }
                         Some(range) => {
-                            if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
-                                self.diag.report_fatal(
-                                    "constant bit select outside range",
-                                    dim.span
-                                );
+                            if value < cmp::min(range.0, range.1)
+                                || value > cmp::max(range.0, range.1)
+                            {
+                                self.diag
+                                    .report_fatal("constant bit select outside range", dim.span);
                             }
                             HierItem::InstancePart {
                                 inst: inst.inst.clone(),
@@ -1526,16 +1657,17 @@ impl<'a> Elaborator<'a> {
                 HierItem::InterfacePort(ref decl) => {
                     match decl.dim.first() {
                         None => {
-                            self.diag.report_error("this is not an interface port array", parent.span);
+                            self.diag
+                                .report_error("this is not an interface port array", parent.span);
                             // Error-recovery: return current instance
                             item.clone()
                         }
                         Some(range) => {
-                            if value < cmp::min(range.0, range.1) || value > cmp::max(range.0, range.1) {
-                                self.diag.report_fatal(
-                                    "constant bit select outside range",
-                                    dim.span
-                                );
+                            if value < cmp::min(range.0, range.1)
+                                || value > cmp::max(range.0, range.1)
+                            {
+                                self.diag
+                                    .report_fatal("constant bit select outside range", dim.span);
                             }
                             HierItem::InstancePart {
                                 inst: decl.inst.clone(),
@@ -1546,13 +1678,16 @@ impl<'a> Elaborator<'a> {
                     }
                 }
                 HierItem::LoopGenBlock(ref decl) => {
-                    let genblk = match decl.instances.borrow().iter().find(|(num, _)| num == &value) {
+                    let genblk = match decl
+                        .instances
+                        .borrow()
+                        .iter()
+                        .find(|(num, _)| num == &value)
+                    {
                         None => {
-                            self.diag.report_fatal(
-                                "constant bit select outside range",
-                                dim.span
-                            );
-                        },
+                            self.diag
+                                .report_fatal("constant bit select outside range", dim.span);
+                        }
                         Some((_, genblk)) => Rc::clone(genblk),
                     };
                     HierItem::GenBlock(genblk)
@@ -1561,27 +1696,33 @@ impl<'a> Elaborator<'a> {
             };
             let expr = if let expr::ExprKind::HierName(id) = parent_expr.value {
                 expr::Expr {
-                    value: expr::ExprKind::HierName(
-                        HierId::Select(Box::new(Spanned::new(id, parent_expr.span)), Box::new(Spanned::new(DimKind::Value(Box::new({
-                            let mut expr = super::reconstruct::reconstruct_i32(value);
-                            expr.span = dim.span;
-                            expr
-                        })), dim.span)))
-                    ),
+                    value: expr::ExprKind::HierName(HierId::Select(
+                        Box::new(Spanned::new(id, parent_expr.span)),
+                        Box::new(Spanned::new(
+                            DimKind::Value(Box::new({
+                                let mut expr = super::reconstruct::reconstruct_i32(value);
+                                expr.span = dim.span;
+                                expr
+                            })),
+                            dim.span,
+                        )),
+                    )),
                     ty: Self::type_of_hier(&hier),
                     span,
                 }
-            } else { unreachable!() };
-            return (Some(hier), expr)
+            } else {
+                unreachable!()
+            };
+            return (Some(hier), expr);
         };
 
         // The canonical element type of this int type.
         let canonical_element_type = match parent_expr.ty {
             Ty::Int(ref intty) => match intty {
-                // For array type, 
+                // For array type,
                 IntTy::Array(ty, ..) => Ty::Int(IntTy::clone(ty)),
                 _ => Ty::Int(IntTy::Logic(intty.two_state(), false)),
-            }
+            },
             Ty::Array(ref ty, ..) => Ty::clone(ty),
             _ => unimplemented!(),
         };
@@ -1589,11 +1730,14 @@ impl<'a> Elaborator<'a> {
             DimKind::Value(ref value) => {
                 let expr = self.type_check_int(value);
                 let dim = Spanned::new(expr::DimKind::Value(Box::new(expr)), dim.span);
-                return (None, expr::Expr {
-                    value: expr::ExprKind::Select(Box::new(parent_expr), dim),
-                    ty: canonical_element_type,
-                    span,
-                })
+                return (
+                    None,
+                    expr::Expr {
+                        value: expr::ExprKind::Select(Box::new(parent_expr), dim),
+                        ty: canonical_element_type,
+                        span,
+                    },
+                );
             }
             DimKind::Range(ref ub, ref lb) => {
                 let ub = self.eval_expr_i32(ub);
@@ -1604,18 +1748,22 @@ impl<'a> Elaborator<'a> {
             DimKind::PlusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value);
                 let w = self.eval_expr_usize_positive(width);
-                (Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span), w)
+                (
+                    Spanned::new(expr::DimKind::PlusRange(Box::new(expr), w), dim.span),
+                    w,
+                )
             }
             DimKind::MinusRange(ref value, ref width) => {
                 let expr = self.type_check_int(value);
                 let w = self.eval_expr_usize_positive(width);
-                (Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span), w)
+                (
+                    Spanned::new(expr::DimKind::MinusRange(Box::new(expr), w), dim.span),
+                    w,
+                )
             }
             _ => {
-                self.diag.report_fatal(
-                    "unimplemented dimension kind",
-                    dim.span
-                );
+                self.diag
+                    .report_fatal("unimplemented dimension kind", dim.span);
             }
         };
         // For part-select canonical element type must be IntTy
@@ -1623,42 +1771,56 @@ impl<'a> Elaborator<'a> {
             Ty::Int(intty) => intty,
             _ => unimplemented!(),
         };
-        (None, expr::Expr {
-            value: expr::ExprKind::Select(Box::new(parent_expr), dim),
-            ty: Ty::Int(canonical_element_type.vec(len as i32 - 1, 0)),
-            span,
-        })
+        (
+            None,
+            expr::Expr {
+                value: expr::ExprKind::Select(Box::new(parent_expr), dim),
+                ty: Ty::Int(canonical_element_type.vec(len as i32 - 1, 0)),
+                span,
+            },
+        )
     }
 
-    fn type_check_assign_pattern(&mut self, ty: &Ty, pattern: &ast::AssignPattern) -> expr::AssignPattern {
+    fn type_check_assign_pattern(
+        &mut self,
+        ty: &Ty,
+        pattern: &ast::AssignPattern,
+    ) -> expr::AssignPattern {
         let pattern = match pattern {
             ast::AssignPattern::Simple(list) => {
                 match ty {
                     // Unpacked array
-                    Ty::Array(element, ..) => {
-                        expr::AssignPattern::Simple(
-                            list.iter().map(|item| self.type_check_assign(item, element)).collect()
-                        )
-                    }
+                    Ty::Array(element, ..) => expr::AssignPattern::Simple(
+                        list.iter()
+                            .map(|item| self.type_check_assign(item, element))
+                            .collect(),
+                    ),
                     Ty::Int(intty) => {
                         match intty {
                             IntTy::Array(element, ..) => {
                                 let element_ty = Ty::Int(IntTy::clone(element));
                                 expr::AssignPattern::Simple(
-                                    list.iter().map(|item| self.type_check_assign(item, &element_ty)).collect()
+                                    list.iter()
+                                        .map(|item| self.type_check_assign(item, &element_ty))
+                                        .collect(),
                                 )
                             }
-                            _  => {
+                            _ => {
                                 // TODO: They should be considered as assignment-like instead
                                 expr::AssignPattern::Simple(
-                                    list.iter().map(|item| self.type_check_assign_todo(item)).collect()
+                                    list.iter()
+                                        .map(|item| self.type_check_assign_todo(item))
+                                        .collect(),
                                 )
                             }
                         }
                     }
                     _ => {
                         // TODO: span
-                        self.diag.report_fatal("assignment pattern not yet supported for the type", Span::none());
+                        self.diag.report_fatal(
+                            "assignment pattern not yet supported for the type",
+                            Span::none(),
+                        );
                     }
                 }
             }
@@ -1685,13 +1847,13 @@ impl<'a> Elaborator<'a> {
                     TokenKind::StringLiteral(ref str) => expr::Expr {
                         value: expr::ExprKind::Const(Val::FixStr(str.clone())),
                         span: expr.span,
-                        ty: Ty::FixStr(str.len())
+                        ty: Ty::FixStr(str.len()),
                     },
                     TokenKind::TimeLiteral(_) => unimplemented!(),
                     TokenKind::RealLiteral(val) => expr::Expr {
                         value: expr::ExprKind::Const(Val::Real(val)),
                         span: expr.span,
-                        ty: Ty::Real(RealTy::Real)
+                        ty: Ty::Real(RealTy::Real),
                     },
                     TokenKind::IntegerLiteral(ref num) => expr::Expr {
                         value: expr::ExprKind::Const(Val::Int(num.value.clone())),
@@ -1699,7 +1861,7 @@ impl<'a> Elaborator<'a> {
                         ty: Ty::Int(IntTy::SimpleVec(
                             if num.sized { num.value.width() } else { 32 },
                             false,
-                            num.value.signed()
+                            num.value.signed(),
                         )),
                     },
                     TokenKind::UnbasedLiteral(val) => {
@@ -1725,9 +1887,12 @@ impl<'a> Elaborator<'a> {
                         // Fold them into constant right away
                         let value = match hier {
                             HierItem::Param(ref decl) => expr::ExprKind::Const(decl.init.clone()),
-                            HierItem::Type(ref decl) => expr::ExprKind::Const(Val::Type(decl.ty.clone())),
-                            HierItem::Enum(ref enu, index) =>
-                                expr::ExprKind::Const(Val::Int(enu.elements.borrow()[index].1.clone())),
+                            HierItem::Type(ref decl) => {
+                                expr::ExprKind::Const(Val::Type(decl.ty.clone()))
+                            }
+                            HierItem::Enum(ref enu, index) => expr::ExprKind::Const(Val::Int(
+                                enu.elements.borrow()[index].1.clone(),
+                            )),
                             _ => expr.value,
                         };
                         expr::Expr {
@@ -1748,18 +1913,19 @@ impl<'a> Elaborator<'a> {
                     .map(|expr| self.type_check_int(expr))
                     .collect();
                 // Compute the overall width and two_state-ness.
-                let (width, two_state) = subexpr
-                    .iter()
-                    .fold((0, true), |(width, two_state), expr| {
+                let (width, two_state) =
+                    subexpr.iter().fold((0, true), |(width, two_state), expr| {
                         if let Ty::Int(ref val) = expr.ty {
                             (width + val.width(), two_state & val.two_state())
-                        } else { unreachable!() }
+                        } else {
+                            unreachable!()
+                        }
                     });
                 assert!(select.is_none()); // TODO
                 expr::Expr {
                     value: expr::ExprKind::Concat(subexpr),
                     span: expr.span,
-                    ty: Ty::Int(IntTy::SimpleVec(width, two_state, false))
+                    ty: Ty::Int(IntTy::SimpleVec(width, two_state, false)),
                 }
             }
             ExprKind::MultConcat(ref mul, ref subexpr, ref select) => {
@@ -1769,7 +1935,9 @@ impl<'a> Elaborator<'a> {
                 let subexpr = self.type_check_int(subexpr);
                 let ty = if let Ty::Int(ref val) = subexpr.ty {
                     IntTy::SimpleVec(val.width() * mul_val, val.two_state(), false)
-                } else { unreachable!() };
+                } else {
+                    unreachable!()
+                };
                 assert!(select.is_none()); // TODO
                 expr::Expr {
                     value: expr::ExprKind::MultConcat(mul_val, Box::new(subexpr)),
@@ -1782,9 +1950,9 @@ impl<'a> Elaborator<'a> {
                 // context.
                 self.diag.report_fatal(
                     "untyped assignment pattern can only appear in assignment-like context",
-                    expr.span
+                    expr.span,
                 );
-            },
+            }
             ExprKind::AssignPattern(Some(ref ty), ref pattern) => {
                 let ty = self.eval_ty(ty);
                 let pattern = self.type_check_assign_pattern(&ty, pattern);
@@ -1796,11 +1964,18 @@ impl<'a> Elaborator<'a> {
             }
             ExprKind::SysTfCall(_) => {
                 // Work around borrow checker
-                let call = if let ExprKind::SysTfCall(call) = &expr.value {call} else { unreachable!() };
+                let call = if let ExprKind::SysTfCall(call) = &expr.value {
+                    call
+                } else {
+                    unreachable!()
+                };
                 // Currently no system task calls should have named arguments
                 if let Some(args) = &call.args {
                     if !args.named.is_empty() {
-                        self.diag.report_error("system task calls should not contain named arguments", call.task.span);
+                        self.diag.report_error(
+                            "system task calls should not contain named arguments",
+                            call.task.span,
+                        );
                     }
                 }
                 match call.task.as_str() {
@@ -1812,12 +1987,17 @@ impl<'a> Elaborator<'a> {
                             false
                         };
                         if !arg_checked {
-                            self.diag.report_fatal("$signed must have exactly 1 arguments", call.task.span);
+                            self.diag.report_fatal(
+                                "$signed must have exactly 1 arguments",
+                                call.task.span,
+                            );
                         }
                         let arg = call.args.as_ref().unwrap().ordered[0].as_ref().unwrap();
                         let conv = self.type_check_int(arg);
                         let myty = match conv.ty {
-                            Ty::Int(ref ty) => Ty::Int(IntTy::SimpleVec(ty.width(), ty.two_state(), true)),
+                            Ty::Int(ref ty) => {
+                                Ty::Int(IntTy::SimpleVec(ty.width(), ty.two_state(), true))
+                            }
                             _ => unreachable!(),
                         };
                         expr::Expr {
@@ -1828,7 +2008,10 @@ impl<'a> Elaborator<'a> {
                     }
                     "clog2" => {
                         let args = if let Some(args) = &call.args {
-                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                            args.ordered
+                                .iter()
+                                .map(|v| v.as_ref().map(|v| self.type_check(v)))
+                                .collect()
                         } else {
                             unimplemented!()
                         };
@@ -1845,7 +2028,10 @@ impl<'a> Elaborator<'a> {
                             false
                         };
                         if !arg_checked {
-                            self.diag.report_fatal("$bits must have exactly 1 arguments", call.task.span);
+                            self.diag.report_fatal(
+                                "$bits must have exactly 1 arguments",
+                                call.task.span,
+                            );
                         }
                         let arg = call.args.as_ref().unwrap().ordered[0].as_ref().unwrap();
                         let conv = self.type_check(arg);
@@ -1866,14 +2052,21 @@ impl<'a> Elaborator<'a> {
                             _ => unimplemented!(),
                         };
                         expr::Expr {
-                            value: expr::ExprKind::Const(Val::Int(LogicVec::from(32, true, sz.into()))),
+                            value: expr::ExprKind::Const(Val::Int(LogicVec::from(
+                                32,
+                                true,
+                                sz.into(),
+                            ))),
                             span: expr.span,
                             ty: Ty::Int(IntTy::SimpleVec(32, false, true)),
                         }
                     }
                     "fatal" | "error" | "warning" | "info" | "display" => {
                         let args = if let Some(args) = &call.args {
-                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                            args.ordered
+                                .iter()
+                                .map(|v| v.as_ref().map(|v| self.type_check(v)))
+                                .collect()
                         } else {
                             unimplemented!()
                         };
@@ -1882,12 +2075,14 @@ impl<'a> Elaborator<'a> {
                             span: expr.span,
                             ty: Ty::Void,
                         }
-
                     }
                     _ => {
                         eprintln!("{:?} unimplemented", call.task);
                         let args = if let Some(args) = &call.args {
-                            args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                            args.ordered
+                                .iter()
+                                .map(|v| v.as_ref().map(|v| self.type_check(v)))
+                                .collect()
                         } else {
                             unimplemented!()
                         };
@@ -1899,16 +2094,24 @@ impl<'a> Elaborator<'a> {
                     }
                 }
             }
-            ExprKind::FuncCall { expr: ref func_expr, ref args, .. } => {
+            ExprKind::FuncCall {
+                expr: ref func_expr,
+                ref args,
+                ..
+            } => {
                 // Named argument is not currently supported
                 if let Some(args) = &args {
                     if !args.named.is_empty() {
-                        self.diag.report_error("named arguments not yet supported", expr.span);
+                        self.diag
+                            .report_error("named arguments not yet supported", expr.span);
                     }
                 }
                 let func_expr = self.type_check(func_expr);
                 let args = if let Some(args) = &args {
-                    args.ordered.iter().map(|v| v.as_ref().map(|v| self.type_check(v))).collect()
+                    args.ordered
+                        .iter()
+                        .map(|v| v.as_ref().map(|v| self.type_check(v)))
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -1918,7 +2121,7 @@ impl<'a> Elaborator<'a> {
                 expr::Expr {
                     value: expr::ExprKind::FuncCall {
                         expr: Box::new(func_expr),
-                        args
+                        args,
                     },
                     span: expr.span,
                     ty,
@@ -1957,20 +2160,28 @@ impl<'a> Elaborator<'a> {
                         let size = match v.get_two_state() {
                             Some(size) => size,
                             None => {
-                                self.diag.report_fatal("type specifier of cast should be two state", ty.span);
+                                self.diag.report_fatal(
+                                    "type specifier of cast should be two state",
+                                    ty.span,
+                                );
                             }
                         };
                         let size = match size.to_usize() {
-                            Some(0) |
-                            None => {
-                                self.diag.report_fatal("type specifier of cast should be positive", ty.span);
+                            Some(0) | None => {
+                                self.diag.report_fatal(
+                                    "type specifier of cast should be positive",
+                                    ty.span,
+                                );
                             }
                             Some(size) => size,
                         };
                         let (two_state, sign) = match inside.ty {
                             Ty::Int(ref intty) => (intty.two_state(), intty.sign()),
                             _ => {
-                                self.diag.report_fatal("expression inside width cast must be an integral value", ty.span);
+                                self.diag.report_fatal(
+                                    "expression inside width cast must be an integral value",
+                                    ty.span,
+                                );
                             }
                         };
                         expr::Expr {
@@ -1980,78 +2191,88 @@ impl<'a> Elaborator<'a> {
                         }
                     }
                     _ => {
-                        self.diag.report_fatal("type specifier of cast should either be a type or an integral value", ty.span);
+                        self.diag.report_fatal(
+                            "type specifier of cast should either be a type or an integral value",
+                            ty.span,
+                        );
                     }
                 }
             }
-            ExprKind::Unary(op, _, ref rhs) => {
-                match op {
-                    UnaryOp::Add |
-                    UnaryOp::Sub => {
-                        let conv = self.self_type_check_num(rhs);
-                        let myty = match conv.ty {
-                            Ty::Int(ref subty) => Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign())),
-                            Ty::Real(ref subty) => Ty::Real(*subty),
-                            _ => unreachable!(),
-                        };
-                        expr::Expr {
-                            value: expr::ExprKind::Unary(op, Box::new(conv)),
-                            span: expr.span,
-                            ty: myty,
+            ExprKind::Unary(op, _, ref rhs) => match op {
+                UnaryOp::Add | UnaryOp::Sub => {
+                    let conv = self.self_type_check_num(rhs);
+                    let myty = match conv.ty {
+                        Ty::Int(ref subty) => {
+                            Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign()))
                         }
-                    }
-                    UnaryOp::Not => {
-                        let conv = self.self_type_check_int(rhs);
-                        let myty = match conv.ty {
-                            Ty::Int(ref subty) => Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign())),
-                            _ => unreachable!(),
-                        };
-                        expr::Expr {
-                            value: expr::ExprKind::Unary(op, Box::new(conv)),
-                            span: expr.span,
-                            ty: myty,
-                        }
-                    }
-                    UnaryOp::LNot => {
-                        let conv = self.type_check_bool(rhs);
-                        expr::Expr {
-                            value: expr::ExprKind::Unary(op, Box::new(conv)),
-                            span: expr.span,
-                            ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
-                        }
-                    }
-                    UnaryOp::And |
-                    UnaryOp::Nand |
-                    UnaryOp::Or |
-                    UnaryOp::Nor |
-                    UnaryOp::Xor |
-                    UnaryOp::Xnor => {
-                        let conv = self.self_type_check_int(rhs);
-                        expr::Expr {
-                            value: expr::ExprKind::Unary(op, Box::new(conv)),
-                            span: expr.span,
-                            ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
-                        }
+                        Ty::Real(ref subty) => Ty::Real(*subty),
+                        _ => unreachable!(),
+                    };
+                    expr::Expr {
+                        value: expr::ExprKind::Unary(op, Box::new(conv)),
+                        span: expr.span,
+                        ty: myty,
                     }
                 }
-            }
+                UnaryOp::Not => {
+                    let conv = self.self_type_check_int(rhs);
+                    let myty = match conv.ty {
+                        Ty::Int(ref subty) => {
+                            Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign()))
+                        }
+                        _ => unreachable!(),
+                    };
+                    expr::Expr {
+                        value: expr::ExprKind::Unary(op, Box::new(conv)),
+                        span: expr.span,
+                        ty: myty,
+                    }
+                }
+                UnaryOp::LNot => {
+                    let conv = self.type_check_bool(rhs);
+                    expr::Expr {
+                        value: expr::ExprKind::Unary(op, Box::new(conv)),
+                        span: expr.span,
+                        ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
+                    }
+                }
+                UnaryOp::And
+                | UnaryOp::Nand
+                | UnaryOp::Or
+                | UnaryOp::Nor
+                | UnaryOp::Xor
+                | UnaryOp::Xnor => {
+                    let conv = self.self_type_check_int(rhs);
+                    expr::Expr {
+                        value: expr::ExprKind::Unary(op, Box::new(conv)),
+                        span: expr.span,
+                        ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
+                    }
+                }
+            },
             ExprKind::Binary(ref lhs, op, _, ref rhs) => {
                 match op {
-                    BinaryOp::Add |
-                    BinaryOp::Sub |
-                    BinaryOp::Mul |
-                    BinaryOp::Div |
-                    BinaryOp::Mod => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod => {
                         let (lhs_conv, rhs_conv) = self.self_type_check_num_2(lhs, rhs);
                         let myty = match (&lhs_conv.ty, &rhs_conv.ty) {
-                            (Ty::Int(lsubty), Ty::Int(rsubty)) => {
-                                Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign()))
-                            }
+                            (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(
+                                cmp::max(lsubty.width(), rsubty.width()),
+                                false,
+                                lsubty.sign() && rsubty.sign(),
+                            )),
                             (Ty::Real(subty), Ty::Real(_)) => Ty::Real(*subty),
                             _ => unreachable!(),
                         };
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: myty,
                         }
@@ -2067,37 +2288,44 @@ impl<'a> Elaborator<'a> {
                             self.propagate_size(&mut rhs_conv, ctx);
                         }
                         let myty = match &lhs_conv.ty {
-                            Ty::Int(subty) => Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign())),
+                            Ty::Int(subty) => {
+                                Ty::Int(IntTy::SimpleVec(subty.width(), false, subty.sign()))
+                            }
                             Ty::Real(subty) => Ty::Real(*subty),
                             _ => unreachable!(),
                         };
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: myty,
                         }
                     }
-                    BinaryOp::And |
-                    BinaryOp::Or |
-                    BinaryOp::Xor |
-                    BinaryOp::Xnor => {
+                    BinaryOp::And | BinaryOp::Or | BinaryOp::Xor | BinaryOp::Xnor => {
                         let lhs_conv = self.self_type_check_int(lhs);
                         let rhs_conv = self.self_type_check_int(rhs);
                         let myty = match (&lhs_conv.ty, &rhs_conv.ty) {
-                            (Ty::Int(lsubty), Ty::Int(rsubty)) => {
-                                Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign()))
-                            }
+                            (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(
+                                cmp::max(lsubty.width(), rsubty.width()),
+                                false,
+                                lsubty.sign() && rsubty.sign(),
+                            )),
                             _ => unreachable!(),
                         };
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: myty,
                         }
                     }
-                    BinaryOp::Shl |
-                    BinaryOp::LShr |
-                    BinaryOp::AShr => {
+                    BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr => {
                         let lhs_conv = self.self_type_check_int(lhs);
                         let mut rhs_conv = self.type_check_int(rhs);
 
@@ -2113,53 +2341,60 @@ impl<'a> Elaborator<'a> {
                             _ => unreachable!(),
                         };
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: myty,
                         }
                     }
-                    BinaryOp::Eq |
-                    BinaryOp::Neq => {
+                    BinaryOp::Eq | BinaryOp::Neq => {
                         let mut lhs_conv = self.self_type_check(lhs);
                         let mut rhs_conv = self.self_type_check(rhs);
                         let ctx = match (&lhs_conv.ty, &rhs_conv.ty) {
-                            (Ty::Int(lsubty), Ty::Int(rsubty)) =>
-                                (lsubty.sign() && rsubty.sign(), cmp::max(lsubty.width(), rsubty.width())),
+                            (Ty::Int(lsubty), Ty::Int(rsubty)) => (
+                                lsubty.sign() && rsubty.sign(),
+                                cmp::max(lsubty.width(), rsubty.width()),
+                            ),
                             _ => unimplemented!(),
                         };
                         self.propagate_size(&mut lhs_conv, ctx);
                         self.propagate_size(&mut rhs_conv, ctx);
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
                         }
                     }
-                    BinaryOp::CaseEq |
-                    BinaryOp::CaseNeq |
-                    BinaryOp::WildEq |
-                    BinaryOp::WildNeq => unimplemented!(),
-                    BinaryOp::LAnd |
-                    BinaryOp::LOr |
-                    BinaryOp::Imply |
-                    BinaryOp::Equiv => {
+                    BinaryOp::CaseEq | BinaryOp::CaseNeq | BinaryOp::WildEq | BinaryOp::WildNeq => {
+                        unimplemented!()
+                    }
+                    BinaryOp::LAnd | BinaryOp::LOr | BinaryOp::Imply | BinaryOp::Equiv => {
                         let lhs_conv = self.type_check_bool(lhs);
                         let rhs_conv = self.type_check_bool(rhs);
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
                         }
                     }
-                    BinaryOp::Lt |
-                    BinaryOp::Leq |
-                    BinaryOp::Gt |
-                    BinaryOp::Geq => {
+                    BinaryOp::Lt | BinaryOp::Leq | BinaryOp::Gt | BinaryOp::Geq => {
                         let (mut lhs_conv, mut rhs_conv) = self.self_type_check_num_2(lhs, rhs);
                         let ctx = match (&lhs_conv.ty, &rhs_conv.ty) {
-                            (Ty::Int(lsubty), Ty::Int(rsubty)) => {
-                                Some((lsubty.sign() && rsubty.sign(), cmp::max(lsubty.width(), rsubty.width())))
-                            }
+                            (Ty::Int(lsubty), Ty::Int(rsubty)) => Some((
+                                lsubty.sign() && rsubty.sign(),
+                                cmp::max(lsubty.width(), rsubty.width()),
+                            )),
                             _ => None,
                         };
                         // If both side are integral, we need to have size propagated now
@@ -2168,7 +2403,11 @@ impl<'a> Elaborator<'a> {
                             self.propagate_size(&mut rhs_conv, ctx);
                         }
                         expr::Expr {
-                            value: expr::ExprKind::Binary(Box::new(lhs_conv), op, Box::new(rhs_conv)),
+                            value: expr::ExprKind::Binary(
+                                Box::new(lhs_conv),
+                                op,
+                                Box::new(rhs_conv),
+                            ),
                             span: expr.span,
                             ty: Ty::Int(IntTy::SimpleVec(1, false, false)),
                         }
@@ -2220,11 +2459,19 @@ impl<'a> Elaborator<'a> {
                 let true_conv = self.self_type_check(true_expr);
                 let false_conv = self.self_type_check(false_expr);
                 let myty = match (&true_conv.ty, &false_conv.ty) {
-                    (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(cmp::max(lsubty.width(), rsubty.width()), false, lsubty.sign() && rsubty.sign())),
+                    (Ty::Int(lsubty), Ty::Int(rsubty)) => Ty::Int(IntTy::SimpleVec(
+                        cmp::max(lsubty.width(), rsubty.width()),
+                        false,
+                        lsubty.sign() && rsubty.sign(),
+                    )),
                     _ => unimplemented!(),
                 };
                 expr::Expr {
-                    value: expr::ExprKind::Cond(Box::new(cond_conv), Box::new(true_conv), Box::new(false_conv)),
+                    value: expr::ExprKind::Cond(
+                        Box::new(cond_conv),
+                        Box::new(true_conv),
+                        Box::new(false_conv),
+                    ),
                     span: expr.span,
                     ty: myty,
                 }
@@ -2240,10 +2487,10 @@ impl<'a> Elaborator<'a> {
     pub fn self_type_check_num(&mut self, expr: &Expr) -> expr::Expr {
         let conv = self.self_type_check(expr);
         match conv.ty {
-            Ty::Int(_) |
-            Ty::Real(_) => (),
+            Ty::Int(_) | Ty::Real(_) => (),
             _ => {
-                self.diag.report_fatal("this expression is expected to be numerical", expr.span);
+                self.diag
+                    .report_fatal("this expression is expected to be numerical", expr.span);
             }
         };
         conv
@@ -2278,7 +2525,7 @@ impl<'a> Elaborator<'a> {
         // If only one side is real, the other side will need to be treated as
         // self-determined.
         if let Some((_realty, expr, ctx)) = real {
-            self.propagate_size(if expr == 0 { &mut a_conv } else { &mut b_conv } , ctx);
+            self.propagate_size(if expr == 0 { &mut a_conv } else { &mut b_conv }, ctx);
             // TODO: Add implicit cast to make it also real
             unimplemented!();
         }
@@ -2291,7 +2538,8 @@ impl<'a> Elaborator<'a> {
         match conv.ty {
             Ty::Int(_) => (),
             _ => {
-                self.diag.report_fatal("this expression is expected to be integral", expr.span);
+                self.diag
+                    .report_fatal("this expression is expected to be integral", expr.span);
             }
         };
         conv
@@ -2304,17 +2552,15 @@ impl<'a> Elaborator<'a> {
                 if subty.width() != ctx.1 {
                     // Width cast
                     let span = expr.span;
-                    let old_subty = std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, subty_sign));
-                    ::util::replace_with(&mut expr.value, |old_value| {
+                    let old_subty =
+                        std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, subty_sign));
+                    crate::util::replace_with(&mut expr.value, |old_value| {
                         let old_expr = Box::new(expr::Expr {
                             value: old_value,
                             span: span,
-                            ty: Ty::Int(old_subty)
+                            ty: Ty::Int(old_subty),
                         });
-                        let new_value = expr::ExprKind::WidthCast(
-                            ctx.1,
-                            old_expr
-                        );
+                        let new_value = expr::ExprKind::WidthCast(ctx.1, old_expr);
                         new_value
                     });
                 }
@@ -2322,16 +2568,13 @@ impl<'a> Elaborator<'a> {
                     // Insert a sign cast
                     let span = expr.span;
                     let old_subty = std::mem::replace(subty, IntTy::SimpleVec(ctx.1, false, ctx.0));
-                    ::util::replace_with(&mut expr.value, |old_value| {
+                    crate::util::replace_with(&mut expr.value, |old_value| {
                         let old_expr = Box::new(expr::Expr {
                             value: old_value,
                             span: span,
-                            ty: Ty::Int(old_subty)
+                            ty: Ty::Int(old_subty),
                         });
-                        let new_value = expr::ExprKind::SignCast(
-                            ctx.0,
-                            old_expr
-                        );
+                        let new_value = expr::ExprKind::SignCast(ctx.0, old_expr);
                         new_value
                     });
                 }
@@ -2345,20 +2588,18 @@ impl<'a> Elaborator<'a> {
         match expr.value {
             expr::ExprKind::Const(ref mut val) => {
                 match val {
-                    Val::Int(val) => {
-                        match &mut expr.ty {
-                            Ty::Int(intty) => {
-                                *val = val.extend_or_trunc(ctx.1);
-                                val.signed = ctx.0;
-                                *intty = IntTy::SimpleVec(ctx.1, intty.two_state(), ctx.0);
-                            }
-                            _ => unreachable!(),
+                    Val::Int(val) => match &mut expr.ty {
+                        Ty::Int(intty) => {
+                            *val = val.extend_or_trunc(ctx.1);
+                            val.signed = ctx.0;
+                            *intty = IntTy::SimpleVec(ctx.1, intty.two_state(), ctx.0);
                         }
-                    }
+                        _ => unreachable!(),
+                    },
                     _ => unreachable!(),
                 }
                 return;
-            },
+            }
             expr::ExprKind::HierName(..) => (),
             expr::ExprKind::EmptyQueue => (),
             expr::ExprKind::Concat(_) => (),
@@ -2374,9 +2615,7 @@ impl<'a> Elaborator<'a> {
             expr::ExprKind::WidthCast(..) => (),
             expr::ExprKind::Unary(op, ref mut rhs) => {
                 match op {
-                    UnaryOp::Add |
-                    UnaryOp::Sub |
-                    UnaryOp::Not => {
+                    UnaryOp::Add | UnaryOp::Sub | UnaryOp::Not => {
                         // Fix size of self
                         match &mut expr.ty {
                             Ty::Int(IntTy::SimpleVec(width, _, sign)) => {
@@ -2391,26 +2630,26 @@ impl<'a> Elaborator<'a> {
                         return;
                     }
                     // These have no context-determined operands.
-                    UnaryOp::LNot |
-                    UnaryOp::And |
-                    UnaryOp::Nand |
-                    UnaryOp::Or |
-                    UnaryOp::Nor |
-                    UnaryOp::Xor |
-                    UnaryOp::Xnor => (),
+                    UnaryOp::LNot
+                    | UnaryOp::And
+                    | UnaryOp::Nand
+                    | UnaryOp::Or
+                    | UnaryOp::Nor
+                    | UnaryOp::Xor
+                    | UnaryOp::Xnor => (),
                 }
             }
             expr::ExprKind::Binary(ref mut lhs, op, ref mut rhs) => {
                 match op {
-                    BinaryOp::Add |
-                    BinaryOp::Sub |
-                    BinaryOp::Mul |
-                    BinaryOp::Div |
-                    BinaryOp::Mod |
-                    BinaryOp::And |
-                    BinaryOp::Or |
-                    BinaryOp::Xor |
-                    BinaryOp::Xnor => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod
+                    | BinaryOp::And
+                    | BinaryOp::Or
+                    | BinaryOp::Xor
+                    | BinaryOp::Xnor => {
                         // Fix size of self
                         match &mut expr.ty {
                             Ty::Int(IntTy::SimpleVec(width, _, sign)) => {
@@ -2425,10 +2664,7 @@ impl<'a> Elaborator<'a> {
                         self.propagate_size(rhs, ctx);
                         return;
                     }
-                    BinaryOp::Power |
-                    BinaryOp::Shl |
-                    BinaryOp::LShr |
-                    BinaryOp::AShr => {
+                    BinaryOp::Power | BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr => {
                         // Fix size of self
                         match &mut expr.ty {
                             Ty::Int(IntTy::SimpleVec(width, _, sign)) => {
@@ -2442,20 +2678,20 @@ impl<'a> Elaborator<'a> {
                         return;
                     }
                     // These operator has no context-determined operands.
-                    BinaryOp::Eq |
-                    BinaryOp::Neq |
-                    BinaryOp::CaseEq |
-                    BinaryOp::CaseNeq |
-                    BinaryOp::WildEq |
-                    BinaryOp::WildNeq |
-                    BinaryOp::LAnd |
-                    BinaryOp::LOr |
-                    BinaryOp::Imply |
-                    BinaryOp::Equiv |
-                    BinaryOp::Lt |
-                    BinaryOp::Leq |
-                    BinaryOp::Gt |
-                    BinaryOp::Geq => (),
+                    BinaryOp::Eq
+                    | BinaryOp::Neq
+                    | BinaryOp::CaseEq
+                    | BinaryOp::CaseNeq
+                    | BinaryOp::WildEq
+                    | BinaryOp::WildNeq
+                    | BinaryOp::LAnd
+                    | BinaryOp::LOr
+                    | BinaryOp::Imply
+                    | BinaryOp::Equiv
+                    | BinaryOp::Lt
+                    | BinaryOp::Leq
+                    | BinaryOp::Gt
+                    | BinaryOp::Geq => (),
                 }
             }
             // Binary(Box<Expr>, BinaryOp, Option<Box<AttrInst>>, Box<Expr>),
@@ -2567,19 +2803,15 @@ impl<'a> Elaborator<'a> {
     pub fn eval_checked_expr(&mut self, expr: &expr::Expr) -> Val {
         match &expr.value {
             expr::ExprKind::Const(val) => val.clone(),
-            expr::ExprKind::HierName(name) => {
-                match self.type_check_hier_id(name, expr.span).0 {
-                    Some(hier) => {
-                        match hier {
-                            HierItem::GenVar(ref genvar) => {
-                                Val::Int(LogicVec::from_integer(*genvar.value.borrow()))
-                            },
-                            _ => unimplemented!(),
-                        }
+            expr::ExprKind::HierName(name) => match self.type_check_hier_id(name, expr.span).0 {
+                Some(hier) => match hier {
+                    HierItem::GenVar(ref genvar) => {
+                        Val::Int(LogicVec::from_integer(*genvar.value.borrow()))
                     }
-                    None => unreachable!(),
-                }
-            }
+                    _ => unimplemented!(),
+                },
+                None => unreachable!(),
+            },
             // EmptyQueue,
             expr::ExprKind::Concat(subexpr) => {
                 // subexpr.len() is always > 1, which is guaranteed by parser.
@@ -2591,7 +2823,7 @@ impl<'a> Elaborator<'a> {
                     let subval = match self.eval_checked_expr(expr) {
                         Val::Int(val) => val,
                         _ => unreachable!(),
-                    };  
+                    };
                     val.concat_assign(&subval);
                 }
                 Val::Int(val)
@@ -2605,11 +2837,20 @@ impl<'a> Elaborator<'a> {
                     "clog2" => (),
                     v => unimplemented!("{:?}", v),
                 }
-                let args: Vec<_> = args.iter().map(|v| self.eval_checked_expr(v.as_ref().unwrap())).collect();
+                let args: Vec<_> = args
+                    .iter()
+                    .map(|v| self.eval_checked_expr(v.as_ref().unwrap()))
+                    .collect();
                 if let Val::Int(vec) = &args[0] {
                     Val::Int(LogicVec::from_biguint(
-                        32, true,
-                        BigUint::from_usize((vec.get_two_state().unwrap().to_usize().unwrap() as f64).log2().ceil() as usize).unwrap()
+                        32,
+                        true,
+                        BigUint::from_usize(
+                            (vec.get_two_state().unwrap().to_usize().unwrap() as f64)
+                                .log2()
+                                .ceil() as usize,
+                        )
+                        .unwrap(),
                     ))
                 } else {
                     unreachable!();
@@ -2625,8 +2866,7 @@ impl<'a> Elaborator<'a> {
                     unreachable!()
                 }
             }
-            expr::ExprKind::TypeCast(_, inside) |
-            expr::ExprKind::WidthCast(_, inside) => {
+            expr::ExprKind::TypeCast(_, inside) | expr::ExprKind::WidthCast(_, inside) => {
                 let inside_val = self.eval_checked_expr(inside);
                 let self_ty = &expr.ty;
                 let inside_ty = &inside.ty;
@@ -2655,76 +2895,63 @@ impl<'a> Elaborator<'a> {
                 let val = self.eval_checked_expr(rhs);
                 match op {
                     UnaryOp::Add => val,
-                    UnaryOp::Sub => {
-                        match val {
-                            Val::Int(val) => {
-                                Val::Int(-val)
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
+                    UnaryOp::Sub => match val {
+                        Val::Int(val) => Val::Int(-val),
+                        _ => unreachable!(),
+                    },
                     UnaryOp::Not => unimplemented!(),
-                    UnaryOp::LNot => {
-                        match val {
-                            Val::Int(val) => {
-                                Val::Int((!val.to_bool()).into())
-                            }
-                            _ => unimplemented!(),
-                        }
-                    }
-                    UnaryOp::And |
-                    UnaryOp::Nand |
-                    UnaryOp::Or |
-                    UnaryOp::Nor |
-                    UnaryOp::Xor |
-                    UnaryOp::Xnor => unimplemented!(),
+                    UnaryOp::LNot => match val {
+                        Val::Int(val) => Val::Int((!val.to_bool()).into()),
+                        _ => unimplemented!(),
+                    },
+                    UnaryOp::And
+                    | UnaryOp::Nand
+                    | UnaryOp::Or
+                    | UnaryOp::Nor
+                    | UnaryOp::Xor
+                    | UnaryOp::Xnor => unimplemented!(),
                 }
             }
             expr::ExprKind::Binary(lhs, op, rhs) => {
                 let lval = self.eval_checked_expr(lhs);
                 let rval = self.eval_checked_expr(rhs);
                 match op {
-                    BinaryOp::Add |
-                    BinaryOp::Sub |
-                    BinaryOp::Mul |
-                    BinaryOp::Div |
-                    BinaryOp::Mod |
-                    BinaryOp::Power => {
-                        match (lval, rval) {
-                            (Val::Real(l), Val::Real(r)) => {
-                                let mut ret = match op {
-                                    BinaryOp::Add => l + r,
-                                    BinaryOp::Sub => l - r,
-                                    BinaryOp::Mul => l * r,
-                                    BinaryOp::Div => l / r,
-                                    BinaryOp::Mod => l % r,
-                                    BinaryOp::Power => unimplemented!(),
-                                    _ => unreachable!(),
-                                };
-                                if let Ty::Real(RealTy::Shortreal) = expr.ty {
-                                    ret = ret as f32 as f64;
-                                }
-                                Val::Real(ret)
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod
+                    | BinaryOp::Power => match (lval, rval) {
+                        (Val::Real(l), Val::Real(r)) => {
+                            let mut ret = match op {
+                                BinaryOp::Add => l + r,
+                                BinaryOp::Sub => l - r,
+                                BinaryOp::Mul => l * r,
+                                BinaryOp::Div => l / r,
+                                BinaryOp::Mod => l % r,
+                                BinaryOp::Power => unimplemented!(),
+                                _ => unreachable!(),
+                            };
+                            if let Ty::Real(RealTy::Shortreal) = expr.ty {
+                                ret = ret as f32 as f64;
                             }
-                            (Val::Int(mut lval), Val::Int(rval)) => {
-                                match op {
-                                    BinaryOp::Add => lval += &rval,
-                                    BinaryOp::Sub => lval -= &rval,
-                                    BinaryOp::Mul => lval *= &rval,
-                                    BinaryOp::Div => lval /= &rval,
-                                    BinaryOp::Mod => lval %= &rval,
-                                    BinaryOp::Power => lval.pow_assign(&rval),
-                                    _ => unreachable!(),
-                                }
-                                Val::Int(lval)
-                            }
-                            _ => unreachable!(),
+                            Val::Real(ret)
                         }
+                        (Val::Int(mut lval), Val::Int(rval)) => {
+                            match op {
+                                BinaryOp::Add => lval += &rval,
+                                BinaryOp::Sub => lval -= &rval,
+                                BinaryOp::Mul => lval *= &rval,
+                                BinaryOp::Div => lval /= &rval,
+                                BinaryOp::Mod => lval %= &rval,
+                                BinaryOp::Power => lval.pow_assign(&rval),
+                                _ => unreachable!(),
+                            }
+                            Val::Int(lval)
+                        }
+                        _ => unreachable!(),
                     },
-                    BinaryOp::And |
-                    BinaryOp::Or |
-                    BinaryOp::Xor |
-                    BinaryOp::Xnor => {
+                    BinaryOp::And | BinaryOp::Or | BinaryOp::Xor | BinaryOp::Xnor => {
                         match (lval, rval) {
                             (Val::Int(mut lval), Val::Int(rval)) => {
                                 match op {
@@ -2741,10 +2968,8 @@ impl<'a> Elaborator<'a> {
                             }
                             _ => unreachable!(),
                         }
-                    },
-                    BinaryOp::Shl |
-                    BinaryOp::LShr |
-                    BinaryOp::AShr => {
+                    }
+                    BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr => {
                         if let (Val::Int(mut l), Val::Int(r)) = (lval, rval) {
                             match op {
                                 BinaryOp::Shl => l <<= &r,
@@ -2759,92 +2984,80 @@ impl<'a> Elaborator<'a> {
                     }
                     // For all operations without context-determined operands, we will need to
                     // add a cast operator if width mismatches.
-                    BinaryOp::Eq |
-                    BinaryOp::Neq => {
+                    BinaryOp::Eq | BinaryOp::Neq => {
                         let result = match (lval, rval) {
-                            (Val::Real(l), Val::Real(r)) => {
-                                match op {
-                                    BinaryOp::Eq => l == r,
-                                    BinaryOp::Neq => l != r,
-                                    _ => unreachable!(),
-                                }.into()
+                            (Val::Real(l), Val::Real(r)) => match op {
+                                BinaryOp::Eq => l == r,
+                                BinaryOp::Neq => l != r,
+                                _ => unreachable!(),
                             }
-                            (Val::Int(l), Val::Int(r)) => {
-                                match op {
-                                    BinaryOp::Eq => l.logic_eq(&r),
-                                    BinaryOp::Neq => !l.logic_eq(&r),
-                                    _ => unreachable!(),
-                                }
-                            }
+                            .into(),
+                            (Val::Int(l), Val::Int(r)) => match op {
+                                BinaryOp::Eq => l.logic_eq(&r),
+                                BinaryOp::Neq => !l.logic_eq(&r),
+                                _ => unreachable!(),
+                            },
                             _ => unimplemented!(),
                         };
                         Val::Int(result.into())
                     }
-                    BinaryOp::CaseEq |
-                    BinaryOp::CaseNeq |
-                    BinaryOp::WildEq |
-                    BinaryOp::WildNeq => unimplemented!(),
-                    BinaryOp::LAnd |
-                    BinaryOp::LOr |
-                    BinaryOp::Imply |
-                    BinaryOp::Equiv=> {
+                    BinaryOp::CaseEq | BinaryOp::CaseNeq | BinaryOp::WildEq | BinaryOp::WildNeq => {
+                        unimplemented!()
+                    }
+                    BinaryOp::LAnd | BinaryOp::LOr | BinaryOp::Imply | BinaryOp::Equiv => {
                         let lbool = match lval {
-                            Val::Int(val) => {
-                                val.to_bool()
-                            }
+                            Val::Int(val) => val.to_bool(),
                             _ => unimplemented!(),
                         };
                         let rbool = match rval {
-                            Val::Int(val) => {
-                                val.to_bool()
-                            }
+                            Val::Int(val) => val.to_bool(),
                             _ => unimplemented!(),
                         };
                         let result = match (op, lbool, rbool) {
-                            (BinaryOp::LAnd, LogicValue::Zero, _) |
-                            (BinaryOp::LAnd, _, LogicValue::Zero) => LogicValue::Zero,
+                            (BinaryOp::LAnd, LogicValue::Zero, _)
+                            | (BinaryOp::LAnd, _, LogicValue::Zero) => LogicValue::Zero,
                             (BinaryOp::LAnd, LogicValue::One, LogicValue::One) => LogicValue::One,
 
                             (BinaryOp::LOr, LogicValue::Zero, LogicValue::Zero) => LogicValue::Zero,
-                            (BinaryOp::LOr, LogicValue::One, _) |
-                            (BinaryOp::LOr, _, LogicValue::One) => LogicValue::One,
+                            (BinaryOp::LOr, LogicValue::One, _)
+                            | (BinaryOp::LOr, _, LogicValue::One) => LogicValue::One,
 
-                            (BinaryOp::Imply, LogicValue::One, LogicValue::Zero) => LogicValue::Zero,
-                            (BinaryOp::Imply, LogicValue::Zero, _) |
-                            (BinaryOp::Imply, _, LogicValue::One) => LogicValue::One,
+                            (BinaryOp::Imply, LogicValue::One, LogicValue::Zero) => {
+                                LogicValue::Zero
+                            }
+                            (BinaryOp::Imply, LogicValue::Zero, _)
+                            | (BinaryOp::Imply, _, LogicValue::One) => LogicValue::One,
 
-                            (BinaryOp::Equiv, LogicValue::One, LogicValue::Zero) |
-                            (BinaryOp::Equiv, LogicValue::Zero, LogicValue::One) => LogicValue::Zero,
-                            (BinaryOp::Equiv, LogicValue::Zero, LogicValue::Zero) |
-                            (BinaryOp::Equiv, LogicValue::One, LogicValue::One) => LogicValue::One,
-                            
+                            (BinaryOp::Equiv, LogicValue::One, LogicValue::Zero)
+                            | (BinaryOp::Equiv, LogicValue::Zero, LogicValue::One) => {
+                                LogicValue::Zero
+                            }
+                            (BinaryOp::Equiv, LogicValue::Zero, LogicValue::Zero)
+                            | (BinaryOp::Equiv, LogicValue::One, LogicValue::One) => {
+                                LogicValue::One
+                            }
+
                             _ => LogicValue::X,
                         };
                         Val::Int(result.into())
                     }
-                    BinaryOp::Lt |
-                    BinaryOp::Leq |
-                    BinaryOp::Gt |
-                    BinaryOp::Geq => {
+                    BinaryOp::Lt | BinaryOp::Leq | BinaryOp::Gt | BinaryOp::Geq => {
                         let result = match (lval, rval) {
-                            (Val::Real(l), Val::Real(r)) => {
-                                match op {
-                                    BinaryOp::Lt => l < r,
-                                    BinaryOp::Leq => l <= r,
-                                    BinaryOp::Gt => l <= r,
-                                    BinaryOp::Geq => l >= r,
-                                    _ => unreachable!(),
-                                }.into()
+                            (Val::Real(l), Val::Real(r)) => match op {
+                                BinaryOp::Lt => l < r,
+                                BinaryOp::Leq => l <= r,
+                                BinaryOp::Gt => l <= r,
+                                BinaryOp::Geq => l >= r,
+                                _ => unreachable!(),
                             }
-                            (Val::Int(l), Val::Int(r)) => {
-                                match op {
-                                    BinaryOp::Lt => l.lt(&r),
-                                    BinaryOp::Leq => l.le(&r),
-                                    BinaryOp::Gt => !l.le(&r),
-                                    BinaryOp::Geq => !l.lt(&r),
-                                    _ => unreachable!(),
-                                }
-                            }
+                            .into(),
+                            (Val::Int(l), Val::Int(r)) => match op {
+                                BinaryOp::Lt => l.lt(&r),
+                                BinaryOp::Leq => l.le(&r),
+                                BinaryOp::Gt => !l.le(&r),
+                                BinaryOp::Geq => !l.lt(&r),
+                                _ => unreachable!(),
+                            },
                             _ => unimplemented!(),
                         };
                         Val::Int(result.into())
@@ -2880,15 +3093,15 @@ impl<'a> Elaborator<'a> {
                         None => {
                             self.diag.report_fatal(
                                 "this expression must evaluate to two-state number",
-                                expr.span
+                                expr.span,
                             );
-                        },
+                        }
                         Some(v) => v,
                     }
                 } else {
                     self.diag.report_fatal(
                         "this expression must evaluate to integral number",
-                        expr.span
+                        expr.span,
                     );
                 };
 
@@ -2908,17 +3121,14 @@ impl<'a> Elaborator<'a> {
                 }
             }
             // BinaryAssign(Box<Expr>, BinaryOp, Box<Expr>),
-            expr::ExprKind::Paren(expr) => {
-                self.eval_checked_expr(&expr)
-            }
+            expr::ExprKind::Paren(expr) => self.eval_checked_expr(&expr),
             // MinTypMax(Box<Expr>, Box<Expr>, Box<Expr>),
             expr::ExprKind::Cond(cond, true_expr, false_expr) => {
                 let cond = Option::<bool>::from(match self.eval_checked_expr(cond) {
-                    Val::Int(val) => {
-                        val.to_bool()
-                    }
+                    Val::Int(val) => val.to_bool(),
                     _ => unimplemented!(),
-                }).unwrap();
+                })
+                .unwrap();
                 self.eval_checked_expr(if cond { true_expr } else { false_expr })
             }
             v => {
@@ -2934,15 +3144,15 @@ impl<'a> Elaborator<'a> {
                 None => {
                     self.diag.report_fatal(
                         "this expression must evaluate to two-state number",
-                        expr.span
+                        expr.span,
                     );
-                },
+                }
                 Some(v) => v,
             }
         } else {
             self.diag.report_fatal(
                 "this expression must evaluate to integral number",
-                expr.span
+                expr.span,
             );
         }
     }
@@ -2950,7 +3160,10 @@ impl<'a> Elaborator<'a> {
     pub fn eval_expr_usize_positive(&mut self, expr: &Expr) -> usize {
         let value = self.eval_expr_i32(expr);
         if value <= 0 {
-            self.diag.report_error("this expression must evaluate to positive number", expr.span);
+            self.diag.report_error(
+                "this expression must evaluate to positive number",
+                expr.span,
+            );
             // Error recovery
             1
         } else {
@@ -2972,8 +3185,8 @@ impl<'a> Elaborator<'a> {
 
     /// Evaluate a constant unpacked dimension and return a vector of bounds.
     pub fn eval_const_unpacked_dim(&mut self, dim: &Vec<Dim>) -> Vec<(i32, i32)> {
-        dim.iter().map(|dim| {
-            match &dim.value {
+        dim.iter()
+            .map(|dim| match &dim.value {
                 DimKind::Range(a, b) => {
                     let ub = self.eval_expr_i32(a);
                     let lb = self.eval_expr_i32(b);
@@ -2983,8 +3196,10 @@ impl<'a> Elaborator<'a> {
                     let size = self.eval_expr_usize_positive(a) as i32;
                     (0, size - 1)
                 }
-                _ => self.diag.report_fatal("unexpected dimension format", dim.span),
-            }
-        }).collect()
+                _ => self
+                    .diag
+                    .report_fatal("unexpected dimension format", dim.span),
+            })
+            .collect()
     }
 }

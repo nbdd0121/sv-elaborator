@@ -1,10 +1,10 @@
 // Diagnostics engine
 
-use std::fmt;
-use std::cmp;
-use std::rc::Rc;
-use std::cell::RefCell;
 use super::{Span, SrcMgr};
+use std::cell::RefCell;
+use std::cmp;
+use std::fmt;
+use std::rc::Rc;
 
 use colored::{Color, Colorize};
 
@@ -57,7 +57,7 @@ pub struct Diagnostic {
     /// This is the primary span that causes the issue. This will not be displayed.
     /// `new` function will automatically add the span to notes for it to be displayed.
     pub span: Option<Span>,
-    pub notes: Vec<Note>
+    pub notes: Vec<Note>,
 }
 
 /// Helpers for building diagnostic message. Intended to be called in chains.
@@ -70,7 +70,7 @@ impl Diagnostic {
             notes: vec![Note {
                 span,
                 fix: None,
-                message: None
+                message: None,
             }],
         }
     }
@@ -104,7 +104,7 @@ impl VisualString {
         // Current visual string and visual length
         let mut vstr = String::new();
         let mut vlen = 0;
-        
+
         for ch in str.chars() {
             match ch {
                 '\r' | '\n' => (),
@@ -165,7 +165,7 @@ impl Diagnostic {
                 } else {
                     eprintln!("{}{}", severity, self.message);
                 }
-                return
+                return;
             }
             Some(v) => v,
         };
@@ -184,7 +184,13 @@ impl Diagnostic {
 
         // Get colored severity string
         // Generate the error message line
-        let mut msg = format!("{}:{}: {}{}", src.filename(), line + 1, severity, self.message);
+        let mut msg = format!(
+            "{}:{}: {}{}",
+            src.filename(),
+            line + 1,
+            severity,
+            self.message
+        );
         if color {
             msg = msg.bold().to_string();
         }
@@ -206,7 +212,7 @@ impl Diagnostic {
 
             // Unlikely event, we cannot display this
             if !Rc::ptr_eq(&span.source, &primary_span.source) {
-                continue
+                continue;
             }
 
             // Get start and end position, clamped within the line.
@@ -249,7 +255,13 @@ impl Diagnostic {
                 line = line.green().to_string();
             }
 
-            eprintln!("{}\n{}\n{}\n{}", msg, vstr.visual_text(), indicator_line, line);
+            eprintln!(
+                "{}\n{}\n{}\n{}",
+                msg,
+                vstr.visual_text(),
+                indicator_line,
+                line
+            );
         } else {
             eprintln!("{}\n{}\n{}", msg, vstr.visual_text(), indicator_line);
         }
@@ -273,7 +285,7 @@ impl DiagMgr {
             mutable: RefCell::new(DiagMgrMut {
                 src: mgr,
                 diagnostics: Vec::new(),
-            })
+            }),
         }
     }
 
@@ -286,30 +298,18 @@ impl DiagMgr {
 
     /// Create a errpr diagnostic from message and span and report it.
     pub fn report_span<M: Into<String>>(&self, severity: Severity, msg: M, span: Span) {
-        self.report(Diagnostic::new(
-            severity,
-            msg.into(),
-            span,
-        ));
+        self.report(Diagnostic::new(severity, msg.into(), span));
     }
 
     /// Create a errpr diagnostic from message and span and report it.
     pub fn report_error<M: Into<String>>(&self, msg: M, span: Span) {
-        self.report(Diagnostic::new(
-            Severity::Error,
-            msg.into(),
-            span,
-        ));
+        self.report(Diagnostic::new(Severity::Error, msg.into(), span));
     }
 
     /// Create a fatal diagnostic from message and span and report it. In addition, abort
     /// execution with a panic.
     pub fn report_fatal<M: Into<String>>(&self, msg: M, span: Span) -> ! {
-        self.report(Diagnostic::new(
-            Severity::Fatal,
-            msg.into(),
-            span,
-        ));
+        self.report(Diagnostic::new(Severity::Fatal, msg.into(), span));
         std::panic::panic_any(Severity::Fatal);
     }
 
@@ -322,12 +322,16 @@ impl DiagMgr {
     /// Check if there is any fatal error.
     pub fn has_fatal(&self) -> bool {
         let m = self.mutable.borrow();
-        m.diagnostics.iter().any(|diag| diag.severity == Severity::Fatal)
+        m.diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Fatal)
     }
 
     /// Check if there is any error.
     pub fn has_error(&self) -> bool {
         let m = self.mutable.borrow();
-        m.diagnostics.iter().any(|diag| diag.severity == Severity::Error || diag.severity == Severity::Fatal)
+        m.diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error || diag.severity == Severity::Fatal)
     }
 }
