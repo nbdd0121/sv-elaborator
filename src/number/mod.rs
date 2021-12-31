@@ -159,10 +159,7 @@ impl LogicVec {
             if self.signed {
                 Some(self.value.clone().to_bigint())
             } else {
-                Some(BigInt::from_biguint(
-                    Sign::Minus,
-                    self.value.clone().to_biguint(),
-                ))
+                Some(self.value.clone().to_biguint().into())
             }
         } else {
             None
