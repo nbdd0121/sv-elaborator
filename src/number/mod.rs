@@ -46,7 +46,7 @@ impl From<LogicValue> for Option<bool> {
 }
 
 impl fmt::Display for LogicValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LogicValue::Zero => write!(f, "0"),
             LogicValue::One => write!(f, "1"),
@@ -571,7 +571,7 @@ impl LogicVec {
 }
 
 impl fmt::Debug for LogicVec {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let width = self.width();
         let value = self.value.clone().to_biguint();
         let xz = self.xz.clone().to_biguint();
@@ -608,7 +608,7 @@ pub struct LogicNumber {
 }
 
 impl fmt::Display for LogicNumber {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let width = self.value.width();
         let value = self.value.value.clone().to_biguint();
         let xz = self.value.xz.clone().to_biguint();
@@ -640,7 +640,7 @@ impl fmt::Display for LogicNumber {
 }
 
 impl fmt::Debug for LogicNumber {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt::Display::fmt(self, f)
     }
 }

@@ -59,13 +59,13 @@ impl<T> DerefMut for Spanned<T> {
 }
 
 impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.value.fmt(f)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Spanned<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.value.fmt(f)
     }
 }
@@ -89,7 +89,7 @@ pub enum PortDir {
 }
 
 impl fmt::Display for PortDir {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PortDir::Input => write!(f, "input"),
             PortDir::Output => write!(f, "output"),
@@ -108,7 +108,7 @@ pub enum AlwaysKw {
 }
 
 impl fmt::Display for AlwaysKw {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -134,7 +134,7 @@ pub enum IntAtomTy {
 }
 
 impl fmt::Display for IntAtomTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -158,7 +158,7 @@ pub enum IntVecTy {
 }
 
 impl fmt::Display for IntVecTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -196,7 +196,7 @@ pub enum NetTy {
 }
 
 impl fmt::Display for NetTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -243,7 +243,7 @@ pub enum Signing {
 }
 
 impl fmt::Display for Signing {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -263,7 +263,7 @@ pub enum Edge {
 }
 
 impl fmt::Display for Edge {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -284,7 +284,7 @@ pub enum UniqPrio {
 }
 
 impl fmt::Display for UniqPrio {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -305,7 +305,7 @@ pub enum CaseKw {
 }
 
 impl fmt::Display for CaseKw {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -355,7 +355,7 @@ pub enum IncDec {
 }
 
 impl fmt::Display for IncDec {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -382,7 +382,7 @@ pub enum UnaryOp {
 }
 
 impl fmt::Display for UnaryOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -434,7 +434,7 @@ pub enum BinaryOp {
 }
 
 impl fmt::Display for BinaryOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -652,7 +652,7 @@ pub enum AggrType {
 }
 
 impl fmt::Display for AggrType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -1128,13 +1128,13 @@ impl DerefMut for Ident {
 }
 
 impl fmt::Debug for Ident {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.value.fmt(f)
     }
 }
 
 impl fmt::Display for Ident {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.value.fmt(f)
     }
 }

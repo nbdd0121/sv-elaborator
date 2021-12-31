@@ -214,7 +214,7 @@ pub enum Keyword {
 }
 
 impl fmt::Display for Keyword {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let str = match self {
             Keyword::Module => "module",
             Keyword::Interface => "interface",

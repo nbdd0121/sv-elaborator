@@ -409,7 +409,7 @@ impl Int {
 }
 
 impl fmt::Debug for Int {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}'", self.width)?;
         // We use a heuristics for display number. If the number is below 1024, display it as
         // decimal. Otherwise display as hex.

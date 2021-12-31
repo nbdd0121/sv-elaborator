@@ -31,7 +31,7 @@ impl Severity {
 }
 
 impl fmt::Display for Severity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let str = match self {
             Severity::Remark => "remark",
             Severity::Info => "info",
