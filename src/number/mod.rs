@@ -88,7 +88,7 @@ impl LogicVec {
 
     /// Construct a 4-state logic array from 2-state logic.
     pub fn from_biguint(width: usize, signed: bool, mut value: BigUint) -> LogicVec {
-        if width < value.bits() {
+        if width < value.bits() as usize {
             let mut val = BigUint::one();
             val <<= width;
             val -= 1 as u8;

@@ -441,7 +441,12 @@ impl<'a> Lexer<'a> {
                 '0'..='9' => {
                     let str = self.parse_decimal();
                     let num = BigUint::from_str_radix(&str, 10).unwrap();
-                    LogicVec::new_xz(cmp::max(num.bits(), 1), signed, num, BigUint::zero())
+                    LogicVec::new_xz(
+                        cmp::max(num.bits() as usize, 1),
+                        signed,
+                        num,
+                        BigUint::zero(),
+                    )
                 }
                 _ => unreachable!(),
             };
@@ -669,7 +674,7 @@ impl<'a> Lexer<'a> {
             sized: false,
             value: LogicVec::new_xz(
                 // +1 here to account for the sign bit.
-                cmp::max(num.bits() + 1, 32),
+                cmp::max(num.bits() as usize + 1, 32),
                 true,
                 num,
                 BigUint::zero(),

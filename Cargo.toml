@@ -5,8 +5,7 @@ authors = ["Gary Guo <gary@garyguo.net>"]
 edition = "2021"
 
 [dependencies]
-num = "0.2"
-lazycell = "1.2"
-colored = "1.6"
-lazy_static = "1.2.0"
+num = "0.4"
+once_cell = "1.9"
+colored = "2.0"
 getopts = "0.2"

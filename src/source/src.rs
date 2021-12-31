@@ -2,7 +2,7 @@
 
 use super::{FatPos, FatSpan, Pos, Span};
 
-use lazycell::LazyCell;
+use once_cell::unsync::OnceCell;
 use std::cell::RefCell;
 use std::cmp;
 use std::io::{self, Read};
@@ -13,7 +13,7 @@ use std::rc::Rc;
 pub struct Source {
     filename: String,
     content: Rc<String>,
-    linemap: LazyCell<LineMap>,
+    linemap: OnceCell<LineMap>,
 }
 
 impl Source {
@@ -21,7 +21,7 @@ impl Source {
         Source {
             filename: filename,
             content: Rc::new(content),
-            linemap: LazyCell::new(),
+            linemap: OnceCell::new(),
         }
     }
 
@@ -38,8 +38,8 @@ impl Source {
         let linemap = cur_map.clone_with_bias(line_offset);
 
         // Pre-populate the lazy cell
-        let lazy = LazyCell::new();
-        lazy.fill(linemap).unwrap_or_else(|_| unreachable!());
+        let lazy = OnceCell::new();
+        lazy.set(linemap).unwrap_or_else(|_| unreachable!());
 
         Source {
             filename: file,
@@ -57,12 +57,7 @@ impl Source {
     }
 
     pub fn linemap(&self) -> &LineMap {
-        if !self.linemap.filled() {
-            self.linemap
-                .fill(LineMap::new(&self.content, 0))
-                .unwrap_or_else(|_| unreachable!());
-        }
-        self.linemap.borrow().unwrap()
+        self.linemap.get_or_init(|| LineMap::new(&self.content, 0))
     }
 }
 

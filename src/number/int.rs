@@ -99,7 +99,7 @@ impl Int {
 
     /// Truncate to current width
     fn trunc_to_fit(&mut self) {
-        if self.width < self.value.bits() {
+        if self.width < self.value.bits() as usize {
             let mut val = BigUint::one();
             val <<= self.width;
             val -= 1 as u8;
