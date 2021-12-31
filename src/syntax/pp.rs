@@ -102,7 +102,7 @@ impl<'a> Preprocessor<'a> {
     }
 
     fn process(&mut self) -> Option<Token> {
-        let mut after_newline = false;
+        let mut after_newline = true;
         loop {
             let (name, span) = match self.next_raw() {
                 // Found a directive
