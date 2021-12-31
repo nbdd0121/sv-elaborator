@@ -310,7 +310,7 @@ impl DiagMgr {
             msg.into(),
             span,
         ));
-        panic!(Severity::Fatal);
+        std::panic::panic_any(Severity::Fatal);
     }
 
     /// Clear exsting diagnostics

@@ -82,7 +82,7 @@ fn main() {
 
     // Parse all files together
     let mut files = Vec::new();
-    'outer: for filename in &matches.free {
+    for filename in &matches.free {
         let mut infile = File::open(filename).unwrap();
         let mut contents = String::new();
         infile.read_to_string(&mut contents).unwrap();

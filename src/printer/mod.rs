@@ -204,7 +204,7 @@ impl PrettyPrint {
             self.append(format!(" #(\n"));
             for (item, _, last) in v.iter().identify_first_last() {
                 self.print_param_decl(item);
-                self.append(format!("{}\n", if { last } { "" } else { "," }));
+                self.append(format!("{}\n", if last { "" } else { "," }));
             }
             self.append(format!(")"));
         }
@@ -212,7 +212,7 @@ impl PrettyPrint {
             self.append(format!(" (\n"));
             for (item, _, last) in obj.port.iter().identify_first_last() {
                 self.print_port_decl(item);
-                self.append(format!("{}\n", if { last } { "" } else { "," }));
+                self.append(format!("{}\n", if last { "" } else { "," }));
             }
             self.append(format!(")"));
         }
@@ -254,7 +254,7 @@ impl PrettyPrint {
             self.indent();
             for (item, _, last) in obj.ports.iter().identify_first_last() {
                 self.print_port_decl(item);
-                self.append(format!("{}\n", if { last } { "" } else { "," }));
+                self.append(format!("{}\n", if last { "" } else { "," }));
             }
             self.unindent();
             self.indent_append(format!(")"));
@@ -281,7 +281,7 @@ impl PrettyPrint {
             self.indent();
             for (item, _, last) in obj.ports.iter().identify_first_last() {
                 self.print_port_decl(item);
-                self.append(format!("{}\n", if { last } { "" } else { "," }));
+                self.append(format!("{}\n", if last { "" } else { "," }));
             }
             self.unindent();
             self.indent_append(format!(")"));
